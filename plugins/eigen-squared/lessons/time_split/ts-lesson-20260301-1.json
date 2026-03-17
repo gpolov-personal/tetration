@@ -1,0 +1,20 @@
+{
+  "id": "ts-lesson-20260301-1",
+  "created_at": "2026-03-01T13:30:00Z",
+  "command": "time_split",
+  "status": "pending",
+  "category": "structural_error",
+  "severity": "high",
+  "title": "Phase manifests systematically flatten intra-phase dependency chains",
+  "description": "The Phase 3 manifest dependency columns show simplified/flattened dependencies instead of the canonical dependency chain from the initiative. SP-14 through SP-28 all list SP-12 as their sole dependency instead of their canonical parent (SP-13 for most wizard steps, SP-25 for SP-26, etc.). Similarly, CA-12 and CA-13 list only CA-3 instead of their canonical deps. This loses critical build-order information needed by space_split to construct the epic DAG.",
+  "root_cause": "The manifest generation step (Phase 3.3) computes 'Local Deps (this phase)' by finding the nearest ancestor that is also in the same phase, rather than preserving the canonical direct dependency from the Feature Summary Table. When multiple intermediate features are in the same phase, this collapses the chain to just the root.",
+  "recommendation": "In Phase 3.3 manifest generation, the 'Local Deps (this phase)' column must list the feature's CANONICAL direct dependencies (from the Feature Summary Table) that are in the same phase — not a computed nearest-phase-root. The canonical dependency chain must be preserved verbatim.",
+  "affected_phase": "Phase 3.3 — Generate Phase Manifests — Features by Domain tables",
+  "evidence": {
+    "features_involved": ["SP-14", "SP-15", "SP-16", "SP-17", "SP-18", "SP-19", "SP-20", "SP-21", "SP-22", "SP-23", "SP-24", "SP-25", "SP-26", "SP-27", "SP-28", "CA-12", "CA-13", "CA-4", "CA-6", "CA-25"],
+    "phases_involved": [3],
+    "agent_source": "DAG Correctness Agent"
+  },
+  "initiative_context": "Janus: 104 features, 4 phases",
+  "tags": ["dependency-chain", "manifest-generation", "dag-correctness", "space_split-input"]
+}

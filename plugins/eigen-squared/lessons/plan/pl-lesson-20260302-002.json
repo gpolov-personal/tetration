@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260302-002",
+  "created_at": "2026-03-02T23:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "dependency_gap",
+  "severity": "high",
+  "title": "Plan did not specify stub-update prerequisites before parallel wave execution",
+  "description": "plan_phase_epic identified that CurrentUser stub was missing `rights` and `visibility_profile` fields and that RabbitMQ publish() was missing `headers` parameter, but listed these as gap findings rather than as explicit prerequisite steps that must happen BEFORE Wave 1 starts. Without pre-wave stub updates, parallel swarm workers cannot implement or test against the correct interface contracts.",
+  "root_cause": "plan_phase_epic treats stub mismatches as informational notes in the Gap Analysis section rather than as blocking prerequisites that must be resolved before parallel execution can begin. The command lacks a 'pre-wave prerequisites' concept in its parallelization strategy.",
+  "recommendation": "When plan_phase_epic detects that bootstrap stubs do not match the plan's interface contracts, it should generate an explicit 'Pre-Wave Prerequisites' section in the Parallelization Strategy that lists specific stub updates (file, change, rationale) that must be completed before Wave 1 begins. This ensures swarm workers start with correct interface contracts.",
+  "affected_section": "Parallelization Strategy generation in plan_phase_epic.md — the section that creates execution waves.",
+  "evidence": {
+    "plan_sections_involved": ["Gap Analysis Results", "Parallelization Strategy / Execution Waves"],
+    "agent_source": "architecture-strategist, pattern-recognition-specialist, parallelization-strategy-reviewer"
+  },
+  "plan_context": "Infrastructure Foundation epic with 12 bootstrap stubs and 5 parallel components",
+  "tags": ["stub-mismatch", "prerequisites", "parallelization", "interface-contracts"]
+}

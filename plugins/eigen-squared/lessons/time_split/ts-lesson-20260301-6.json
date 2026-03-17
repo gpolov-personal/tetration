@@ -1,0 +1,20 @@
+{
+  "id": "ts-lesson-20260301-6",
+  "created_at": "2026-03-01T13:30:00Z",
+  "command": "time_split",
+  "status": "pending",
+  "category": "content_gap",
+  "severity": "medium",
+  "title": "Whitebox missing schema references needed by search/filter features",
+  "description": "Phase 2 includes SD-9 (Party/Participant Filter) needing counterparty tables schema (Section 3.5) for party group memberships and prefix encoding (P{id}/G{id}). SD-9 and SD-13 also need employee tables schema (Section 3.4) for employee/hierarchy join paths. Both are absent from Phase 2's whitebox.",
+  "root_cause": "Same underlying issue as lessons 3-4: whitebox section selection misses schema table references required by specific features. The search domain features reference employee and counterparty schemas that are in the data model section of the whitebox, not the search-specific section.",
+  "recommendation": "Same fix: feature-level whitebox requirement scan should detect references to specific table schemas (employee, counterparty, alert, etc.) and include the corresponding Section 3.x subsections.",
+  "affected_phase": "Phase 3.3 — Generate Phase Manifests — Whitebox Reference Sections",
+  "evidence": {
+    "features_involved": ["SD-9", "SD-13"],
+    "phases_involved": [2],
+    "agent_source": "Whitebox Relevance Agent"
+  },
+  "initiative_context": "Janus: 104 features, 4 phases",
+  "tags": ["whitebox-completeness", "schema-reference", "search-domain"]
+}

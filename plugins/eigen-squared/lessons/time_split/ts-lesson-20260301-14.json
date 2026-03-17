@@ -1,0 +1,20 @@
+{
+  "id": "ts-lesson-20260301-14",
+  "created_at": "2026-03-01T15:00:00Z",
+  "command": "time_split",
+  "status": "pending",
+  "category": "structural_error",
+  "severity": "low",
+  "title": "All phase manifests must use identical feature table column format including Cluster column",
+  "description": "Phase 2 feature tables used columns {ID, Name, Priority, Dependencies, Description} while Phases 1 and 3 included a Cluster column. This inconsistency makes per-feature cluster membership unverifiable in Phase 2 and creates a documentation gap that space_split may need to work around.",
+  "root_cause": "The manifest generation step (Phase 3.3) does not enforce a consistent table column schema across all phase manifests. Each phase's table format may vary depending on context or the specific generation path taken.",
+  "recommendation": "In Phase 3.3, define a single canonical table column format: {ID, Name, Priority, Local Deps (this phase), Cross-Phase Deps, Cluster, Description}. Enforce this format for ALL phase manifests regardless of domain count or phase complexity.",
+  "affected_phase": "Phase 3.3 — Generate Phase Manifests — Features by Domain tables",
+  "evidence": {
+    "features_involved": [],
+    "phases_involved": [2],
+    "agent_source": "Cluster Integrity Agent"
+  },
+  "initiative_context": "Janus: 104 features, 4 phases",
+  "tags": ["manifest-format", "consistency", "table-schema", "cluster-column"]
+}

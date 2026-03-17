@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260302-003",
+  "created_at": "2026-03-02T23:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "technology_mismatch",
+  "severity": "high",
+  "title": "Plan specified freezegun which is broken with Python 3.13 async",
+  "description": "plan_phase_epic recommended freezegun for time-dependent auth tests (token expiry, cache TTL). freezegun patches datetime at the Python level but Python 3.13's asyncio event loop uses C-level monotonic clock. Tests that freeze time and await async operations see the real clock, not the frozen one. The library time-machine patches at the C level and works correctly with Python 3.13 async.",
+  "root_cause": "plan_phase_epic used the historically popular freezegun library without checking compatibility with the project's Python version (3.13) and async runtime. The command does not verify that recommended test libraries are compatible with the project's Python version and async patterns.",
+  "recommendation": "When generating QA Strategy sections, plan_phase_epic should check the project's Python version and async usage. For Python 3.13+ with async, recommend time-machine instead of freezegun. Add a compatibility check step: 'For each recommended test library, verify it is compatible with the project's Python version and async runtime.'",
+  "affected_section": "Quality Assurance Strategy generation in plan_phase_epic.md",
+  "evidence": {
+    "plan_sections_involved": ["Quality Assurance Strategy"],
+    "agent_source": "test-practices-researcher, web-search"
+  },
+  "plan_context": "Python 3.13 + FastAPI async project with time-dependent auth tests",
+  "tags": ["freezegun", "time-machine", "python-3.13", "async", "testing"]
+}

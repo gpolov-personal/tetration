@@ -1,0 +1,20 @@
+{
+  "id": "bs-lesson-20260302-007",
+  "created_at": "2026-03-02T12:00:00Z",
+  "command": "bootstrap",
+  "status": "pending",
+  "category": "config_error",
+  "severity": "medium",
+  "title": "Infrastructure configuration defaults in Settings diverge from docker-compose",
+  "description": "Settings class defines default connection URLs (RABBITMQ_URL with guest:guest, DATABASE_URL with hardcoded credentials) while docker-compose.yml configures services with different credentials (janus:janus for both). database.py independently reads from os.getenv with yet another fallback. This creates 3 potential sources of truth for the same credentials, leading to connection failures when services start with Settings defaults against docker-compose infrastructure.",
+  "root_cause": "Phase 3.2 Sub-Agent A generates Settings with generic defaults (guest:guest for RabbitMQ is the vendor default), while Sub-Agent B generates docker-compose with project-specific credentials. The two sub-agents have no mechanism to share the credential values. Phase 3.4 (Reconcile) does not verify that Settings defaults match docker-compose environment variables.",
+  "recommendation": "In Phase 3.4 (Reconcile), add a cross-reference check: for each infrastructure service in docker-compose.yml, verify that the corresponding Settings field's default value matches the docker-compose credentials. Generate a .env.example file that documents all environment variables with their expected values. Ensure database.py reads from Settings instead of os.getenv.",
+  "affected_phase": "Phase 3.4 — Reconcile",
+  "evidence": {
+    "entities_involved": [],
+    "files_involved": ["libs/janus_core/janus_core/infrastructure/settings.py", "docker-compose.yml", "libs/janus_core/janus_core/infrastructure/database.py"],
+    "agent_source": "structure-config-validator, security-sentinel, architecture-strategist"
+  },
+  "bootstrap_context": "Phase 1, Python 3.13 + FastAPI + docker-compose",
+  "tags": ["configuration", "credentials", "settings-divergence", "docker-compose"]
+}

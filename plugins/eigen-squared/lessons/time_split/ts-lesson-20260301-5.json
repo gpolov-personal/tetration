@@ -1,0 +1,20 @@
+{
+  "id": "ts-lesson-20260301-5",
+  "created_at": "2026-03-01T13:30:00Z",
+  "command": "time_split",
+  "status": "pending",
+  "category": "structural_error",
+  "severity": "medium",
+  "title": "Cluster membership in manifests diverges from canonical initiative definitions",
+  "description": "Three manifests redefine cluster boundaries differently from the initiative's Section 9.4: Phase 3 expands Cluster C from {CA-3, CA-7, CA-12, CA-13} to 7 members and renames it. Phase 3 truncates Cluster E from 10 to 6 members. Phase 1 adds AC-8 to Cluster G (canonical: AC-1-6 only).",
+  "root_cause": "The manifest generation step may recompute cluster membership based on the features present in a phase rather than strictly using the canonical cluster definitions from the initiative. When a cluster spans features that feel 'related', the generator expands membership beyond the canonical set.",
+  "recommendation": "In Phase 3.3, cluster tables must use ONLY the canonical cluster definitions from Section 9.3/9.4 of the initiative. Never add or remove features from canonical clusters. If only a subset of a cluster's features are in a phase, show the subset but label the cluster correctly. Never rename clusters.",
+  "affected_phase": "Phase 3.3 — Generate Phase Manifests — Natural Clusters table",
+  "evidence": {
+    "features_involved": ["CA-4", "CA-6", "CA-17", "SP-24", "SP-25", "SP-26", "SP-28", "AC-8"],
+    "phases_involved": [1, 3],
+    "agent_source": "Cluster Integrity Agent"
+  },
+  "initiative_context": "Janus: 104 features, 4 phases, 10 clusters",
+  "tags": ["cluster-integrity", "canonical-definitions", "manifest-generation"]
+}

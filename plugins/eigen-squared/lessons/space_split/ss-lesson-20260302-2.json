@@ -1,0 +1,21 @@
+{
+  "id": "ss-lesson-20260302-2",
+  "created_at": "2026-03-02T19:45:00Z",
+  "command": "space_split",
+  "status": "pending",
+  "category": "strategic_concern",
+  "severity": "medium",
+  "title": "Shared library collision risk when multiple epics modify the same core library files in parallel",
+  "description": "The janus_core shared library is modified by multiple epics in parallel: auth/dependencies.py (Epics 1, 4, 5), clients/rabbitmq.py (Epics 1, 3), interfaces/repositories.py (Epics 4, 5). Without a file ownership map, parallel agents will independently implement the same functions, producing merge conflicts and duplicate logic.",
+  "root_cause": "Phase 1.4 (Define Inter-Epic Interfaces) focuses on feature-level interfaces but does not analyze file-level ownership. The command does not build a file-to-epic assignment map from the bootstrap report's entity stubs and client files. When a shared library exists (detected from bootstrap), the command should proactively assign file ownership.",
+  "recommendation": "In Phase 1.4, after defining inter-epic interfaces, add a file ownership analysis step: (1) From the bootstrap report, list all shared library files. (2) For each file, determine which epics' features reference or modify it. (3) If a file is touched by 2+ epics, assign primary ownership to one epic (typically the one with the most references or the infrastructure epic) and document that other epics may only add to the file in additive, non-conflicting ways. Include this ownership map in the epic_dag.json output.",
+  "affected_phase": "Phase 1.4 — Define Inter-Epic Interfaces",
+  "evidence": {
+    "epics_involved": ["epic_1", "epic_3", "epic_4", "epic_5"],
+    "features_involved": ["INFRA-5", "IP-1", "AC-13", "AC-8"],
+    "github_issues_involved": [98, 100, 101, 102],
+    "agent_source": "architecture-strategist"
+  },
+  "initiative_context": "Janus Communication Surveillance Platform, Phase 1, 35 features, 5 epics",
+  "tags": ["shared-library", "file-ownership", "merge-conflicts", "janus-core", "parallel-agents"]
+}

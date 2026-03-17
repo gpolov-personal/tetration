@@ -1,0 +1,25 @@
+{
+  "name": "tetration",
+  "owner": {
+    "name": "G.Polo.V",
+    "email": "ggpolovera@gmail.com"
+  },
+  "metadata": {
+    "description": "Tetration — repeated exponentiation of engineering automation. Plugins that compound, self-improve, and chain autonomously.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "eigen-squared",
+      "description": "Autonomous initiative-scale development orchestration with auto-chaining via claude-tasks. Zero-argument pipeline, triplet IDs, language-agnostic, worktree isolation, convergence loops, real-dependencies testing. Runs a full phase autonomously — plan, code, review, fix — until the E2E Testing epic converges.",
+      "version": "1.0.0",
+      "author": {
+        "name": "G.Polo.V",
+        "email": "ggpolovera@gmail.com"
+      },
+      "homepage": "https://github.com/ggpolovera/tetration",
+      "tags": ["autonomous", "swarm", "parallel-execution", "auto-chaining", "claude-tasks", "convergence", "self-improving"],
+      "source": "./plugins/eigen-squared"
+    }
+  ]
+}

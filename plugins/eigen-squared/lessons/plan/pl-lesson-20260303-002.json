@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260303-002",
+  "created_at": "2026-03-03T01:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "technology_mismatch",
+  "severity": "high",
+  "title": "Plan conflated two different hashing mechanisms (argon2 for passwords vs SHA-256 for tokens)",
+  "description": "Plan added argon2-cffi saying it 'replaces bcrypt' without distinguishing that argon2 is for USER PASSWORD hashing while SHA-256 is for REFRESH TOKEN hashing (already implemented). The codebase uses SHA-256 for O(1) token lookup, and argon2 is for password verification — completely different use cases. A swarm worker following the plan might incorrectly replace SHA-256 token hashing with argon2, breaking the token lookup optimization.",
+  "root_cause": "plan_phase_epic doesn't differentiate between hashing use cases when reading epic specs. It saw 'argon2-cffi' and 'replaces bcrypt' without checking the existing codebase's hashing strategy or distinguishing password hashing from token hashing.",
+  "recommendation": "When plan_phase_epic encounters cryptographic libraries in epic specs, it should: (1) check the existing codebase for current hashing implementations, (2) identify WHICH data types each algorithm is used for (passwords, tokens, checksums), (3) explicitly state the scope of the new library ('argon2 for password hashing ONLY, not for token hashing').",
+  "affected_section": "Strategic Overview and Implementation Approach generation — dependency descriptions.",
+  "evidence": {
+    "plan_sections_involved": ["Strategic Overview", "Implementation Approach — TECH-1"],
+    "agent_source": "architecture-strategist, security-sentinel"
+  },
+  "plan_context": "Phase 1 Epic 2 — Tech Stack Standards, argon2-cffi dependency",
+  "tags": ["argon2", "sha256", "password-hashing", "token-hashing", "security"]
+}

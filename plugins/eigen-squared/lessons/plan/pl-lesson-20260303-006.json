@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260303-006",
+  "created_at": "2026-03-03T01:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "test_coverage_gap",
+  "severity": "high",
+  "title": "Plan had success criteria with no corresponding E2E scenario verification",
+  "description": "The plan defined 25+ success criteria and only 4 E2E scenarios. Six success criteria had no verification path in any scenario: pre-commit hooks, CI SHA pinning, UV caching, frontend lint in build.yml, Dockerfile env vars, and pinned base image digests. These criteria would pass review unchecked, potentially allowing incomplete implementations.",
+  "root_cause": "plan_phase_epic generates Success Criteria and E2E Scenarios as separate sections without cross-validation. It doesn't check that every success criterion maps to at least one E2E scenario's acceptance_criteria_ref or description.",
+  "recommendation": "Add a validation step to plan_phase_epic: after generating both Success Criteria and E2E Scenarios, verify that every success criterion is referenced by at least one E2E scenario. If not, either add the criterion to an existing scenario or create a new scenario. Flag any orphaned criteria.",
+  "affected_section": "E2E Scenarios generation and Success Criteria cross-validation.",
+  "evidence": {
+    "plan_sections_involved": ["Success Criteria", "Parallelization Strategy — E2E Test Scenarios"],
+    "agent_source": "pattern-recognition-specialist, test-practices-researcher"
+  },
+  "plan_context": "Phase 1 Epic 2 — Tech Stack Standards",
+  "tags": ["e2e-scenarios", "success-criteria", "coverage-gap", "validation"]
+}

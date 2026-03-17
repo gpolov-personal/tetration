@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260303-005",
+  "created_at": "2026-03-03T01:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "technology_mismatch",
+  "severity": "high",
+  "title": "Plan contradicted epic.md acceptance criteria without acknowledging the deviation",
+  "description": "Epic.md specified 'semgrep --config auto . reports no high-severity findings' as an acceptance criterion. The plan changed this to 'pin SemGrep to a specific versioned ruleset' without acknowledging the deviation from the spec. The existing CI already uses --config auto successfully. A swarm worker following the plan would change CI to use a pinned ruleset, breaking alignment with the epic.md acceptance criteria. Similar contradictions existed for 'Ant Design or MUI' (plan chose MUI only) and compose-level criteria owned by Epic 1.",
+  "root_cause": "plan_phase_epic applies its own best-practice judgment (pinning for reproducibility) without checking whether it contradicts the epic.md acceptance criteria. It doesn't have a validation step that compares plan success criteria against epic.md acceptance criteria to flag deviations.",
+  "recommendation": "Add a validation step to plan_phase_epic: after generating Success Criteria, cross-reference each criterion against the epic.md Acceptance Criteria. If the plan deviates from an epic.md criterion, it must: (1) explicitly note the deviation, (2) provide justification, (3) mark which epic.md criteria are 'covered as-is', 'modified with justification', or 'deferred to another epic'.",
+  "affected_section": "Success Criteria generation and epic.md cross-validation.",
+  "evidence": {
+    "plan_sections_involved": ["Success Criteria", "Implementation Approach — TECH-3"],
+    "agent_source": "pattern-recognition-specialist"
+  },
+  "plan_context": "Phase 1 Epic 2 — Tech Stack Standards, semgrep configuration",
+  "tags": ["epic-spec-deviation", "acceptance-criteria", "semgrep", "validation"]
+}

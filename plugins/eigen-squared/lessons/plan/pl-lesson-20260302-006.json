@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260302-006",
+  "created_at": "2026-03-02T23:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "plan_structure_gap",
+  "severity": "high",
+  "title": "Plan did not resolve contradiction between settings field and pinned-constant requirement",
+  "description": "plan_phase_epic stated JWT_ALGORITHM should be 'pinned as constant, not configurable' in Security Considerations and Integration Points, but the Settings stub has JWT_ALGORITHM as a configurable env var field. The plan identified the security requirement but did not specify how to resolve the contradiction (remove from Settings and move to constants.py).",
+  "root_cause": "plan_phase_epic can identify security requirements but does not cross-reference them against the existing stub implementations to detect contradictions. When a stub field conflicts with a plan requirement, the plan should specify the resolution action.",
+  "recommendation": "When plan_phase_epic specifies that a value should be a constant (not configurable), it should check if the value exists as a configurable field in Settings or other stubs. If so, the plan should explicitly state: 'Remove X from Settings, define as constant in Y.' This prevents ambiguity during swarm execution.",
+  "affected_section": "Security Considerations and Technical Strategy generation in plan_phase_epic.md",
+  "evidence": {
+    "plan_sections_involved": ["Security Considerations", "Integration Points"],
+    "agent_source": "security-sentinel, architecture-strategist"
+  },
+  "plan_context": "JWT auth with HS256 algorithm, existing Settings stub with configurable JWT_ALGORITHM field",
+  "tags": ["security", "jwt", "constants", "stub-contradiction"]
+}

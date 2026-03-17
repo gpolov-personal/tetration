@@ -1,0 +1,20 @@
+{
+  "id": "bs-lesson-20260302-003",
+  "created_at": "2026-03-02T12:00:00Z",
+  "command": "bootstrap",
+  "status": "pending",
+  "category": "verification_failure",
+  "severity": "high",
+  "title": "Verification gate does not run pyright or ruff format — incomplete quality checks",
+  "description": "The bootstrap verification gate ran 4 checks (uv sync, import test, ruff check, pytest collect) but omitted pyright type checking and ruff format compliance. Pyright fails with 2 errors (fastapi not resolved in root venv) and 7 files fail ruff format. These issues would have been caught and fixed during the verification-retry cycle if the checks were included.",
+  "root_cause": "Phase 4.1 (Run Language-Appropriate Verification) lists 'ruff check .' but not 'ruff format --check .' or 'pyright'. The pyright failure reveals a deeper issue: UV workspace members' transitive dependencies are not installed by 'uv sync' on the root package, causing import resolution failures for tools that analyze the full workspace.",
+  "recommendation": "In Phase 4.1, expand the Python verification commands to include: (1) 'uv run ruff format --check .' for formatting compliance, (2) 'uv run pyright' for type checking. Also add a pre-verification step: 'uv sync --all-packages' to ensure all workspace member dependencies are available for cross-package type checking.",
+  "affected_phase": "Phase 4.1 — Run Language-Appropriate Verification",
+  "evidence": {
+    "entities_involved": [],
+    "files_involved": ["pyproject.toml", "services/auth_api/auth_api/main.py"],
+    "agent_source": "verification-replay"
+  },
+  "bootstrap_context": "Phase 1, Python 3.13 + UV workspace + pyright + ruff",
+  "tags": ["verification", "pyright", "ruff-format", "uv-workspace"]
+}

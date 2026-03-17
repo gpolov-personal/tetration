@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260303-001",
+  "created_at": "2026-03-03T01:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "dependency_gap",
+  "severity": "high",
+  "title": "Plan set docs_url without checking cross-epic API convention conflicts",
+  "description": "Plan for Epic 2 set docs_url='/docs' on all FastAPI app instances, but Epic 1 (Infrastructure Foundation) owns API conventions and may disable /docs in production. The plan didn't check if the main.py files were in the epic_dag file_ownership_map or if another epic had conflicting API convention decisions. This created a potential conflict where two epics would set contradictory docs_url values.",
+  "root_cause": "plan_phase_epic doesn't cross-reference epic_dag interfaces_provided/interfaces_consumed and file_ownership_map when generating API documentation plans. It assumed sole ownership of FastAPI app metadata without checking if another epic's scope covers the same concern.",
+  "recommendation": "When generating TECH-6 (API Documentation) or similar cross-cutting plans, plan_phase_epic should: (1) check which epics provide 'API convention' interfaces, (2) verify that the files being modified (main.py) are in this epic's file_ownership_map, (3) if not owned, use conditional patterns (e.g., docs_url=... if settings.debug else None) and document the coordination requirement.",
+  "affected_section": "Implementation Approach generation — specifically when handling API documentation and cross-cutting configuration concerns.",
+  "evidence": {
+    "plan_sections_involved": ["Implementation Approach — TECH-6: API Documentation Standards", "Success Criteria"],
+    "agent_source": "architecture-strategist"
+  },
+  "plan_context": "Phase 1 Epic 2 — Tech Stack Standards, Python/FastAPI backend",
+  "tags": ["fastapi", "docs_url", "cross-epic-conflict", "file-ownership"]
+}

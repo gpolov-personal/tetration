@@ -1,0 +1,21 @@
+{
+  "id": "ss-lesson-20260302-3",
+  "created_at": "2026-03-02T19:45:00Z",
+  "command": "space_split",
+  "status": "pending",
+  "category": "interface_error",
+  "severity": "medium",
+  "title": "Implicit build-time and runtime dependencies should be captured as inter-epic interfaces even in single-wave phases",
+  "description": "All 5 epics declared empty interfaces_provided and interfaces_consumed arrays, yet significant build-time/runtime dependencies exist: INFRA-5 auth middleware consumed by all other epics, INFRA-2 database schema consumed by Epics 3-5, INFRA-4 queue topology consumed by Epic 3. The bootstrap stubs partially mitigate this, but the DAG should document these implicit contracts for downstream plan generation.",
+  "root_cause": "Phase 1.4 (Define Inter-Epic Interfaces) only creates interfaces for explicit cross-epic feature dependencies (from local_deps). When all feature dependencies are intra-epic, the interface fields are left empty. The command does not analyze runtime/build-time dependencies that exist at the infrastructure level (auth middleware, database schema, queue topology) independent of the feature DAG.",
+  "recommendation": "In Phase 1.4, after analyzing feature-level dependencies, add a secondary analysis for infrastructure-level dependencies: (1) Identify features that provide foundational contracts (auth, database, messaging). (2) Check if other epics' features consume these contracts at runtime (e.g., any feature needing authenticated endpoints consumes auth middleware). (3) Document these as 'implicit_runtime_interfaces' in the epic_dag.json, distinct from feature-level blocked_by relationships. This does not change execution waves but provides critical context for plan_phase_epic.",
+  "affected_phase": "Phase 1.4 — Define Inter-Epic Interfaces",
+  "evidence": {
+    "epics_involved": ["epic_1", "epic_3", "epic_4", "epic_5"],
+    "features_involved": ["INFRA-2", "INFRA-4", "INFRA-5"],
+    "github_issues_involved": [98, 100, 101, 102],
+    "agent_source": "e2e-coverage-validator + architecture-strategist"
+  },
+  "initiative_context": "Janus Communication Surveillance Platform, Phase 1, 35 features, 5 epics",
+  "tags": ["implicit-dependencies", "runtime-interfaces", "auth-middleware", "database-schema", "queue-topology"]
+}

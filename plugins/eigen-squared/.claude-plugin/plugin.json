@@ -1,0 +1,16 @@
+{
+  "name": "eigen-squared",
+  "version": "1.0.0",
+  "description": "Autonomous initiative-scale development orchestration with auto-chaining via claude-tasks. Zero-argument pipeline, triplet IDs, language-agnostic, worktree isolation, convergence loops, real-dependencies testing. Runs a full phase autonomously.",
+  "author": {
+    "name": "G.Polo.V",
+    "email": "ggpolovera@gmail.com"
+  },
+  "homepage": "https://github.com/ggpolovera/tetration",
+  "repository": "https://github.com/ggpolovera/tetration",
+  "keywords": [
+    "eigen-squared", "autonomous", "initiative-splitting", "time-split", "space-split",
+    "bootstrap", "project-foundation", "swarm", "parallel-execution",
+    "auto-chaining", "claude-tasks", "convergence", "self-improving"
+  ]
+}

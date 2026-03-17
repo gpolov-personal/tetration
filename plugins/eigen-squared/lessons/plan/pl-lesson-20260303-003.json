@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260303-003",
+  "created_at": "2026-03-03T01:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "test_coverage_gap",
+  "severity": "high",
+  "title": "Plan created minimal test infrastructure instead of comprehensive async test fixtures",
+  "description": "Plan specified only a 'functional settings fixture' for conftest.py, but a FastAPI + SQLAlchemy async project needs at minimum: async_session fixture (real PostgreSQL, per-test transaction rollback), async_client fixture (httpx.AsyncClient with app dependency overrides), and authenticated_client fixture (mock CurrentUser). Without these, no downstream epic can write integration tests. The plan also deferred test database strategy ('Testcontainers recommended, defer to implementation phase') when it should be a Phase 1 standard.",
+  "root_cause": "plan_phase_epic treated test infrastructure as a simple fixture replacement task rather than recognizing it as a foundational standard that all downstream epics depend on. It didn't analyze what fixtures downstream epics would need to import.",
+  "recommendation": "When generating testing standards plans, plan_phase_epic should: (1) analyze downstream epic interfaces_consumed to understand what test fixtures they'll need, (2) define the full fixture hierarchy (settings → database session → HTTP client → authenticated client), (3) NOT defer test database strategy — define it as a standard (PostgreSQL service container in CI, testcontainers for local dev). Also specify pytest-asyncio loop_scope configuration for session-scoped async fixtures.",
+  "affected_section": "Implementation Approach generation — specifically TECH-4 testing standards and conftest.py scope.",
+  "evidence": {
+    "plan_sections_involved": ["Implementation Approach — TECH-4: Testing Standards"],
+    "agent_source": "test-practices-researcher, architecture-strategist"
+  },
+  "plan_context": "Phase 1 Epic 2 — Tech Stack Standards, pytest + FastAPI async testing",
+  "tags": ["pytest", "conftest", "async-fixtures", "test-database", "pytest-asyncio"]
+}

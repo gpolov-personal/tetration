@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260302-007",
+  "created_at": "2026-03-02T23:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "dependency_gap",
+  "severity": "high",
+  "title": "Plan specified a library (structlog) without checking if it exists in project dependencies",
+  "description": "plan_phase_epic recommended structlog for structured logging and generated a component (api-observability) that creates logging_config.py using structlog. However, structlog was not listed in libs/janus_core/pyproject.toml dependencies, and the plan's Prerequisites section did not mention adding it. Any import of structlog would fail at runtime.",
+  "root_cause": "plan_phase_epic does not verify that recommended libraries are present in the project's dependency files. It assumes that if a library is recommended, it's already available or will be added by the implementor.",
+  "recommendation": "When plan_phase_epic recommends a library, it should check the project's pyproject.toml (and uv.lock if available) to verify the library exists in dependencies. If not, the plan should include an explicit 'Add dependency' step in Prerequisites, specifying which pyproject.toml file to modify and the version constraint.",
+  "affected_section": "Implementation Approach / Dependencies and Prerequisites generation in plan_phase_epic.md",
+  "evidence": {
+    "plan_sections_involved": ["Implementation Approach / Dependencies and Prerequisites", "Parallelization Strategy / Independent Components"],
+    "agent_source": "framework-docs-researcher, codebase-stub-verifier"
+  },
+  "plan_context": "structlog recommended for logging but not in janus_core dependencies",
+  "tags": ["missing-dependency", "structlog", "pyproject-toml", "prerequisites"]
+}

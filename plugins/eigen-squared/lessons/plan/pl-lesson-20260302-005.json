@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260302-005",
+  "created_at": "2026-03-02T23:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "parallelization_error",
+  "severity": "high",
+  "title": "Wave 2 INTEGRATION task had no file-level detail, acceptance criteria, or test plan",
+  "description": "plan_phase_epic generated a Wave 2 INTEGRATION task that listed 5 shared files and a rationale but provided no actionable detail: no file-by-file integration tasks, no ordering constraints for configure_X(app) calls, no acceptance criteria, no test scenarios. This makes it impossible for create_issues_from_plan_swarm to generate a concrete, executable integration issue.",
+  "root_cause": "plan_phase_epic treats the integration wave as a coordination concern rather than a fully-specified task. The command generates detailed specifications for Wave 1 component tasks but produces only skeletal output for integration waves.",
+  "recommendation": "When generating integration waves, plan_phase_epic should produce the same level of detail as component tasks: (a) explicit per-file changes, (b) ordering constraints (middleware order matters), (c) acceptance criteria tied to E2E scenarios, (d) test plan. The integration wave is often the hardest to execute autonomously, so it needs MORE detail, not less.",
+  "affected_section": "Parallelization Strategy / Execution Waves generation in plan_phase_epic.md",
+  "evidence": {
+    "plan_sections_involved": ["Parallelization Strategy / Execution Waves"],
+    "agent_source": "architecture-strategist, parallelization-strategy-reviewer"
+  },
+  "plan_context": "5 parallel Wave 1 components with 5 shared files requiring integration in Wave 2",
+  "tags": ["integration-wave", "parallelization", "acceptance-criteria", "underspecified"]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "pl-lesson-20260302-001",
+  "created_at": "2026-03-02T23:00:00Z",
+  "command": "plan_phase_epic",
+  "status": "pending",
+  "category": "technology_mismatch",
+  "severity": "high",
+  "title": "Plan used wrong asyncpg parameter name for PgBouncer compatibility",
+  "description": "plan_phase_epic specified `prepared_statement_cache_size=0` in connect_args for PgBouncer compatibility. The actual asyncpg parameter is `statement_cache_size`, not `prepared_statement_cache_size`. Additionally, two other required settings were missing: `prepared_statement_name_func=lambda: ''` (forces unnamed prepared statements) and `poolclass=NullPool` (avoids dual-pooling with PgBouncer). The plan also included a pool_size formula that is irrelevant when NullPool is used.",
+  "root_cause": "plan_phase_epic relied on commonly-repeated but incorrect parameter name from generic PgBouncer guides rather than checking asyncpg's actual API documentation. It also did not fully research the NullPool requirement for PgBouncer transaction-mode pooling.",
+  "recommendation": "When generating plans involving PgBouncer + asyncpg, always specify all 3 required settings: statement_cache_size=0, prepared_statement_name_func=lambda:'', poolclass=NullPool. Verify parameter names against the actual asyncpg documentation, not generic guides. Remove any pool_size discussion when NullPool is specified.",
+  "affected_section": "Technical Strategy generation in plan_phase_epic.md — specifically the section that handles database/ORM configuration.",
+  "evidence": {
+    "plan_sections_involved": ["Technical Strategy / Architecture Considerations", "Performance Considerations", "Key Architectural Decisions"],
+    "agent_source": "performance-oracle, architecture-strategist, framework-docs-researcher"
+  },
+  "plan_context": "Infrastructure Foundation epic, Python 3.13 + SQLAlchemy 2.0 + asyncpg + PgBouncer",
+  "tags": ["pgbouncer", "asyncpg", "sqlalchemy", "nullpool", "prepared-statements"]
+}
