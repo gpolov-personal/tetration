@@ -462,6 +462,20 @@ Design decisions affect architecture and need user approval. Contextualize the q
 
 **Test quality principle:** Fewer meaningful tests > many trivial tests. A meaningful test validates a business decision, a real edge case, an integration boundary, or a security rule. A tautological test verifies what the code literally does (getter returns what was set, constructor assigns args). When in doubt: "If this test were deleted, would we risk a real bug?"
 
+**Decision guidelines by question type (Route A only):**
+
+- **`task_classification`**: Cross-reference the task description with the plan. If the task creates net-new functionality, it is `NEW_FEATURE`. If it modifies existing behavior, `ENHANCEMENT`. If it changes internal structure without changing behavior, `REFACTORING`. If it defines interfaces/contracts, `INTERFACE_ABSTRACTION`. When in doubt, prefer `NEW_FEATURE` (produces more comprehensive tests).
+
+- **`coverage_decision`**: Default to `SKIP` — only create or extend a test if the scenario tests genuinely different and meaningful behavior. Choose `EXTEND` only when the new scenario adds a meaningful edge case. Choose `CREATE` only when validating a distinct business concern. Reject scenarios trivially similar to existing coverage or that test framework behavior.
+
+- **`test_placement`**: Verify the proposed location is within the teammate's `test_files_owned`. If not, suggest an alternative within their ownership.
+
+- **`final_review`**: Review each proposed test individually against the test quality principle. Reject tautological or trivial tests — tell the teammate to remove them. A good final review results in fewer, stronger tests — not more.
+
+- **`design_decision`**: ALWAYS forward to user via Route B. Never decide design questions autonomously.
+
+**Escalation to user is ALLOWED:** Unlike teammates, you (the leader) CAN ask the user for input when you need it. If a decision could have significant architectural impact and you are not confident, escalate. You are the leader, not a background worker.
+
 ### Handling: `[BLOCKER]` Task
 
 A teammate hit a blocking issue. These are time-sensitive.
@@ -496,6 +510,18 @@ Collected for Phase 4. No response needed to the teammate.
    - If more non-integration waves remain → increment wave, spawn next wave
    - If only integration wave remains → proceed to Phase 4
 5. Request shutdown for the completed teammate
+
+### Handling: Teammate Idle Notification
+
+When a teammate finishes and goes idle, you receive an automatic notification.
+
+1. Check if the teammate's task is marked as completed
+2. If completed — expected. Request shutdown if not already done.
+3. If NOT completed — the teammate may have crashed or gotten stuck:
+   - Check working notes: `test -f swarm_working_notes/working-notes-<task.id>.md`
+   - If working notes exist (partially done): re-spawn with the same prompt — the worker will resume from the last checkpoint
+   - If no working notes: spawn fresh with the original prompt
+   - If crashes TWICE: create `[BLOCKER]`, escalate to user
 
 ### Handling: Stub Ready Message (from interface providers)
 
@@ -541,7 +567,18 @@ For each stub_file in `interface_providers`:
 - Read the file and check if it still contains only stub/interface markers (see "Stub Detection" in the `language-profiles` skill)
 - If a provider completed but the file still looks like a stub, escalate to user
 
-### 4.3 Spawn Integration Teammate
+### 4.3 Verify Consumer Phase C Completion (Safety Check)
+
+**Skip if no interface providers.**
+
+This is a safety net — consumers self-validate in their Phase C (see `code_from_validation_tests_swarm`), but this step confirms ALL consumers passed.
+
+1. Verify all consumer tasks with `interface_deps` have status "completed". If any consumer is still in_progress or stuck, check their messages for Phase C failures.
+2. As a belt-and-suspenders check, re-run consumer test suites (use the test runner from the `language-profiles` skill for the detected language).
+3. If tests fail here, it means a consumer's Phase C missed something. Create `[BLOCKER]` and escalate to user with failure details.
+4. If all pass, proceed to integration.
+
+### 4.4 Spawn Integration Teammate
 
 ```
 Spawn a teammate called "integrator" using model opus with this prompt:
@@ -582,7 +619,7 @@ INSTRUCTIONS:
 9. Send completion message to team-lead"
 ```
 
-### 4.4 Monitor and Verify Integration
+### 4.5 Monitor and Verify Integration
 
 Continue reacting to messages while the integrator works. When it signals completion:
 
@@ -590,7 +627,7 @@ Continue reacting to messages while the integrator works. When it signals comple
 2. If tests pass → proceed to Phase 5
 3. If tests fail → diagnose and fix, or escalate to user
 
-### 4.5 Shut Down Integrator
+### 4.6 Shut Down Integrator
 
 ```
 Ask integrator to shut down.
@@ -760,27 +797,3 @@ Before reporting completion:
 - [ ] All `[QUESTION]` and `[BLOCKER]` tasks resolved
 - [ ] Worktree path persisted in `[WAVE-STATUS]`
 - [ ] All teammates operated inside the worktree
-
----
-
-## Auto-Chain (claude-tasks integration)
-
-If `$CLAUDE_TASKS_API` is set, schedule `/review_swarm_pr` as the next command. The working_dir is the current worktree (same location). If not set, skip.
-
-```bash
-WORKTREE_ABS=$(pwd)
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: review_swarm_pr P<N>.E<M>",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:review_swarm_pr\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$WORKTREE_ABS'",
-    "enabled": true
-  }'
-```
-
-Print: `Auto-chain: /review_swarm_pr scheduled in 3 minutes.`

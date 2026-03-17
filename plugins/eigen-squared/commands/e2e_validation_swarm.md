@@ -323,13 +323,22 @@ Verify that infrastructure set up by other tasks in the E2E Testing epic is runn
 2. Attempt health checks on expected services (database, cache, queue, app server)
 3. Check connectivity to expected ports
 
-Classify what is available:
+Classify what is available and determine the test connection method:
+
 - **Full stack available**: App server + all backing services are running and healthy.
-  Tests should use real HTTP requests to `http://localhost:<port>`.
+  - Tests MUST use real HTTP/network requests to the running server (e.g., `http://localhost:<port>`)
+  - Do NOT use in-process test clients, test app factories, or embedded servers
+  - The test exercises the REAL deployed application, including routing, middleware, and serialization
+  - See "E2E Test Type Tooling" → `test_type: api` in the `language-profiles` skill for language-specific HTTP clients
+
 - **Partial infrastructure**: Some services running (e.g., DB, cache) but app server not available.
-  Tests may use in-process test clients connected to the REAL running services.
+  - In-process test clients are acceptable, BUT they MUST connect to the REAL running services (real database, real cache, real queue)
+  - NEVER substitute with SQLite, in-memory fakes, or mocked connections
+  - The test verifies business logic against real data stores, even if the HTTP layer is in-process
+
 - **No infrastructure**: Nothing is running.
-  Structure tests to work without infrastructure where possible, and note limitations.
+  - Report as `[BLOCKER]` — infrastructure should have been set up by other tasks in the E2E Testing epic
+  - Do NOT fall back to mocks or fakes. Wait for infrastructure to be available.
 
 #### Step 2: Handle Missing Infrastructure
 
