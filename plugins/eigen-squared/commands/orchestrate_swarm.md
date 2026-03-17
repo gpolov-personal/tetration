@@ -285,7 +285,7 @@ Otherwise, spawn all tasks in the wave simultaneously.
 For each task, spawn a teammate:
 
 ```
-Spawn a teammate called "worker-<task.id>" using model <task.model> with this prompt:
+Spawn a teammate called "worker-<task.id>" using model opus with this prompt:
 
 "You are a swarm worker assigned to task <task.id> under epic P<N>.E<M>.
 

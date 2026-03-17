@@ -278,6 +278,7 @@ labels: ["review-finding", "severity-<p1|p2|p3>"]
 phase: <N>
 epic_id: "P<N>.E<M>"
 priority: <P1/P2/P3>
+model: opus
 wave: <assigned_wave>
 blocked_by: []
 blocks: []
@@ -327,7 +328,7 @@ Update the epic's `task_ids` array to include the new review task IDs.
 ### 4.5 Update Manifest
 
 1. Mark original tasks (from previous waves) as `"status": "completed"`
-2. Append new review tasks with `"status": "pending"`
+2. Append new review tasks with `"status": "pending"` and `"model": "opus"`
 3. Append new execution waves
 4. Update `e2e_config.e2e_scenarios` for P1 findings
 
@@ -484,53 +485,3 @@ Next steps:
 - **Merge is manual**: after convergence, the user merges the PR. This brings all artifacts (code, tasks, manifest, pipeline_state, reports) to `$EIGEN_BRANCH`.
 - **Worktree cleanup is manual**: after merge, user removes the worktree and deletes the local branch.
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
-
----
-
-## Auto-Chain (claude-tasks integration)
-
-If `$CLAUDE_TASKS_API` is set, schedule the next command based on convergence. If not set, skip.
-
-**Determine next command:**
-
-- **If CONTINUE** (findings remain) → `/orchestrate_swarm` (same worktree, fixup tasks)
-- **If CONVERGED** → check if this is the E2E Testing epic (last epic in phase):
-  1. Read `eigen_initiative/phases/phase_N/epic_dag.json` from the worktree
-  2. Find the last epic in the `epics[]` array
-  3. **If current epic IS the E2E Testing epic** (`name == "E2E Testing"` AND `features == []`) → **STOP.** Phase is complete. Do NOT create a next task. Print: `Phase <N> complete. All epics including E2E Testing have converged. Manual testing and PR merges required.`
-  4. **If current epic is NOT the last** → schedule `/plan_phase_epic` for the next epic (working_dir back to `$EIGEN_ROOT`)
-
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-# If CONTINUE (fixup needed):
-WORKTREE_ABS=$(pwd)
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: orchestrate_swarm P<N>.E<M> (fixup)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:orchestrate_swarm\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$WORKTREE_ABS'",
-    "enabled": true
-  }'
-
-# If CONVERGED + NOT E2E epic (more epics to do — plan the next one):
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: plan_phase_epic (next epic)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:plan_phase_epic\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true
-  }'
-
-# If CONVERGED + IS E2E epic:
-# DO NOT create any task. Print phase completion message.
-```
-
-Print (if chaining): `Auto-chain: /<next_command> scheduled in 3 minutes.`
-Print (if stopping): `Phase <N> complete. Autonomous pipeline finished. Review and merge PRs manually.`
