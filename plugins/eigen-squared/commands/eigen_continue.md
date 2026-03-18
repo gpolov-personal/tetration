@@ -149,7 +149,16 @@ Read `phase_e2e_config.json` to build the recipe:
    - <scenario.name>: <scenario.description>
      Acceptance: <scenario.acceptance_criteria>
 
-7. CLEANUP (after testing):
+7. CAPTURE LEARNINGS:
+   Review the E2E Testing epic's PR for integration patterns and infrastructure
+   gotchas. These findings — from real services, real data, cross-component flows —
+   are the most valuable learnings for future phases.
+
+   The review_swarm_pr command has already captured lessons from the E2E epic's review
+   (all findings, not just P1). After completing all phases, run /compound_improve to
+   feed these lessons back into the command prompts for permanent improvement.
+
+8. CLEANUP (after testing):
    <teardown commands if infrastructure was set up>
 
 When testing is complete, run /eigen_continue again to confirm and start Phase <N+1>.
