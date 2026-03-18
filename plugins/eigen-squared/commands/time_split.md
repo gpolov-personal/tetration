@@ -493,6 +493,7 @@ If `$CLAUDE_TASKS_API` is set (e.g., `http://localhost:8080`), automatically sch
 
 ```bash
 NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
+# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
 curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
   -H "Content-Type: application/json" \
   -d '{
@@ -501,8 +502,10 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
     "cron_expr": "",
     "scheduled_at": "'$NEXT_RUN'",
     "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true
+    "enabled": true,
+    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
   }'
 ```
+
 
 Print: `Auto-chain: /deepen_time_split scheduled in 3 minutes.`

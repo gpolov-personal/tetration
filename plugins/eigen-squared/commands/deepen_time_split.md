@@ -568,6 +568,7 @@ If `$CLAUDE_TASKS_API` is set, automatically schedule the next command. If not s
 NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
 
 # If CONTINUE:
+# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
 curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
   -H "Content-Type: application/json" \
   -d '{
@@ -576,10 +577,12 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
     "cron_expr": "",
     "scheduled_at": "'$NEXT_RUN'",
     "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true
+    "enabled": true,
+    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
   }'
 
 # If CONVERGED:
+# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
 curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
   -H "Content-Type: application/json" \
   -d '{
@@ -588,8 +591,10 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
     "cron_expr": "",
     "scheduled_at": "'$NEXT_RUN'",
     "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true
+    "enabled": true,
+    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
   }'
 ```
+
 
 Print: `Auto-chain: /<next_command> scheduled in 3 minutes.`

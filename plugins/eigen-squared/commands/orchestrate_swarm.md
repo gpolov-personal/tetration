@@ -797,3 +797,29 @@ Before reporting completion:
 - [ ] All `[QUESTION]` and `[BLOCKER]` tasks resolved
 - [ ] Worktree path persisted in `[WAVE-STATUS]`
 - [ ] All teammates operated inside the worktree
+
+---
+
+## Auto-Chain (claude-tasks integration)
+
+If `$CLAUDE_TASKS_API` is set, schedule `/review_swarm_pr` as the next command. The working_dir is the current worktree (same location). If not set, skip.
+
+```bash
+WORKTREE_ABS=$(pwd)
+NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
+
+# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
+curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "eigen: review_swarm_pr P<N>.E<M>",
+    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:review_swarm_pr\"). Follow all its instructions completely.",
+    "cron_expr": "",
+    "scheduled_at": "'$NEXT_RUN'",
+    "working_dir": "'$WORKTREE_ABS'",
+    "enabled": true,
+    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
+  }'
+```
+
+Print: `Auto-chain: /review_swarm_pr scheduled in 3 minutes.`

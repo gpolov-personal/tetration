@@ -622,6 +622,7 @@ If `$CLAUDE_TASKS_API` is set, schedule `/orchestrate_swarm` as the next command
 WORKTREE_ABS=$(cd $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M> && pwd)
 NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
 
+# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
 curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
   -H "Content-Type: application/json" \
   -d '{
@@ -630,7 +631,8 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
     "cron_expr": "",
     "scheduled_at": "'$NEXT_RUN'",
     "working_dir": "'$WORKTREE_ABS'",
-    "enabled": true
+    "enabled": true,
+    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
   }'
 ```
 

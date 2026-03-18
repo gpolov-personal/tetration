@@ -188,6 +188,12 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
     "feedback_consumed": false,
     "findings_summary": { "high": 0, "medium": 0, "low": 0 }
   },
+  "phase_review": {
+    "status": "not_started|testing|approved",
+    "summary_presented_at": null,
+    "approved_at": null,
+    "testing_recipe": null
+  },
   "plans": {}
 }
 ```
@@ -254,6 +260,12 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
 - `review_reports` is an array of review report paths, one per iteration.
 
 Both `orchestrate_swarm` and `review_swarm_pr` run from inside the same worktree on the `feat/P<N>.E<M>` branch. All pipeline_state updates are committed to this branch and merge to `$EIGEN_BRANCH` when the PR is merged.
+
+`phase_review` tracks the phase-level review and transition lifecycle:
+- Set to `"testing"` by `/eigen_continue` (Mode 1) when it presents the phase summary and testing recipe to the user.
+- Set to `"approved"` by `/eigen_continue` (Mode 2) when the user confirms manual testing passed.
+- `testing_recipe` stores the generated testing instructions so they can be re-displayed.
+- The pipeline does NOT cross phase boundaries without `phase_review.status == "approved"`.
 
 ---
 
