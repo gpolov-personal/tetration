@@ -492,6 +492,16 @@ Next steps:
      to decompose Phase 1 into parallel epics for swarm execution.
 ```
 
+### 2.5 Commit Pipeline Artifacts
+
+Commit all pipeline artifacts to `$EIGEN_BRANCH`:
+
+```bash
+cd $EIGEN_ROOT
+git add eigen_initiative/phases/
+git commit -m "pipeline: time_split — <phase_count> phases generated"
+```
+
 ---
 
 ## Auto-Chain (claude-tasks integration)

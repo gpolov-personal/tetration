@@ -422,6 +422,14 @@ Next steps:
     Run /compound_improve to apply accumulated lessons.
 ```
 
+### Commit Pipeline Artifacts
+
+```bash
+cd $EIGEN_ROOT
+git add eigen_initiative/phases/phase_N/epic_M/feedback/ eigen_initiative/phases/pipeline_state.json
+git commit -m "pipeline: deepen plan P<N>.E<M> — iteration <N>, <CONVERGED|CONTINUE>"
+```
+
 ---
 
 ## Key Rules

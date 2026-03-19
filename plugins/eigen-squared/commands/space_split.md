@@ -663,6 +663,16 @@ Next steps:
   3. Then /create_issues_from_plan_swarm → /orchestrate_swarm → /review_swarm_pr
 ```
 
+### Commit Pipeline Artifacts
+
+Commit all epic artifacts and pipeline state to `$EIGEN_BRANCH`:
+
+```bash
+cd $EIGEN_ROOT
+git add eigen_initiative/phases/phase_N/
+git commit -m "pipeline: space_split phase <N> — <epic_count> epics created"
+```
+
 ---
 
 ## Auto-Chain (claude-tasks integration)
