@@ -96,6 +96,21 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
    - Progress tracking
 3. If no previous feedback exists, this is the first deepen iteration — proceed with fresh analysis.
 
+### Finding Matching Protocol (iteration 2+)
+
+When comparing current findings against previous iteration findings, use **feature-ID matching** — not title or description matching:
+
+1. For each current finding, extract all feature IDs (F01, F02...) and phase numbers mentioned in `description`, `recommendation`, and `affected_output`.
+2. For each previous finding, extract the same feature IDs and phase numbers.
+3. Two findings **match** if they share at least one feature ID AND belong to the same `category` (e.g., both are `cross_phase_dep_error` about F09).
+4. Classify matched findings:
+   - **Persisting**: current finding matches a previous finding that was NOT addressed → add previous ID to `findings_persisting`
+   - **Regressed**: current finding matches a previous finding that WAS addressed (appeared in `findings_addressed` of the previous comparison) → add to `findings_regressed`
+   - **Oscillating**: current finding matches a finding that has appeared in 3+ non-consecutive iterations, or has been in `findings_regressed` at least once → add to `oscillating_findings`
+5. Findings with NO feature-ID match to any previous finding → `new_findings`.
+
+This protocol is deterministic: feature IDs (F01, F02...) are stable across reformulations, unlike titles and descriptions which the LLM may rephrase each iteration.
+
 ### Convergence Decision Protocol
 
 After collecting all findings (Phase 5), apply these convergence rules **in order**:
@@ -107,12 +122,15 @@ After collecting all findings (Phase 5), apply these convergence rules **in orde
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
    - Set `convergence.iteration_limit_reached` to `true` in the feedback file.
 
-3. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
+3. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same features keep appearing in findings across iterations without resolution).
+   - Rationale: "Stagnation detected. The same features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by downstream commands (bootstrap, space_split)."
+
+4. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Oscillation = a finding was fixed in iteration N, reappeared in N+1, fixed again in N+2 (or a finding alternates between accept/reject across iterations).
    - Rationale: "Oscillation detected on findings [<ids>]. Accepting current state to break the cycle."
    - Set `convergence.oscillation_detected` to `true` and record `oscillation_details` in the feedback file.
 
-4. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated.
+5. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
    - Decision: `"continue"`
 
 ### Downstream Impact Assessment
@@ -385,6 +403,14 @@ For each finding, assign:
 - Group by affected command phase.
 - Filter out `false_positive` findings.
 
+### 5.3.1 Narrative vs Structural Assessment
+
+For each finding that flags a missing structural entry (e.g., feature not in Cross-Phase Dependencies table, cluster assignment inconsistent, E2E summary missing features):
+
+1. **Check if the concern IS described in narrative sections** of the phase manifest (context paragraphs, whitebox reference sections). Search for the feature ID, dependency, or concept in the full manifest text.
+2. **If narratively present but structurally absent**: the finding is valid (the structural section MUST be fixed), but **downgrade severity to medium** if it was classified as high. The author understands the requirement — they just failed to update the structural table/YAML. Include explicit `structural_edits` in the finding's `recommendation` showing exactly which table rows or YAML fields to add or modify.
+3. **If neither narratively nor structurally present**: keep original severity — the manifest genuinely missed this concern.
+
 ### 5.4 Write Iteration Feedback File
 
 Write the feedback to `$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json`. **Do NOT modify phase manifests or initiative_summary.json** — feedback is always a separate file.
@@ -429,6 +455,11 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/feedback/
       "affected_output": "<file path of the output file with the issue>",
       "affected_section": "<section within that file>",
       "recommendation": "<specific action for time_split to take>",
+      "structural_edits": [
+        "<exact edit 1: e.g., 'Add row to Phase 2 Feature Summary Table: F09 | Live Preview | P1 | F03 (cross-phase) | C2-RUNTIME'>",
+        "<exact edit 2: e.g., 'Add to Phase 2 Cross-Phase Dependencies: F09 (Phase 2) depends on F03 (Phase 1)'>",
+        "<exact edit 3: e.g., 'Update Phase 2 YAML frontmatter feature_count from 5 to 6'>"
+      ],
       "actionable_by": "time_split",
       "downstream_impact": {
         "affects_commands": ["bootstrap", "space_split"],
