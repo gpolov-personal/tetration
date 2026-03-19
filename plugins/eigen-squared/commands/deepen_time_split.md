@@ -584,6 +584,14 @@ Next steps:
     Run /compound_improve to apply accumulated lessons to the time_split command.
 ```
 
+### Commit Pipeline Artifacts
+
+```bash
+cd $EIGEN_ROOT
+git add eigen_initiative/phases/feedback/ eigen_initiative/phases/pipeline_state.json
+git commit -m "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>"
+```
+
 ---
 
 ## Auto-Chain (claude-tasks integration)

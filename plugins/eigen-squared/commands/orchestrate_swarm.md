@@ -108,6 +108,8 @@ Each phase has a mandatory **E2E Testing epic** (created by `/space_split`) as t
 
 When orchestrate_swarm runs for the E2E Testing epic, it operates exactly like any other epic — workers create tasks (infrastructure setup, E2E test files) and the integration phase wires them together. There is no special E2E phase inside the orchestrator.
 
+**The E2E Testing epic is the PRIMARY learning opportunity for the phase.** Real infrastructure, real connections, cross-component failures, and integration patterns discovered here are the most valuable lessons for future phases. Workers in this epic should document any integration surprises, infrastructure gotchas, and cross-component patterns thoroughly in their working notes. All findings from this epic's review (P1, P2, and P3) are captured as lessons — unlike feature epics where only P1 findings become lessons.
+
 For feature epics, the workers' validation tests (from the TDD workflow) serve as the primary quality gate. The full phase-level E2E suite is written and run by the E2E Testing epic's swarm.
 
 ---

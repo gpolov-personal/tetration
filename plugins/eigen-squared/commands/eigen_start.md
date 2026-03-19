@@ -88,6 +88,30 @@ What is the default branch for this project?
 Options: main / dev / master / <custom>
 ```
 
+After the user provides EIGEN_BRANCH, verify it exists locally:
+```bash
+git -C $EIGEN_ROOT branch --list <user's value>
+```
+
+**If the branch does NOT exist locally:**
+```
+Branch '<branch>' does not exist locally.
+
+Available local branches:
+  <list from: git -C $EIGEN_ROOT branch --list>
+
+Would you like to:
+  1. Create '<branch>' from the current branch (<current branch name>)
+  2. Create '<branch>' from another branch (I'll list them)
+  3. Enter a different branch name
+```
+
+- **Option 1**: `git -C $EIGEN_ROOT checkout -b <branch>` then `git -C $EIGEN_ROOT checkout -`
+- **Option 2**: list local branches, ask user to pick, then `git -C $EIGEN_ROOT checkout -b <branch> <selected>` then `git -C $EIGEN_ROOT checkout -`
+- **Option 3**: re-ask for branch name and re-verify
+
+**If the branch exists** → proceed.
+
 **CLAUDE_TASKS_API:**
 ```
 What is the claude-tasks API URL?

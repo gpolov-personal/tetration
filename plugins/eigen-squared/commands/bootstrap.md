@@ -561,6 +561,16 @@ Next steps:
      to decompose Phase <N> into parallel epics for swarm execution.
 ```
 
+### 5.3 Commit Pipeline Artifacts
+
+Commit bootstrap artifacts and pipeline state to `$EIGEN_BRANCH`:
+
+```bash
+cd $EIGEN_ROOT
+git add eigen_initiative/phases/phase_N/
+git commit -m "pipeline: bootstrap phase <N> — foundation created"
+```
+
 ---
 
 ## Auto-Chain (claude-tasks integration)

@@ -382,11 +382,19 @@ git push origin feat/P<N>.E<M>
 
 ## Phase 6: Lesson Extraction
 
-### 6.1 Generate Lessons
+### 6.1 Determine Lesson Scope
 
-For each P1 finding, create a lesson JSON.
+Check if the current epic is the **E2E Testing epic** (read `epic_dag.json` from the worktree — the E2E epic has `name == "E2E Testing"` and `features == []`).
 
-### 6.2 Deduplicate and Write
+- **If E2E Testing epic**: create lessons for **ALL findings (P1, P2, and P3)**. The E2E Testing epic is the most critical learning opportunity in each phase — every finding here (infrastructure failures, cross-component bugs, integration patterns) is a systemic insight that improves future phases. Do not skip any severity.
+
+- **If regular feature epic**: create lessons for **P1 findings only**.
+
+### 6.2 Generate Lessons
+
+For each finding in scope (determined by 6.1), create a lesson JSON.
+
+### 6.3 Deduplicate and Write
 
 Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`.
 

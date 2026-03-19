@@ -30,6 +30,10 @@ This command receives its epic ID via the orchestrator's spawn prompt (passed as
 #$ARGUMENTS
 </parent_issue_number>
 
+### Critical Learning Opportunity
+
+This command runs within the **E2E Testing epic** — the most critical learning opportunity in each phase. Every finding here (infrastructure failures, cross-component bugs, integration patterns) should be documented thoroughly in your working notes because it feeds into the lesson system for improving future phases. All findings from this epic's review (P1, P2, and P3) are captured as lessons — unlike feature epics where only P1 findings become lessons. Be detailed about WHY things fail, not just WHAT fails.
+
 ### Testing Philosophy — NON-NEGOTIABLE
 
 This applies to ALL E2E tests written by this command:

@@ -45,7 +45,16 @@ This command requires two environment variables:
        export EIGEN_BRANCH=main
      ```
 3. Verify `$EIGEN_ROOT` exists and is a directory.
-4. **Verify agent teams are enabled** (needed downstream by `/orchestrate_swarm`). Check:
+4. **Verify `$EIGEN_BRANCH` exists locally.** Check:
+   ```bash
+   git -C $EIGEN_ROOT branch --list $EIGEN_BRANCH
+   ```
+   If empty (branch does not exist locally) → **STOP.** Print:
+   ```
+   ERROR: Branch '$EIGEN_BRANCH' does not exist locally in $EIGEN_ROOT.
+   Verify the branch name or create it before running the pipeline.
+   ```
+5. **Verify agent teams are enabled** (needed downstream by `/orchestrate_swarm`). Check:
    ```bash
    echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-NOT_SET}"
    ```
@@ -56,7 +65,7 @@ This command requires two environment variables:
      "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
      "teammateMode": "tmux"
    ```
-5. Verify `$EIGEN_ROOT/eigen_initiative` exists and is a directory. If not → **STOP.** Print:
+6. Verify `$EIGEN_ROOT/eigen_initiative` exists and is a directory. If not → **STOP.** Print:
    ```
    ERROR: Initiative directory not found at $EIGEN_ROOT/eigen_initiative
    Create it and place the initiative documents inside:
@@ -503,6 +512,16 @@ Next steps:
      to create the project foundation before parallel execution.
   3. Run /space_split
      to decompose Phase 1 into parallel epics for swarm execution.
+```
+
+### 2.5 Commit Pipeline Artifacts
+
+Commit all pipeline artifacts to `$EIGEN_BRANCH`:
+
+```bash
+cd $EIGEN_ROOT
+git add eigen_initiative/phases/
+git commit -m "pipeline: time_split — <phase_count> phases generated"
 ```
 
 ---

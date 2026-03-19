@@ -415,6 +415,14 @@ Next steps:
   2. Once converged, run /create_issues_from_plan_swarm to generate tasks.
 ```
 
+### Commit Pipeline Artifacts
+
+```bash
+cd $EIGEN_ROOT
+git add eigen_initiative/phases/phase_N/epic_M/ eigen_initiative/phases/pipeline_state.json
+git commit -m "pipeline: plan P<N>.E<M> — plan created"
+```
+
 ---
 
 ## Pre-Submission Checklist
