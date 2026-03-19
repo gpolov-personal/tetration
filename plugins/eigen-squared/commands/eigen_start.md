@@ -294,12 +294,40 @@ git commit -m "chore: add eigen-squared pipeline settings"
 Print: `Settings committed to $EIGEN_BRANCH — worktrees will inherit pipeline configuration.`
 
 **If gitignored** (exit code 0 — git DOES ignore it):
-Do NOT force-add. Print:
+Do NOT force-add. **STOP and ask the user** using AskUserQuestion:
+
 ```
-Note: .claude/settings.json is gitignored. Worktrees will NOT inherit settings
-from the branch. The /create_issues_from_plan_swarm command will copy settings
-into each worktree as a fallback.
+WARNING: .claude/settings.json is in .gitignore
+
+This will cause problems in later pipeline stages — worktrees created by
+/create_issues_from_plan_swarm will NOT inherit pipeline settings
+(EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, plugin configuration).
+
+There is a defensive fallback in /create_issues_from_plan_swarm that copies
+settings into each worktree, but the recommended fix is to allow
+settings.json in git.
+
+Options:
+  1. Fix it now — add '!.claude/settings.json' exception to .gitignore,
+     then commit settings to the branch
+  2. Continue anyway — rely on the create_issues fallback
+  3. Stop — I'll fix .gitignore manually and re-run /eigen_start
 ```
+
+**If option 1** (fix now):
+```bash
+echo '!.claude/settings.json' >> $EIGEN_ROOT/.gitignore
+cd $EIGEN_ROOT
+git add .gitignore .claude/settings.json
+git commit -m "chore: add eigen-squared pipeline settings (gitignore exception)"
+```
+Print: `Fixed. .claude/settings.json is now committed — worktrees will inherit pipeline configuration.`
+
+**If option 2** (continue):
+Print: `Continuing. The /create_issues_from_plan_swarm fallback will copy settings into each worktree.`
+
+**If option 3** (stop):
+**STOP.** Print: `Pipeline launch cancelled. Fix .gitignore and re-run /eigen_start.`
 
 ---
 
