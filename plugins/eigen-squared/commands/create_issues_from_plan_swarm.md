@@ -525,12 +525,16 @@ cp $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/tasks/*.md \
 cp $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md \
    $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/eigen_initiative/phases/phase_N/epic_M/
 
-# Copy .claude/settings.json so the worktree inherits EIGEN_ROOT, EIGEN_BRANCH,
-# CLAUDE_TASKS_API, plugin config, and teammate mode from the parent project.
-# Without this, orchestrate_swarm and review_swarm_pr will fail inside the worktree.
-mkdir -p $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude
-cp $EIGEN_ROOT/.claude/settings.json \
-   $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude/settings.json
+# Defensive fallback: if .claude/settings.json was committed to $EIGEN_BRANCH
+# (by /eigen_start), the worktree already has it. But if .claude/ was gitignored,
+# the worktree won't have it — copy it now so orchestrate_swarm and review_swarm_pr
+# can read EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, and plugin config.
+if [ ! -f $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude/settings.json ]; then
+  mkdir -p $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude
+  cp $EIGEN_ROOT/.claude/settings.json \
+     $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude/settings.json
+  echo "Copied .claude/settings.json to worktree (was not inherited from branch)."
+fi
 
 # Commit in the worktree
 cd $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>

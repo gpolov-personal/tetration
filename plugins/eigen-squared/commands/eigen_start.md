@@ -251,6 +251,34 @@ Store the resolved time as the scheduled start.
 
 ---
 
+## Step 5.5: Commit Settings to $EIGEN_BRANCH (if not gitignored)
+
+Worktrees created by `/create_issues_from_plan_swarm` inherit files from `$EIGEN_BRANCH`. If `.claude/settings.json` is committed to `$EIGEN_BRANCH`, every worktree will have the pipeline env vars automatically.
+
+```bash
+cd $EIGEN_ROOT
+# Check if .claude/settings.json is gitignored
+git check-ignore -q .claude/settings.json 2>/dev/null
+```
+
+**If NOT gitignored** (exit code 1 — git does NOT ignore it):
+```bash
+git add .claude/settings.json
+git commit -m "chore: add eigen-squared pipeline settings"
+```
+
+Print: `Settings committed to $EIGEN_BRANCH — worktrees will inherit pipeline configuration.`
+
+**If gitignored** (exit code 0 — git DOES ignore it):
+Do NOT force-add. Print:
+```
+Note: .claude/settings.json is gitignored. Worktrees will NOT inherit settings
+from the branch. The /create_issues_from_plan_swarm command will copy settings
+into each worktree as a fallback.
+```
+
+---
+
 ## Step 6: Print Pre-Launch Summary
 
 ```
