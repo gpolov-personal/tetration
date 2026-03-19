@@ -8,11 +8,18 @@ The plugin is **language-agnostic** — it supports Python, TypeScript, Go, Rust
 
 ## Environment Setup
 
-Two environment variables are required for ALL commands:
+Required environment variables for ALL commands:
 
 ```bash
 export EIGEN_ROOT=/path/to/your/project     # Target project root
 export EIGEN_BRANCH=main                      # Default branch
+export CLAUDE_TASKS_API=http://localhost:8080  # Required for autonomous pipeline scheduling
+```
+
+Optional environment variable for Telegram notifications:
+
+```bash
+export EIGEN_TELEGRAM_CHAT_ID=<your_chat_id>  # Enables pipeline progress notifications via Telegram
 ```
 
 Agent teams must be enabled (checked on first command):
@@ -64,9 +71,9 @@ Takes the initiative documents from `$EIGEN_ROOT/eigen_initiative/` and splits t
 **Output:**
 - `phases/initiative_summary.json` — metadata, DAG stats
 - `phases/phase_N_manifest.md` — one per phase, with features, specs, dependencies
-- `phases/pipeline_state.json` — single source of truth for the entire pipeline
+- `phases/pipeline_state.json` — created/updated on exit as pipeline state management (single source of truth for the entire pipeline)
 
-**Review:** `/deepen_time_split` reviews the phase split for structural, content, and strategic issues. Iterates with `/time_split` until converged (all high+medium findings resolved, max 8 iterations).
+**Review:** `/deepen_time_split` reviews the phase split for structural, content, and strategic issues. The deepen command owns convergence decisions (all high+medium findings resolved, max 8 iterations). Each command auto-chains to the next via `$CLAUDE_TASKS_API` when set.
 
 ---
 
@@ -79,9 +86,14 @@ Creates the structural scaffolding in `$EIGEN_ROOT` so the swarm has a compiling
 
 - Directory structure from phase domains
 - Shared entity stubs (cross-domain types, typed but empty)
+- API contracts / OpenAPI stubs and message contract / typed schema stubs
 - Package manifests + quality config (linter, type checker, test runner)
+- Package index files (`__init__.py`, `index.ts`, etc.)
 - Basic CI (lint + type-check + test, no E2E)
 - System prerequisites check (JDK, Android SDK, etc.)
+- `.gitignore`
+
+Bootstrap is **language-aware** — it uses the `language-profiles` skill for detection, toolchain resolution, and multi-language project support. It computes a delta (required - existing) and applies changes incrementally, optionally using parallel sub-agents for large deltas. A verification gate with up to 3 retry cycles ensures the scaffolding compiles cleanly.
 
 **What bootstrap does NOT do:** No Docker, no database migrations, no E2E infrastructure, no Dockerfiles. These are handled by the feature epics and the E2E Testing epic.
 
@@ -152,6 +164,11 @@ Decomposes the plan into **file-disjoint task files** and a **swarm-manifest.jso
 - `phases/phase_N/epic_M/tasks/task_001.md` ... `task_INT.md`
 - `phases/phase_N/epic_M/swarm-manifest.json`
 - Git worktree at `$EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/`
+- Epic metadata update (`task_ids` array in epic.md frontmatter)
+- Initiative index update (`_index.md`)
+- Pipeline state update (`swarm_execution` tracking object for downstream commands)
+
+The manifest, task files, and plan are **copied and committed inside the worktree** so the swarm operates on a self-contained branch.
 
 **Next step:** The user must `cd` into the worktree and launch Claude Code from there.
 
@@ -164,21 +181,26 @@ Decomposes the plan into **file-disjoint task files** and a **swarm-manifest.jso
 
 The **Staff Engineer / Tech Lead** that coordinates parallel swarm execution. It:
 
-1. Verifies it's inside the worktree (`.git` is a file, branch matches `feat/P<N>.E<M>`)
+1. Verifies it's inside the worktree (`.git` is a file, branch matches `feat/P<N>.E<M>`) — both leader and each worker verify independently
 2. Reads the manifest and validates it
-3. Detects tech stack and discovers relevant skills
+3. Detects tech stack via `language-profiles` skill and discovers relevant domain skills
 4. Creates a swarm team
 5. Spawns workers wave by wave — each runs TDD:
    - Phase A: `design_validation_tests_swarm` — design tests first
    - Phase B: `code_from_validation_tests_swarm` — implement code to pass tests
+   - Phase C (consumers only): re-validate against real provider implementations after stubs are replaced
 6. Handles questions, blockers, integration requests as Staff Engineer
-7. Runs integration phase (shared files)
+7. Runs integration phase (shared files) — verifies stub replacement and consumer Phase C completion
 8. Creates PR from `feat/P<N>.E<M>` → `$EIGEN_BRANCH`
 9. Stores PR info in pipeline_state.json
 
-**Testing philosophy (enforced in all workers):** Real dependencies, minimal mocks, ALWAYS. Never SQLite as substitute, never in-memory fakes, never monkeypatch.
+**Stub/interface lifecycle:** Interface providers create stubs (Protocol/ABC definitions) before Phase A. Consumers import directly from the stub file path (not via package). When providers complete implementation, they overwrite the stub entirely. Consumers then re-validate in Phase C against the real implementation.
 
-**Working notes:** Each worker maintains `swarm_working_notes/working-notes-<task.id>.md` with checkpoints. On crash, re-spawned workers resume from the last checkpoint.
+**E2E Testing epic:** When running for the E2E Testing epic (last epic in every phase), the orchestrator operates exactly like any other epic — workers create infrastructure setup tasks and E2E test files. There is no special E2E phase inside the orchestrator.
+
+**Testing philosophy (enforced in all workers):** Real dependencies, minimal mocks, ALWAYS. Never SQLite as substitute, never in-memory fakes, never monkeypatch. Workers must only `git add` owned files — never `git add .` or `git add -A`.
+
+**Working notes:** Each worker maintains `swarm_working_notes/working-notes-<task.id>.md` with checkpoints. On crash, re-spawned workers resume from the last checkpoint (max 2 crashes per task before user escalation).
 
 **Compaction resilience:** Leader state is persisted in `[WAVE-STATUS]`, `[STUB-READY]`, `[INTEGRATION-REQUEST]` tasks. Full state can be reconstructed from `TaskList()` at any time.
 
@@ -193,11 +215,14 @@ Performs a **scope-aware PR review** and iterates until ALL findings are resolve
 
 1. Verifies worktree, parses epic from branch name
 2. Fetches PR diff, filters to scope files only
-3. Spawns review agents in parallel (security, architecture, simplicity, data integrity, test practices, language-specific)
-4. Triages findings (P1 critical, P2 important, P3 nice-to-have)
-5. **Convergence decision:** converge if zero P1+P2+P3 findings, max 8 iterations
+3. Spawns review agents in parallel:
+   - **Always:** security-sentinel, architecture-strategist, code-simplicity-reviewer, data-integrity-guardian, test-practices-researcher
+   - **Conditional:** performance-oracle (if acceptance criteria mention performance or diff > 500 lines), pattern-recognition-specialist (if diff > 500 lines), language-specific skills (from language-profiles)
+4. Triages findings (P1 critical, P2 important, P3 nice-to-have) with cross-iteration tracking (Addressed, Persistent, Regressed, New)
+5. **Convergence decision:** converge if zero P1+P2+P3 findings, max 8 iterations, or oscillation detected (finding fixed in iteration N but reappeared in N+1) with no non-oscillating findings remaining
 6. If not converged: creates fixup tasks (`P<N>.E<M>.R<K>`), updates manifest, pushes
 7. Posts structured review on the PR with inline comments
+8. Extracts lessons from P1 findings to `eigen_lessons/review_swarm_pr/`
 
 **The convergence loop:**
 ```
@@ -226,7 +251,7 @@ Every command auto-detects its target from `pipeline_state.json` or the worktree
 - Branches: `feat/P<N>.E<M>`
 
 ### Iteration-Convergence
-Every main command has a deepen counterpart. The loop: main → deepen → main → deepen → converge. Convergence requires ALL high+medium findings resolved. Max 8 iterations. Oscillation detection breaks cycles.
+Every main command has a deepen counterpart. The loop: main → deepen → main → deepen → converge. Convergence requires ALL high+medium findings resolved. Max 8 iterations (uniform across all deepen commands). Oscillation detection breaks cycles (finding fixed then reappeared). Deepen commands own the convergence decision — main commands accept feedback and regenerate.
 
 ### E2E Testing Epic
 Each phase has a mandatory E2E Testing epic (last in the DAG). It writes the full E2E test suite and sets up infrastructure (Docker, emulators). It's just another epic — no special phases in the orchestrator.
@@ -235,7 +260,10 @@ Each phase has a mandatory E2E Testing epic (last in the DAG). It writes the ful
 Swarm execution happens in a git worktree on `feat/P<N>.E<M>`, branched from `$EIGEN_BRANCH`. All code, tasks, manifests, and pipeline state are committed to this branch. The PR merges everything to `$EIGEN_BRANCH`.
 
 ### Real Dependencies, Minimal Mocks
-Enforced across all workers: use real database connections, real HTTP calls, real file systems. Mocks ONLY when genuinely unavailable.
+Enforced across all workers: use real database connections, real HTTP calls, real file systems. Mocks ONLY when genuinely unavailable (e.g., third-party APIs with no sandbox). Never SQLite as substitute for PostgreSQL, never in-memory fakes, never monkeypatched connections.
+
+### Auto-Chaining
+When `$CLAUDE_TASKS_API` is set, each command automatically schedules the next command in the pipeline (with a 3-minute delay). This enables fully autonomous pipeline execution from `/time_split` through `/review_swarm_pr`. Optional Telegram notifications via `$EIGEN_TELEGRAM_CHAT_ID`.
 
 ---
 
@@ -257,12 +285,14 @@ $EIGEN_ROOT/
     phases/
       pipeline_state.json                        # Single source of truth
       initiative_summary.json                    # time_split output
+      feedback/                                  # Initiative-level feedback
+        deepen_time_split_feedback.json
       phase_1_manifest.md                        # time_split output
       phase_1/
         bootstrap-report.json                    # bootstrap output
         epic_dag.json                            # space_split output
         phase_e2e_config.json                    # space_split output
-        feedback/                                # Deepen feedback files
+        feedback/                                # Phase-level feedback
           deepen_bootstrap_feedback.json
           deepen_space_split_feedback.json
         epic_1/
@@ -270,7 +300,7 @@ $EIGEN_ROOT/
           plan.md                                # plan_phase_epic output (strategy)
           swarm-manifest.json                    # create_issues output
           review_report_iteration_1.md           # review_swarm_pr output
-          feedback/
+          feedback/                              # Epic-level feedback
             deepen_plan_phase_epic_feedback.json
           tasks/
             task_001.md                          # create_issues output
@@ -286,6 +316,9 @@ $EIGEN_ROOT/
   .claude/
     worktrees/
       feat-P1.E1/                               # Worktree for epic 1
+        swarm_working_notes/                     # Worker crash recovery checkpoints
+          working-notes-P1.E1.T1.md
+          working-notes-P1.E1.T2.md
       feat-P1.E2/                               # Worktree for epic 2
 ```
 
@@ -293,14 +326,16 @@ $EIGEN_ROOT/
 
 ## Skills
 
-The plugin includes two key skills loaded by commands at runtime:
+The plugin bundles 25 skills. Two are **core pipeline skills** loaded by commands at runtime:
 
-- **`pipeline-state-schema`** — Full schema definition for `pipeline_state.json`. Loaded by all commands that read/write pipeline state.
-- **`language-profiles`** — Language detection, toolchain mappings, adaptation notes, system prerequisites, and stack-specific skill lookup. Loaded by language-aware commands (bootstrap, orchestrate_swarm, worker skills).
+- **`pipeline-state-schema`** — Full schema definition for `pipeline_state.json`. Loaded by all commands that read/write pipeline state (time_split, bootstrap, space_split, plan_phase_epic, all deepen commands, eigen_start, eigen_continue).
+- **`language-profiles`** — Language detection, toolchain mappings, adaptation notes, system prerequisites, and stack-specific skill lookup. Loaded by language-aware commands (bootstrap, orchestrate_swarm, create_issues_from_plan_swarm, plan_phase_epic, review_swarm_pr, all worker commands).
+
+The remaining 23 skills are **domain skills** available for workers and review agents at runtime. These include: orchestrating-swarms, python-expert, python-testing-patterns, composition-patterns, react-best-practices, react-native-skills, senior-architect, security-best-practices, frontend-design, csharp-pro, agent-browser, agent-native-architecture, brainstorming, document-review, git-worktree, web-design-guidelines, and others. Workers and review agents load relevant skills based on tech stack detection via `language-profiles`.
 
 ---
 
 ## Commands Not Yet Updated
 
 - `compound_improve.md` — Self-improvement command that reads lessons and rewrites command prompts. Still uses old patterns (arguments, `plan_from_gh_issue_swarm` references).
-- `guide_eigen_architecture.md` — Architecture guide document with old field names in examples.
+- `guide_eigen_architecture.md` — Architecture guide document with outdated command references (`plan_from_gh_issue_swarm`, `deepen_plan` which no longer exist), incorrect command signatures (claims positional arguments where current commands are zero-argument), wrong iteration limits (claims 5/3 where all are 8), and obsolete file paths (`Plans/plan-for-epic-<N>.md`). Core architectural concepts (file ownership, interface dependencies, communication protocols) remain accurate.
