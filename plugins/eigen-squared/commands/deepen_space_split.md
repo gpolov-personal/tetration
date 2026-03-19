@@ -105,6 +105,21 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
 2. If it exists, read it for comparison, oscillation detection, and progress tracking.
 3. If no previous feedback exists, this is the first deepen iteration.
 
+### Finding Matching Protocol (iteration 2+)
+
+When comparing current findings against previous iteration findings, use **epic-number + feature-ID matching** — not title or description matching:
+
+1. For each current finding, extract all epic numbers (E1, E2...) and feature IDs (F01, F02...) mentioned in `description`, `recommendation`, and `affected_output`.
+2. For each previous finding, extract the same epic numbers and feature IDs.
+3. Two findings **match** if they share at least one epic number OR feature ID AND belong to the same `category` (e.g., both are `interface_error` about E2).
+4. Classify matched findings:
+   - **Persisting**: current finding matches a previous finding that was NOT addressed → add previous ID to `findings_persisting`
+   - **Regressed**: current finding matches a previous finding that WAS addressed (appeared in `findings_addressed` of the previous comparison) → add to `findings_regressed`
+   - **Oscillating**: current finding matches a finding that has appeared in 3+ non-consecutive iterations, or has been in `findings_regressed` at least once → add to `oscillating_findings`
+5. Findings with NO epic/feature-ID match to any previous finding → `new_findings`.
+
+This protocol is deterministic: epic numbers and feature IDs are stable across reformulations, unlike titles and descriptions which the LLM may rephrase each iteration.
+
 ### Convergence Decision Protocol
 
 After collecting all findings, apply these convergence rules **in order**:
@@ -118,14 +133,17 @@ After collecting all findings, apply these convergence rules **in order**:
 3. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Rationale: "Oscillation detected. Accepting current state to break the cycle."
 
-4. **Converge if**: epic decomposition is unchanged from previous iteration AND no new high-severity or medium-severity findings.
+4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by epic/feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same epics/features keep appearing in findings without resolution).
+   - Rationale: "Stagnation detected. The same epics/features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by plan_phase_epic's deeper analysis."
+
+5. **Converge if**: epic decomposition is unchanged from previous iteration AND no new high-severity or medium-severity findings.
    - Epic file stability weight: if the epic decomposition hasn't changed, favor convergence.
 
-5. **Converge if**: downstream `/plan_phase_epic` has already run on any epic in this phase.
+6. **Converge if**: downstream `/plan_phase_epic` has already run on any epic in this phase.
    - Strongly favor convergence to avoid invalidating downstream work.
    - Rationale: "Downstream plan generation has already started. Accepting current decomposition."
 
-6. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated.
+7. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
 
 ### Epic Update Guidance
 
@@ -530,6 +548,15 @@ For each finding, assign:
 - Group by affected command phase and epic.
 - Filter out `false_positive` findings.
 
+### 6.3.1 Narrative vs Structural Assessment (Dual Source of Truth)
+
+space_split produces both narrative (epic.md) and JSON (epic_dag.json) representations of interfaces and dependencies. For each finding that flags a missing or inconsistent structural entry:
+
+1. **Check the OTHER source**: If the finding says "interface X missing from epic_dag.json `interfaces_provided[]`", check if the interface IS described in the provider's epic.md "Inter-Epic Interfaces" section (and vice versa).
+2. **If present in one source but absent in the other**: the finding is valid (BOTH sources MUST be consistent), but **downgrade severity to medium** if it was classified as high. The author understands the interface — they just failed to wire it into both representations. Include explicit `structural_edits` in the finding showing exactly which JSON entries or epic.md sections to add or modify.
+3. **If absent from BOTH sources**: keep original severity — the decomposition genuinely missed this interface or dependency.
+4. **Check concrete_files against bootstrap-report.json**: If a finding says "concrete_files missing for interface X", check if the files exist in bootstrap-report.json's entity/contract paths. If they do, downgrade and provide the exact paths as `structural_edits`.
+
 ### 6.4 Write Iteration Feedback File
 
 Write the feedback to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_space_split_feedback.json`. **Do NOT modify epic_dag.json or phase_e2e_config.json** — feedback is always a separate file.
@@ -575,6 +602,11 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/f
       "affected_output": "<file path or issue number>",
       "affected_section": "<section within file or issue>",
       "recommendation": "<specific action for space_split to take>",
+      "structural_edits": [
+        "<exact edit 1: e.g., 'Add to epic_dag.json epics[1].interfaces_provided[]: { name: \"UserAuth\", consumer_epics: [3], concrete_files: [\"app/lib/auth/session.ts\"] }'>",
+        "<exact edit 2: e.g., 'Add to epic_3/epic.md Inter-Epic Interfaces consumed section: UserAuth from E1'>",
+        "<exact edit 3: e.g., 'Add E1 to epic_dag.json epics[2].blocked_by[]'>"
+      ],
       "actionable_by": "space_split",
       "downstream_impact": {
         "affects_commands": ["plan_phase_epic"],
