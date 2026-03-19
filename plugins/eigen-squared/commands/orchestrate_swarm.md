@@ -260,7 +260,7 @@ Create `[WAVE-STATUS]` tracking task with all leader state for compaction resili
 ```javascript
 TaskCreate({
   subject: "[WAVE-STATUS] Swarm P<N>.E<M>",
-  description: "Wave: 1\nActive: none\nCompleted: <pre-completed IDs or 'none'>\nStubs ready: none\nTask map: <full mapping>\nTech stack: <detected stack>\nRelevant skills: <skills>\nWorktree path: <worktree_abs_path>\nIntegration branch: feat/P<N>.E<M>"
+  description: "Wave: 1\nActive: none\nCompleted: <pre-completed IDs or 'none'>\nStubs ready: none\nTask map: <full mapping>\nFix budgets: <task_id>: 5/5, ... (for all tasks)\nTech stack: <detected stack>\nRelevant skills: <skills>\nWorktree path: <worktree_abs_path>\nIntegration branch: feat/P<N>.E<M>"
 })
 ```
 
@@ -428,6 +428,10 @@ Do NOT spawn the next wave until ALL tasks in the current wave are completed.
 | `decision_precedents` | All `[QUESTION]` tasks where status = completed with "DECISION:" in description. |
 | `interface_providers` | Re-derive from manifest (always on disk). |
 | `worktree_abs_path` | From `[WAVE-STATUS]` ("Worktree path: ..."). |
+| `fix_budgets` | From `[WAVE-STATUS]` ("Fix budgets: ..."). Cross-check against `[STUCK]` task count per worker. |
+| `e2e_iteration` | From `[WAVE-STATUS]` ("E2E iteration: N"). Only present for E2E Testing epic. |
+| `e2e_status` | From `[WAVE-STATUS]` ("E2E status: ..."). Only present for E2E Testing epic. |
+| `e2e_failures_history` | All `[E2E-RESULT]` tasks (status = completed). Only present for E2E Testing epic. |
 
 3. Re-read the manifest to derive `interface_providers`, `execution_waves`, `shared_files`, `tasks`.
 4. If `plan_content` is needed, re-read from the plan file.
@@ -447,7 +451,7 @@ A teammate needs a technical decision.
 2. **Route based on question type:**
 
 **Route A — Staff Engineer decides (non-design questions):**
-Applies to: `task_classification`, `coverage_decision`, `test_placement`, `final_review`
+Applies to: `task_classification`, `coverage_decision`, `test_placement`, `test_issue`, `final_review`
 
 Make the decision yourself considering the plan, task requirements, impact on other tasks, `decision_precedents`, and conservative defaults (meaningful tests > trivial tests, strict typing > loose).
 
@@ -472,6 +476,8 @@ Design decisions affect architecture and need user approval. Contextualize the q
 
 - **`test_placement`**: Verify the proposed location is within the teammate's `test_files_owned`. If not, suggest an alternative within their ownership.
 
+- **`test_issue`**: A worker reports a validation test that appears wrong. Read the test, cross-reference with plan and requirements. Decide: test is wrong (authorize fix with specific instructions), implementation is wrong (guide the worker), or requirement is ambiguous (escalate to user). See the dedicated "Test Issue Report" handler below for detailed flow.
+
 - **`final_review`**: Review each proposed test individually against the test quality principle. Reject tautological or trivial tests — tell the teammate to remove them. A good final review results in fewer, stronger tests — not more.
 
 - **`design_decision`**: ALWAYS forward to user via Route B. Never decide design questions autonomously.
@@ -486,9 +492,101 @@ A teammate hit a blocking issue. These are time-sensitive.
 
 **Dependency Mismatch**: coordinate between the two teammates until resolved.
 
+### Handling: `[STUCK]` Task
+
+A teammate has failed on the same test 3+ consecutive times and cannot resolve it alone. This is your opportunity to act as a Staff Engineer — provide guided assistance.
+
+1. **Read the stuck report**: test name, error pattern, consecutive attempts, files modified so far
+2. **Analyze the failure yourself**:
+   - Read the failing test file to understand what it expects
+   - Read the worker's implementation code (the files they modified)
+   - Cross-reference with the plan and task requirements
+3. **Determine root cause category and respond**:
+
+   - **Worker's code bug**: You can see the problem. Provide specific guidance:
+     ```javascript
+     TaskUpdate({ taskId: "<stuck_task_id>", status: "completed",
+       description: "<original>\n\nGUIDANCE: The test expects <X> but your code does <Y> in <file> at <function/method>. The issue is <specific problem>. Try: <specific approach>.\nROOT_CAUSE: worker_code_bug" })
+     SendMessage({ to: "worker-<task_id>",
+       content: "Guidance for stuck test <test_name>: <specific fix instruction>",
+       summary: "Guidance: <test_name>" })
+     ```
+
+   - **Dependency issue**: The problem originates in another worker's file. Coordinate:
+     ```javascript
+     TaskUpdate({ taskId: "<stuck_task_id>", status: "completed",
+       description: "<original>\n\nGUIDANCE: This failure is caused by <other_task_id>'s implementation in <file>. I'm coordinating with them.\nROOT_CAUSE: dependency_issue" })
+     ```
+     Then contact the other worker or wait for them to finish.
+
+   - **Test is wrong**: The validation test has an incorrect assumption. Authorize modification:
+     ```javascript
+     TaskUpdate({ taskId: "<stuck_task_id>", status: "completed",
+       description: "<original>\n\nGUIDANCE: The test is incorrect. <explanation of why>. You are authorized to modify <test_name> to <specific change>.\nROOT_CAUSE: test_wrong" })
+     SendMessage({ to: "worker-<task_id>",
+       content: "Test <test_name> is incorrect. <explanation>. Modify it to <specific change>.",
+       summary: "Authorization: fix test <test_name>" })
+     ```
+
+   - **Outside ownership**: The fix requires a file the worker doesn't own. Grant temporary access or create integration request:
+     ```javascript
+     TaskUpdate({ taskId: "<stuck_task_id>", status: "completed",
+       description: "<original>\n\nGUIDANCE: The fix requires <file> which is outside your ownership. <action taken>.\nROOT_CAUSE: outside_ownership" })
+     ```
+
+4. **Track assisted attempts**: Update `[WAVE-STATUS]` with fix budget consumption:
+   ```
+   Fix budgets: <task_id>: <remaining>/<total>, ...
+   ```
+   Each worker starts with a budget of 5 assisted attempts. Decrement on each `[STUCK]` resolution.
+
+5. **Escalate if budget exhausted**: If a worker's fix budget reaches 0 and they're still stuck, escalate to the user with full context (test name, error pattern, all attempted approaches, leader's analysis).
+
+### Handling: Test Issue Report (`[QUESTION]` with type `test_issue`)
+
+A teammate found a problem with a validation test and needs the leader to decide whether the test is wrong or the implementation is.
+
+1. **Read the report**: test name, file, issue description, evidence from plan/requirements, worker's suggestion
+2. **Cross-reference**: Read the failing test, the plan, and the task requirements
+3. **Evaluate**:
+   - Is the test wrong? (test assumption doesn't match plan/requirements) → Authorize the worker to fix the test. Be specific about what to change.
+   - Is the implementation wrong? (test correctly validates the requirement, worker's code doesn't match) → Tell the worker what their code should do differently.
+   - Is the requirement ambiguous? → Escalate to user via Route B for design decision.
+4. **Respond**:
+   ```javascript
+   TaskUpdate({ taskId: "<question_id>", status: "completed",
+     description: "<original>\n\nDECISION: <test_wrong|implementation_wrong|ambiguous_requirement>\nANALYSIS: <what you found>\nACTION: <specific instruction>" })
+   SendMessage({ to: "worker-<task_id>",
+     content: "Decision on test issue <test_name>: <decision>. <specific instruction>.",
+     summary: "Decision: test issue <test_name>" })
+   ```
+
+### Handling: Blocker Resolved Message
+
+A teammate reports completing code that unblocks other tasks (sent via "Blocker resolved" message from `code_from_validation_tests_swarm`).
+
+1. Parse which task IDs are now unblocked and what files/interfaces are available
+2. For each unblocked task:
+   a. Check if ALL of that task's `blocked_by` dependencies are now resolved
+   b. If the teammate is already spawned (same wave): send notification:
+      ```javascript
+      SendMessage({ to: "worker-<unblocked_task_id>",
+        content: "Dependency resolved: <blocker_task_id> completed. Files available: <files>. Interfaces exposed: <interfaces>.",
+        summary: "Unblocked: <blocker_task_id> done" })
+      ```
+   c. If the teammate is not yet spawned (future wave): record the unblock for wave advancement
+3. **If the resolved task is an interface provider** (stub replaced with real implementation): this triggers Phase C for consumers — handled by the "Provider Implementation Complete" section below
+
 ### Handling: Progress Update Message
 
 Log the update. Watch for stalling, unexpected file modifications, or low test counts.
+
+**Stall Detection**: Track per-worker progress from heartbeat messages (format: `Progress <task_id>: <passing>/<total> ... Attempts on current step: <N>`). If a worker's passing count has not increased across 2+ consecutive progress messages AND their attempt count is climbing, proactively check on them:
+```javascript
+SendMessage({ to: "worker-<task_id>",
+  content: "I notice you've been on the same step for a while with no new tests passing. If you're stuck, send a [STUCK] task with your error details and I can help analyze the problem.",
+  summary: "Concern: <task_id> may be stalling" })
+```
 
 ### Handling: Integration Request Message
 
@@ -626,14 +724,189 @@ INSTRUCTIONS:
 Continue reacting to messages while the integrator works. When it signals completion:
 
 1. Run the full test suite to double-check
-2. If tests pass → proceed to Phase 5
-3. If tests fail → diagnose and fix, or escalate to user
+2. If tests pass → proceed to Phase 4.6
+3. If tests fail → proceed to Phase 4.6 (post-integration failure attribution)
 
 ### 4.6 Shut Down Integrator
 
 ```
 Ask integrator to shut down.
 ```
+
+### 4.7 Post-Integration Failure Attribution
+
+**Skip if the full test suite passed after integration.**
+
+If the full test suite has failures after integration, attribute and fix them before proceeding to PR creation.
+
+**4.7.1 Attribute Failures**
+
+For each failing test:
+
+1. **Stack trace file matching** (highest confidence): Cross-reference files in the failure's stack trace against each task's `files_owned` in the manifest.
+   - Exactly one task owns files in the stack → attribute to that task
+   - Multiple tasks' files appear → attribute to the task with the most file mentions, note secondaries
+   - Files in `shared_files` → integration issue (re-engage integrator)
+
+2. **Semantic matching** (medium confidence): If stack trace has only framework/library files, match test name keywords against task summaries from the manifest.
+
+3. **Escalate to user**: If neither method produces confident attribution, present the failure details and ask which worker should investigate.
+
+**4.7.2 Spawn Fix Workers**
+
+For each attributed failure:
+1. Re-spawn the attributed worker with a fix prompt:
+   ```
+   "E2E FIX MODE for <task_id>:
+   A test is failing after integration. Your assignment:
+   - Failing test: <test_name>
+   - Error: <error_type>: <error_message>
+   - Stack trace files: <files>
+   - Your owned files: <files_owned>
+   - Your test files: <test_files_owned>
+
+   Read your working notes at swarm_working_notes/working-notes-<task_id>.md first.
+   Fix the root cause in your owned files ONLY.
+   If the fix requires files outside your ownership, report CROSS-BOUNDARY to team-lead.
+   If the test itself appears wrong, report TEST-ISSUE to team-lead.
+   Run your validation+unit tests to confirm no regressions, then signal completion."
+   ```
+2. Create `[E2E-FIX]` task for tracking:
+   ```javascript
+   TaskCreate({
+     subject: "[E2E-FIX] <test_name> → <task_id>",
+     description: "Test: <test_name>\nError: <error_type>\nStack files: <stack_files>\nAttributed to: <task_id>\nConfidence: <high|medium>\nIteration: <N>"
+   })
+   ```
+
+**4.7.3 Re-run and Iterate**
+
+1. Wait for all fix workers to complete
+2. Shut down fix workers
+3. Re-run the full test suite
+4. If all pass → proceed to Phase 5
+5. If failures remain AND iteration < 3:
+   - Compare with previous iteration (detect stuck tests — same error 2+ iterations)
+   - For stuck tests: do NOT reassign to the same worker — try secondary attribution or escalate
+   - Increment iteration, repeat from 4.7.1
+6. If failures remain AND iteration >= 3:
+   - Escalate to user with comprehensive report:
+     ```
+     "3 post-integration fix iterations completed. <N> failures remain.
+      Stuck tests: <list>. My analysis: <leader assessment>.
+      How would you like to proceed?
+      1. Accept current state and create PR
+      2. Provide guidance for another iteration
+      3. Take manual control"
+     ```
+
+### 4.8 E2E Validation Fix Loop (E2E Testing Epic ONLY)
+
+**Condition**: Only activate when the current epic is the E2E Testing epic. Detect by reading `epic_dag.json`: the E2E epic has `features == []` and its name contains "E2E" or "e2e".
+
+**Skip for feature epics** — feature epics proceed directly to Phase 5 after integration.
+
+This phase runs the full E2E test suite assembled by the E2E Testing epic's workers and implements a cross-epic fix loop when CODE_BUGs are found in feature code.
+
+**4.8.1 Initialize E2E State**
+
+```
+E2E iteration: 1
+E2E status: running
+Fix budgets per feature worker: from e2e_config.fix_budget_per_worker (default: 2)
+Max total fix spawns: from e2e_config.max_total_fix_spawns (default: 8)
+Total fix spawns: 0
+```
+
+Update `[WAVE-STATUS]` with E2E fields.
+
+Create `[E2E-VALIDATION]` lifecycle task:
+```javascript
+TaskCreate({
+  subject: "[E2E-VALIDATION] E2E fix loop P<N>.E<last>",
+  description: "Status: running\nIteration: 1"
+})
+```
+
+**4.8.2 Run E2E Test Suite**
+
+Execute the E2E test suite using `e2e_config.e2e_test_command`. Parse results: total, passed, failed.
+
+**4.8.3 Classify Failures**
+
+For each failure, apply the same classification as `e2e_validation_swarm`:
+- **FLAKY**: Passes on retry (up to 2 retries) → report, do NOT assign
+- **INFRASTRUCTURE**: Connection refused, timeout, DNS failure → report, do NOT assign
+- **CODE_BUG**: Assertion failure, wrong status, missing data → assign to fix workers
+- **TEST_ISSUE**: Import error in test, fixture failure → attempt self-fix in E2E test dir
+
+**4.8.4 Cross-Epic Failure Attribution (for CODE_BUGs)**
+
+This is the key differentiator from the post-integration fix loop. E2E failures can originate in ANY feature epic's code, not just the current epic.
+
+1. Read the phase manifest to identify ALL feature epics in this phase
+2. For each feature epic that has been merged: read its swarm-manifest.json to build a combined `files_owned` map across all feature tasks
+3. **Tier 1 — Stack trace file matching** (highest confidence):
+   - For each file in the failure's stack trace, look up which feature task owns it
+   - Single match → attribute with HIGH confidence
+   - Multiple tasks → attribute to task with most file mentions, note secondaries
+   - Files in shared_files → attribute to integrator or escalate
+4. **Tier 2 — Semantic matching** (medium confidence):
+   - If stack trace has only framework files, match test name keywords against feature task summaries
+5. **Tier 3 — Escalate to user**:
+   - Batch all unattributed failures and present to user for manual attribution
+
+**4.8.5 Spawn Fix Workers**
+
+For each attributed CODE_BUG:
+1. Check fix budgets: skip if worker's budget exhausted or total fix spawns at max
+2. Spawn a fix worker in the E2E worktree (where all feature code is already merged):
+   ```
+   "E2E FIX MODE for <task_id> (cross-epic):
+   An E2E test is failing. This failure was attributed to your code from epic P<N>.E<M>.
+   - Failing test: <test_name>
+   - Error: <error_type>: <error_message>
+   - Stack trace files: <files>
+   - Your owned files (from original epic): <files_owned>
+   - Mode: <independent (iteration 1) | guided (iteration 2+)>
+   <if guided: Leader guidance: <specific analysis and suggested fix approach>>
+
+   Read your working notes first. Fix in your owned files ONLY.
+   Report CROSS-BOUNDARY if fix needs other files. Report TEST-ISSUE if the E2E test is wrong.
+   Run validation tests, then signal completion."
+   ```
+3. Create `[E2E-FIX]` tracking task
+4. Decrement fix budgets, increment total fix spawns
+
+**4.8.6 Re-run E2E and Iterate**
+
+1. Wait for all fix workers to complete
+2. Shut down fix workers
+3. Re-run E2E test suite
+4. Compare results with previous iteration:
+   - **Stuck test detection**: A test that fails with the same error type for 2 consecutive iterations with the same worker attributed → do NOT reassign to same worker. Try secondary suspect or escalate.
+   - **Progress-based early termination**: If `failures[N] >= failures[N-1]` for 2 consecutive iterations AND no previously-failing tests now pass → escalate early
+5. **Iteration-specific behavior**:
+   - **Iteration 1 (Independent)**: Fix workers receive error details only. No leader guidance.
+   - **Iteration 2 (Guided)**: Leader provides specific guidance for recurring failures. Stuck tests reassigned to secondary suspects.
+   - **Iteration 3 (Final)**: No new fix workers spawned. If failures remain, present comprehensive report to user:
+     ```
+     "<max_iterations> E2E fix iterations completed.
+      Progress: <failure counts per iteration>.
+      Remaining <N> failures. Stuck tests: <list>.
+      My hypothesis: <leader analysis>.
+      How would you like to proceed?
+      1. Accept current state and create PR
+      2. Provide guidance for another iteration
+      3. Take manual control"
+     ```
+
+**4.8.7 E2E Converged**
+
+When all E2E tests pass (or user accepts current state):
+1. Mark `[E2E-VALIDATION]` task as completed
+2. Update `[WAVE-STATUS]` with `E2E status: converged`
+3. Proceed to Phase 5
 
 ---
 
@@ -782,7 +1055,9 @@ If the same issue comes up 3 times without resolution: STOP, report to user, ask
 - **Worktree isolation**: all teammates operate inside the worktree (created by `/create_issues_from_plan_swarm`), no additional branches
 - **Must run from worktree**: this command verifies it is inside the worktree on entry — if not, it STOPs with instructions
 - **Testing philosophy**: real dependencies, minimal mocks, always — enforce this with workers
-- **E2E Testing epic**: when running the E2E Testing epic, it's just another epic — workers create infrastructure and E2E tests as their normal tasks
+- **E2E Testing epic**: when running the E2E Testing epic, workers create infrastructure and E2E tests as their normal tasks. After integration, the leader runs the E2E fix loop (Phase 4.8) to attribute and fix cross-epic failures before creating the PR.
+- **Guided assistance**: when workers send `[STUCK]` tasks, analyze the failure yourself and provide specific fix guidance — don't just relay errors
+- **Fix budgets**: track assisted attempts per worker. Escalate to user when a worker exhausts their budget.
 
 ## Quality Checklist
 
@@ -790,13 +1065,15 @@ Before reporting completion:
 
 - [ ] All manifest tasks are in `completed_tasks`
 - [ ] Integration phase completed (if shared files exist)
+- [ ] Post-integration test failures attributed and fixed (Phase 4.7, if any)
+- [ ] E2E fix loop completed (Phase 4.8, E2E Testing epic only)
 - [ ] Full test suite passes
 - [ ] All teammates shut down
 - [ ] Team cleanup called
 - [ ] PR created from `feat/P<N>.E<M>` → `$EIGEN_BRANCH`
 - [ ] PR info stored in pipeline_state.json (`swarm_execution`)
 - [ ] Summary report presented to user
-- [ ] All `[QUESTION]` and `[BLOCKER]` tasks resolved
+- [ ] All `[QUESTION]`, `[BLOCKER]`, and `[STUCK]` tasks resolved
 - [ ] Worktree path persisted in `[WAVE-STATUS]`
 - [ ] All teammates operated inside the worktree
 

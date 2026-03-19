@@ -113,7 +113,7 @@ Do NOT wait for a response -- the leader collects these for the integration phas
 // 1. Create a question task for the leader
 TaskCreate({
   subject: "[QUESTION] Test issue: <test_name>",
-  description: "Task: <task_id>\n\nTest: <test_name>\nIssue: <description of the problem>\nSuggestion: <proposed fix>\n\nI need your decision before modifying this test.",
+  description: "Task: <task_id>\nQuestion type: test_issue\n\nTest: <test_name>\nFile: <test_file_path>\nIssue: <description of the problem — what the test expects vs what the requirements actually say>\nEvidence: <reference to plan/task requirements that contradict the test>\nSuggestion: <proposed fix or removal>\n\nI need your decision before modifying this test.",
   activeForm: "Waiting for test issue decision"
 })
 TaskUpdate({ taskId: "<new_task_id>", owner: "team-lead" })
@@ -243,6 +243,10 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 - Total: 8
 - Passing: 3
 - Failing: 5 (test_login_flow, test_register_validation, ...)
+
+## Attempt Tracking
+- test_login_flow: 2 consecutive failures (same TypeError)
+- test_register_validation: 1 attempt (new failure)
 
 ## Implementation Plan Summary
 1. Create auth models (DONE)
@@ -437,7 +441,37 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
          -> If import fails with a parse/compilation error (SyntaxError in Python), retry once after 2 seconds
 ```
 
-   **Checkpoint: post-impl-step** — Update working notes with current test pass/fail counts, files modified, and Next Step.
+   **Progress Heartbeat** — After each validation test run, send a progress message to the leader:
+   ```javascript
+   SendMessage({
+     to: "team-lead",
+     type: "message",
+     content: "Progress <task_id>: <passing>/<total> validation tests passing. Step: <current_step>. Attempts on current step: <N>.",
+     summary: "Progress: <task_id> — <passing>/<total> tests"
+   })
+   ```
+
+   **Stuck Detection** — Track consecutive failed attempts on the same failing test(s). If you have attempted to fix the same test 3+ consecutive times and it still fails with a similar error:
+
+   ```javascript
+   TaskCreate({
+     subject: "[STUCK] <task_id> — <test_name> failing <N> consecutive attempts",
+     description: "Task: <task_id>\nStuck type: repeated_failure\nTest: <test_name>\nAttempts: <N>\nError pattern: <consistent error type/message>\nFiles modified so far: <list>\nLast 2 errors:\n<error_1_summary>\n<error_2_summary>\n\nI have tried <N> approaches and cannot resolve this. Requesting guided assistance.",
+     activeForm: "Stuck: waiting for guidance"
+   })
+   TaskUpdate({ taskId: "<new_task_id>", owner: "team-lead" })
+
+   SendMessage({
+     to: "team-lead",
+     type: "message",
+     content: "STUCK on <task_id>: <test_name> has failed <N> consecutive attempts. See task <new_task_id>. Waiting for guidance.",
+     summary: "STUCK: <task_id> — <test_name> (<N> attempts)"
+   })
+   ```
+
+   After sending a `[STUCK]` task, **continue working on OTHER implementation steps** that don't depend on the stuck test. Only STOP entirely if all remaining steps depend on the stuck test. When the leader responds with guidance, apply it and retry.
+
+   **Checkpoint: post-impl-step** — Update working notes with current test pass/fail counts, files modified, attempt counts, and Next Step.
 
 2. **File Ownership Enforcement**
 
