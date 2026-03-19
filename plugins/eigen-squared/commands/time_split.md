@@ -196,16 +196,38 @@ Classification rules:
 - **PARTIAL**: the finding is valid but the recommendation is too broad or conflicts with another constraint — a narrower fix will be applied.
 - **REJECT**: the finding is a false positive, contradicts a Critical Constraint, or would cause a worse outcome — explain why.
 
-### Regenerate
+### Apply Accepted Changes
 
 1. Collect all ACCEPT and PARTIAL findings as additional constraints.
-2. Re-run the full pipeline (Phase 0 → Phase 1 → Phase 2) with these findings as hard constraints during Phase 1 (phase assignment). For example:
+2. Apply changes to the structural sections of phase manifests directly:
+   - **Cascading updates are MANDATORY**: when applying a change, apply ALL structural consequences across ALL affected phase manifests:
+     - `move_feature_to_phase` → remove feature from source phase's Feature Summary Table AND add to destination phase's table. Update Cross-Phase Dependencies in BOTH phases. Verify cluster integrity (cluster must not be split). Update E2E summary of both phases.
+     - `modify_dependency` → update Cross-Phase Dependencies tables in ALL phases that reference the affected features.
+     - `split_phase` / `merge_phases` → regenerate Feature Summary Tables, E2E summaries, Cross-Phase Dependencies, and cluster assignments for ALL affected phases.
+     - `update_e2e` → edit the E2E summary text AND verify it references the actual P1 features in that phase.
+   - **Edit the STRUCTURAL sections directly** (Feature Summary Tables, Cross-Phase Dependencies tables, YAML frontmatter, E2E summaries). Do NOT address structural findings by adding narrative paragraphs — deepen validates the structural sections, not narrative commentary.
+3. Re-run the full pipeline (Phase 0 → Phase 1 → Phase 2) with these findings as hard constraints during Phase 1 (phase assignment). For example:
    - A finding about cluster splits → add cluster integrity constraints
    - A finding about E2E gaps → adjust E2E seeding in Phase 1.2/1.4
    - A finding about balance → adjust phase size bounds
-3. Overwrite **only** these output files: `$EIGEN_ROOT/eigen_initiative/phases/initiative_summary.json` and `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`. Do NOT touch anything else under `$EIGEN_ROOT/eigen_initiative/phases/`.
-4. **NEVER delete, overwrite, or recreate `$EIGEN_ROOT/eigen_initiative/phases/feedback/` or any file inside it.** The feedback file (`$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json`) is owned by `deepen_time_split` and must stay untouched for comparison on the next deepen run.
-5. Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` on exit: increment iteration, update paths, set `feedback_consumed = true`, set `deepen_time_split.feedback_consumed = true`.
+
+### Re-validate After Changes
+
+After applying all accepted changes, verify structural consistency across ALL phase manifests before writing:
+- Every feature ID from the initiative appears in exactly ONE phase's Feature Summary Table (no duplicates, no missing)
+- Every cluster is complete within a single phase (no cluster split across phases)
+- Cross-Phase Dependencies are bidirectional (if phase 2 lists F09→F03 as upstream, phase 1 must list F03 as consumed by phase 2)
+- E2E summaries reference at least the P1-priority features of their phase
+- Phase count remains within [2, 8]
+- YAML frontmatter `feature_count` matches the actual count in the Feature Summary Table
+
+If any check fails, fix it NOW before writing the outputs. Do not defer structural inconsistencies to the next deepen iteration.
+
+### Write Updated Outputs
+
+1. Overwrite **only** these output files: `$EIGEN_ROOT/eigen_initiative/phases/initiative_summary.json` and `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`. Do NOT touch anything else under `$EIGEN_ROOT/eigen_initiative/phases/`.
+2. **NEVER delete, overwrite, or recreate `$EIGEN_ROOT/eigen_initiative/phases/feedback/` or any file inside it.** The feedback file (`$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json`) is owned by `deepen_time_split` and must stay untouched for comparison on the next deepen run.
+3. Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` on exit: increment iteration, update paths, set `feedback_consumed = true`, set `deepen_time_split.feedback_consumed = true`.
 
 ---
 

@@ -177,6 +177,18 @@ For each finding in `findings[]`, print an assessment to the user (same ACCEPT/P
    - `epics_to_close_and_replace`: for each entry, update the old epic's `state` to `closed` in its frontmatter and create a new replacement epic file with the next sequential epic number.
 2. For epics that are **unchanged** (no findings affect them): leave their epic files untouched.
 
+### Apply Accepted Changes
+
+When applying feedback, ensure **cascading updates** and **cross-source consistency** between `epic.md` files and `epic_dag.json`:
+
+- **Cascading updates are MANDATORY**: when applying a change, apply ALL structural consequences:
+  - `move_feature_to_epic` → remove feature from source epic.md (frontmatter + body) AND add to destination epic.md. Update `epic_dag.json` waves and `blocked_by[]`. Check if moved feature was an interface provider — if so, update `interfaces_provided[]`/`interfaces_consumed[]` in the DAG AND the "Inter-Epic Interfaces" sections in both epic.md files. Update `phase_e2e_config.json` epic entries.
+  - `add_interface` / `modify_interface` → edit BOTH: the "Inter-Epic Interfaces" narrative section in the provider AND consumer epic.md files, AND the `interfaces_provided[]`/`interfaces_consumed[]` entries in `epic_dag.json` including `concrete_files[]` (paths must exist in bootstrap-report.json).
+  - `modify_wave` / `fix_blocked_by` → edit `epic_dag.json` DAG entries AND verify epic.md narratives are consistent with new ordering.
+  - `split_epic` / `merge_epics` → regenerate all affected epic.md files AND rebuild `epic_dag.json` entries AND update `phase_e2e_config.json`.
+- **Cross-source consistency rule**: after EVERY change, verify that every interface that appears in an epic.md "Inter-Epic Interfaces" section has its corresponding entry in `epic_dag.json` `interfaces_provided[]`/`interfaces_consumed[]`, and vice versa. Fix any discrepancy immediately.
+- **Edit the STRUCTURAL sections directly** (epic_dag.json entries, epic.md YAML frontmatter, "Inter-Epic Interfaces" sections, phase_e2e_config.json). Do NOT address structural findings by adding narrative paragraphs to the epic body — deepen validates the structural sections and JSON, not narrative commentary.
+
 ### Regeneration Scope
 
 Determine how much of the pipeline to re-run based on finding categories:
@@ -186,6 +198,18 @@ Determine how much of the pipeline to re-run based on finding categories:
 - **`e2e_coverage_gap`** → re-run from **Phase 3** only (regenerate E2E config, update phase artifacts).
 
 If findings span multiple categories, use the broadest scope needed.
+
+### Re-validate After Changes
+
+After applying all accepted changes and regeneration, verify structural consistency before writing outputs:
+- Every feature from the phase manifest appears in exactly ONE epic's frontmatter `features[]` (no duplicates, no missing)
+- Every interface in any epic.md "Inter-Epic Interfaces" section has a corresponding entry in `epic_dag.json` `interfaces_provided[]` or `interfaces_consumed[]` (and vice versa)
+- Every `concrete_files[]` in the DAG references files that exist in bootstrap-report.json entity/contract paths
+- `blocked_by[]` in the DAG is consistent with interfaces (if E2 consumes from E1, E2 must have E1 in `blocked_by`)
+- `phase_e2e_config.json` has an entry for every epic in the DAG
+- YAML frontmatter `feature_count` in each epic.md matches the actual `features[]` array length
+
+If any check fails, fix it NOW before writing the outputs. Do not defer cross-source inconsistencies to the next deepen iteration.
 
 ### Post-Regeneration
 
