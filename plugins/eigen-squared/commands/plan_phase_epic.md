@@ -179,7 +179,24 @@ Classification rules:
 
 1. Apply accepted `section_changes` from `plan_change_guidance`: update strategic sections
 2. Apply accepted `parallelization_changes`: update Parallelization Strategy (add/remove/split/merge components, fix dependencies, update interfaces, move files to shared)
+   - **Cascading updates are MANDATORY**: when applying a `parallelization_changes` entry, apply ALL structural consequences:
+     - `move_file_to_shared` → add the file to the Shared Files Map section AND verify it appears in `estimated_files` of every component listed in `touched_by`
+     - `add_component` / `split_component` → create the component entry with `estimated_files`, update interfaces, update wave dependencies
+     - `add_interface` / `modify_interface` → update the Interfaces section AND update `stub_file` in the providing component's `estimated_files`
+     - `fix_blocked_by` → update wave assignments for affected components
+   - **Edit the STRUCTURAL sections directly** (Shared Files Map YAML entries, `estimated_files` lists, Interfaces entries, wave assignments). Do NOT address structural findings by adding narrative paragraphs to Strategic Overview or Implementation Approach — deepen validates the structural sections, not the narrative.
 3. Incorporate accepted `research_insights`: weave into relevant plan sections naturally — do NOT add separate subsections
+
+### Re-validate After Changes
+
+After applying all accepted changes, re-run the Pre-Submission Checklist (end of this file) against the modified plan:
+- Verify no file appears in `estimated_files` of more than one component
+- Verify every file in Shared Files Map has a valid `touched_by` list and each listed component exists
+- Verify every file in Shared Files Map appears in `estimated_files` of at least one component in `touched_by`
+- Verify every interface has a `stub_file` that appears in the provider's `estimated_files`
+- Verify execution waves form a valid DAG (no circular blocked_by)
+
+If any check fails, fix it NOW before writing the plan. Do not defer structural inconsistencies to the next deepen iteration.
 
 ### Write Updated Plan
 

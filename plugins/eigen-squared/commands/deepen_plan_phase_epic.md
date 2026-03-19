@@ -108,6 +108,21 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
 2. If it exists, read it for comparison, oscillation detection, and progress tracking.
 3. If no previous feedback exists, this is the first deepen iteration.
 
+### Finding Matching Protocol (iteration 2+)
+
+When comparing current findings against previous iteration findings, use **file-path matching** — not title or description matching:
+
+1. For each current finding, extract all file paths mentioned in `description`, `recommendation`, and `affected_section` (e.g., `app/lib/websocket/client.ts`, `server/websocket/bridge.ts`).
+2. For each previous finding, extract the same file paths.
+3. Two findings **match** if they share at least one file path AND belong to the same `category` (e.g., both are `dependency_gap` about `client.ts`).
+4. Classify matched findings:
+   - **Persisting**: current finding matches a previous finding that was NOT addressed → add previous ID to `findings_persisting`
+   - **Regressed**: current finding matches a previous finding that WAS addressed (appeared in `findings_addressed` of the previous comparison) → add to `findings_regressed`
+   - **Oscillating**: current finding matches a finding that has appeared in 3+ non-consecutive iterations, or has been in `findings_regressed` at least once → add to `oscillating_findings`
+5. Findings with NO file-path match to any previous finding → `new_findings`.
+
+This protocol is deterministic: file paths don't change between reformulations of the same issue, unlike titles and descriptions which the LLM may rephrase each iteration.
+
 ### Convergence Decision Protocol
 
 After collecting all findings (Phase 5), apply these convergence rules **in order**:
@@ -118,10 +133,13 @@ After collecting all findings (Phase 5), apply these convergence rules **in orde
 2. **Converge if**: iteration limit reached (`state.phases[N].plans[M].deepen_plan_phase_epic.iteration >= 8`).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
-3. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
+3. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by file path, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the findings are cycling without resolution).
+   - Rationale: "Stagnation detected. The same files keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by create_issues_from_plan_swarm's file ownership validation."
+
+4. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Rationale: "Oscillation detected. Accepting current state to break the cycle."
 
-4. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated.
+5. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
 
 ---
 
@@ -228,6 +246,16 @@ For each finding, assign:
 - Group by plan section.
 - Filter out `false_positive` findings.
 
+### 4.3.1 Narrative vs Structural Assessment
+
+For each finding that flags a missing structural entry (e.g., file not in Shared Files Map, file not in estimated_files, missing interface contract):
+
+1. **Check if the behavior IS described in narrative sections** (Key Architectural Decisions, Implementation Approach, Integration Points, Risk Factors). Search for the file path, function name, or concept in the full plan text.
+2. **If narratively present but structurally absent**: the finding is valid (the structural section MUST be fixed), but **downgrade severity to medium** if it was classified as high. The plan author understands the requirement — they just failed to wire it into the structural section. Include in `plan_change_guidance.parallelization_changes` with explicit `structural_edits` showing exactly which YAML/list entries to add or modify.
+3. **If neither narratively nor structurally present**: keep original severity — the plan genuinely missed this concern.
+
+This prevents findings from persisting across iterations when the plan author keeps adding narrative explanations instead of editing the structural sections.
+
 ### 4.4 Write Feedback File
 
 Write the feedback to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/deepen_plan_phase_epic_feedback.json`.
@@ -293,7 +321,12 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/e
     "parallelization_changes": [
       {
         "type": "add_component|remove_component|split_component|merge_components|add_interface|modify_interface|move_file_to_shared|fix_blocked_by|add_e2e_scenario|modify_wave",
-        "detail": "<specific change>"
+        "detail": "<specific change — MUST include ALL structural edits required, not just the primary change>",
+        "structural_edits": [
+          "<exact edit 1: e.g., 'Add to Shared Files Map: - file: \"path/to/file\" touched_by: [\"comp_a\"] reason: \"...\"'>",
+          "<exact edit 2: e.g., 'Add \"path/to/file\" to comp_a estimated_files list'>",
+          "<exact edit 3: e.g., 'Update comp_b description to mention this dependency'>"
+        ]
       }
     ],
     "research_insights": [
