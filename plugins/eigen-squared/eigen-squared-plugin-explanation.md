@@ -48,7 +48,7 @@ Initiative Documents
         |
     /plan_phase_epic ←→ /deepen_plan_phase_epic Stage 4: Plan each epic
         |
-    /create_issues_from_plan_swarm              Stage 5: Generate tasks + manifest + worktree
+    /create_issues_from_plan_swarm              Stage 5: Generate tasks + manifest + branch
         |
     /orchestrate_swarm                          Stage 6: Execute the swarm
         |
@@ -145,7 +145,7 @@ Generates a **strategic development plan** for one epic. The plan is high-level 
 
 ---
 
-## Stage 5: Create Issues — Tasks + Manifest + Worktree
+## Stage 5: Create Issues — Tasks + Manifest + Integration Branch
 
 **Command:** `/create_issues_from_plan_swarm`
 **Scope:** Per-epic (auto-detects first epic with converged plan but no manifest)
@@ -158,30 +158,28 @@ Decomposes the plan into **file-disjoint task files** and a **swarm-manifest.jso
 
 **Task IDs:** `P<N>.E<M>.T<K>` — e.g., `P1.E2.T3` (Phase 1, Epic 2, Task 3). Integration task: `P<N>.E<M>.INT`.
 
-**Worktree creation:** This command creates the integration branch (`feat/P<N>.E<M>`) from `origin/$EIGEN_BRANCH` and sets up a git worktree at `$EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/`. The manifest, tasks, and plan are committed inside the worktree.
+**Branch creation:** This command creates the integration branch (`feat/P<N>.E<M>`) from `origin/$EIGEN_BRANCH`, checks it out, commits and pushes the artifacts, then returns to `$EIGEN_BRANCH`.
 
 **Output:**
 - `phases/phase_N/epic_M/tasks/task_001.md` ... `task_INT.md`
 - `phases/phase_N/epic_M/swarm-manifest.json`
-- Git worktree at `$EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/`
+- Integration branch `feat/P<N>.E<M>` pushed to origin
 - Epic metadata update (`task_ids` array in epic.md frontmatter)
 - Initiative index update (`_index.md`)
 - Pipeline state update (`swarm_execution` tracking object for downstream commands)
 
-The manifest, task files, and plan are **copied and committed inside the worktree** so the swarm operates on a self-contained branch.
-
-**Next step:** The user must `cd` into the worktree and launch Claude Code from there.
+**Next step:** Checkout the integration branch (`git checkout feat/P<N>.E<M>`) and run `/orchestrate_swarm`.
 
 ---
 
 ## Stage 6: Orchestrate Swarm — Parallel Execution
 
 **Command:** `/orchestrate_swarm`
-**Scope:** Per-epic (runs from inside the worktree, detects epic from branch name)
+**Scope:** Per-epic (runs on the integration branch `feat/P<N>.E<M>`, detects epic from branch name)
 
 The **Staff Engineer / Tech Lead** that coordinates parallel swarm execution. It:
 
-1. Verifies it's inside the worktree (`.git` is a file, branch matches `feat/P<N>.E<M>`) — both leader and each worker verify independently
+1. Verifies it's on the integration branch (`feat/P<N>.E<M>`) — both leader and each worker verify independently
 2. Reads the manifest and validates it
 3. Detects tech stack via `language-profiles` skill and discovers relevant domain skills
 4. Creates a swarm team
@@ -209,11 +207,11 @@ The **Staff Engineer / Tech Lead** that coordinates parallel swarm execution. It
 ## Stage 7: Review PR — Convergence Loop
 
 **Command:** `/review_swarm_pr`
-**Scope:** Per-epic (runs from inside the same worktree)
+**Scope:** Per-epic (runs on the same integration branch)
 
 Performs a **scope-aware PR review** and iterates until ALL findings are resolved:
 
-1. Verifies worktree, parses epic from branch name
+1. Verifies integration branch, parses epic from branch name
 2. Fetches PR diff, filters to scope files only
 3. Spawns review agents in parallel:
    - **Always:** security-sentinel, architecture-strategist, code-simplicity-reviewer, data-integrity-guardian, test-practices-researcher
@@ -234,7 +232,7 @@ Performs a **scope-aware PR review** and iterates until ALL findings are resolve
     ↓
 ... repeat until converged (zero findings)
     ↓
-User merges PR → cleans up worktree
+User merges PR → cleans up branch
 ```
 
 ---
@@ -242,7 +240,7 @@ User merges PR → cleans up worktree
 ## Key Design Principles
 
 ### Zero Arguments
-Every command auto-detects its target from `pipeline_state.json` or the worktree branch name. No manual path arguments needed.
+Every command auto-detects its target from `pipeline_state.json` or the current branch name. No manual path arguments needed.
 
 ### Deterministic IDs (Triplets)
 - Epics: `P<N>.E<M>` (Phase.Epic)
@@ -256,8 +254,8 @@ Every main command has a deepen counterpart. The loop: main → deepen → main 
 ### E2E Testing Epic
 Each phase has a mandatory E2E Testing epic (last in the DAG). It writes the full E2E test suite and sets up infrastructure (Docker, emulators). It's just another epic — no special phases in the orchestrator.
 
-### Worktree Isolation
-Swarm execution happens in a git worktree on `feat/P<N>.E<M>`, branched from `$EIGEN_BRANCH`. All code, tasks, manifests, and pipeline state are committed to this branch. The PR merges everything to `$EIGEN_BRANCH`.
+### Branch Isolation
+Swarm execution happens on the `feat/P<N>.E<M>` branch, created from `$EIGEN_BRANCH`. All code, tasks, manifests, and pipeline state are committed to this branch. The PR merges everything to `$EIGEN_BRANCH`.
 
 ### Real Dependencies, Minimal Mocks
 Enforced across all workers: use real database connections, real HTTP calls, real file systems. Mocks ONLY when genuinely unavailable (e.g., third-party APIs with no sandbox). Never SQLite as substitute for PostgreSQL, never in-memory fakes, never monkeypatched connections.
@@ -313,13 +311,9 @@ $EIGEN_ROOT/
           epic.md
           plan.md
           ...
-  .claude/
-    worktrees/
-      feat-P1.E1/                               # Worktree for epic 1
-        swarm_working_notes/                     # Worker crash recovery checkpoints
-          working-notes-P1.E1.T1.md
-          working-notes-P1.E1.T2.md
-      feat-P1.E2/                               # Worktree for epic 2
+  swarm_working_notes/                           # Worker crash recovery checkpoints (on integration branch)
+    working-notes-P1.E1.T1.md
+    working-notes-P1.E1.T2.md
 ```
 
 ---

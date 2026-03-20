@@ -454,7 +454,7 @@ Write the validated manifest to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epi
 
 ### 4.4 Initialize Swarm Execution in Pipeline State
 
-Before creating the worktree, initialize `swarm_execution` in pipeline_state.json so downstream commands can track the lifecycle:
+Before creating the integration branch, initialize `swarm_execution` in pipeline_state.json so downstream commands can track the lifecycle:
 
 Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`, adding to `state.phases[N].plans[M]`:
 
@@ -475,9 +475,9 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`, adding to `sta
 
 ---
 
-## Phase 5: Create Integration Worktree
+## Phase 5: Create Integration Branch and Commit Artifacts
 
-After all tasks and the manifest are created, set up the integration worktree so the user can launch Claude Code directly inside it for `/orchestrate_swarm`. This is critical — the orchestrator and all workers must operate inside the worktree, not in `$EIGEN_ROOT`, to avoid accidentally modifying `$EIGEN_BRANCH`.
+After all tasks and the manifest are created, create the integration branch and commit the artifacts. The orchestrator and workers will operate on this branch from `$EIGEN_ROOT`.
 
 ### 5.1 Create the Integration Branch from $EIGEN_BRANCH
 
@@ -487,66 +487,27 @@ After all tasks and the manifest are created, set up the integration worktree so
 cd $EIGEN_ROOT
 git fetch origin $EIGEN_BRANCH
 git checkout -b feat/P<N>.E<M> origin/$EIGEN_BRANCH
-git checkout -   # return to original branch
 ```
 
-If `feat/P<N>.E<M>` already exists locally (from a previous run): **Manual mode** (`$CLAUDE_TASKS_API` not set): warn the user and ask whether to reuse or recreate it. **Autonomous mode** (`$CLAUDE_TASKS_API` is set): reuse the existing branch (less destructive).
+If `feat/P<N>.E<M>` already exists locally (from a previous run): **Manual mode** (`$CLAUDE_TASKS_API` not set): warn the user and ask whether to reuse or recreate it. **Autonomous mode** (`$CLAUDE_TASKS_API` is set): checkout the existing branch (`git checkout feat/P<N>.E<M>`).
 
-### 5.2 Create the Worktree
+### 5.2 Commit Manifest and Tasks on the Integration Branch
 
-```bash
-mkdir -p $EIGEN_ROOT/.claude/worktrees
-git worktree add $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M> feat/P<N>.E<M>
-```
-
-If the worktree already exists: **Manual mode**: warn the user and proceed with the existing one. **Autonomous mode**: proceed silently with the existing worktree.
-
-Disable auto-gc in the worktree:
-```bash
-git -C $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M> config gc.auto 0
-```
-
-### 5.3 Copy Manifest and Tasks into Worktree
-
-The manifest and task files were created in `$EIGEN_ROOT`. Copy them into the worktree and commit:
+The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`. Since we checked out `feat/P<N>.E<M>` (which was created from `origin/$EIGEN_BRANCH`), these files are already present in the working directory — no copying needed.
 
 ```bash
-# Ensure the directory structure exists in the worktree
-mkdir -p $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/eigen_initiative/phases/phase_N/epic_M/tasks/
-
-# Copy manifest + tasks
-cp $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json \
-   $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/eigen_initiative/phases/phase_N/epic_M/
-
-cp $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/tasks/*.md \
-   $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/eigen_initiative/phases/phase_N/epic_M/tasks/
-
-# Also copy the plan file (workers need it for context)
-cp $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md \
-   $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/eigen_initiative/phases/phase_N/epic_M/
-
-# Defensive fallback: if .claude/settings.json was committed to $EIGEN_BRANCH
-# (by /eigen_start), the worktree already has it. But if .claude/ was gitignored,
-# the worktree won't have it — copy it now so orchestrate_swarm and review_swarm_pr
-# can read EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, and plugin config.
-if [ ! -f $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude/settings.json ]; then
-  mkdir -p $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude
-  cp $EIGEN_ROOT/.claude/settings.json \
-     $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/.claude/settings.json
-  echo "Copied .claude/settings.json to worktree (was not inherited from branch)."
-fi
-
-# Commit in the worktree
-cd $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>
+cd $EIGEN_ROOT
 git add eigen_initiative/phases/phase_N/epic_M/
 git commit -m "chore: add swarm manifest, tasks, and plan for P<N>.E<M>"
-cd $EIGEN_ROOT
+git push origin feat/P<N>.E<M>
 ```
 
-### 5.4 Resolve Worktree Path
+### 5.3 Return to $EIGEN_BRANCH
+
+After committing and pushing the artifacts to the integration branch, return to `$EIGEN_BRANCH` so that subsequent pipeline commands (for other epics) operate on the correct branch:
 
 ```bash
-WORKTREE_ABS=$(cd $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M> && pwd)
+git checkout $EIGEN_BRANCH
 ```
 
 ---
@@ -574,7 +535,6 @@ File Ownership Map:
   Shared: <shared files>
   Integration: <shared files>
 
-Worktree ready at: <WORKTREE_ABS>
 Integration branch: feat/P<N>.E<M> (created from $EIGEN_BRANCH)
 
 Files generated:
@@ -583,16 +543,12 @@ Files generated:
   $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json
 
 Next steps:
-  To start the swarm, launch Claude Code FROM INSIDE the worktree:
-    cd <WORKTREE_ABS>
-    claude
-  Then run /orchestrate_swarm
+  To start the swarm, checkout the integration branch and run orchestrate_swarm:
+    cd $EIGEN_ROOT
+    git checkout feat/P<N>.E<M>
+    /orchestrate_swarm
 
-  Make sure $EIGEN_ROOT and $EIGEN_BRANCH are set in the new Claude Code session
-  (they should be in your shell profile or .claude/settings.json).
-
-  The manifest, tasks, and plan are already committed on the feat/P<N>.E<M>
-  branch inside the worktree.
+  The manifest, tasks, and plan are committed and pushed on the feat/P<N>.E<M> branch.
 ```
 
 ---
@@ -627,10 +583,9 @@ Before finalizing, verify:
 
 ## Auto-Chain (claude-tasks integration)
 
-If `$CLAUDE_TASKS_API` is set, schedule `/orchestrate_swarm` as the next command. **The working_dir must be the worktree** (not `$EIGEN_ROOT`), since orchestrate_swarm must run from inside the worktree.
+If `$CLAUDE_TASKS_API` is set, schedule `/orchestrate_swarm` as the next command. The working_dir is `$EIGEN_ROOT` — orchestrate_swarm will checkout the integration branch itself.
 
 ```bash
-WORKTREE_ABS=$(cd $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M> && pwd)
 NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
 
 # Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
@@ -641,10 +596,10 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
     "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:orchestrate_swarm\"). Follow all its instructions completely.",
     "cron_expr": "",
     "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$WORKTREE_ABS'",
+    "working_dir": "'$EIGEN_ROOT'",
     "enabled": true,
     "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
   }'
 ```
 
-Print: `Auto-chain: /orchestrate_swarm scheduled in 3 minutes (worktree: $WORKTREE_ABS).`
+Print: `Auto-chain: /orchestrate_swarm scheduled in 3 minutes.`

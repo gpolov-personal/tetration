@@ -51,28 +51,27 @@ This command uses the same environment variables as all eigen-squared commands:
 
 ### No Arguments Needed
 
-No arguments are required. This command derives everything from the worktree it's running inside.
+No arguments are required. This command derives everything from the current branch.
 
-The user must launch Claude Code from inside the worktree created by `/create_issues_from_plan_swarm`, then run `/orchestrate_swarm`. The branch name `feat/P<N>.E<M>` encodes the phase and epic. The manifest, tasks, and plan are already committed in the worktree.
+The user must checkout the integration branch (`feat/P<N>.E<M>`) created by `/create_issues_from_plan_swarm`, then run `/orchestrate_swarm`. The branch name encodes the phase and epic. The manifest, tasks, and plan are already committed on the branch.
 
-Phase 0.1 verifies the worktree and extracts the phase and epic from the branch name.
+Phase 0.1 verifies the branch and extracts the phase and epic from the branch name.
 
 ### Fixed Paths
 
-All paths below are relative to the worktree root (the current working directory when running inside the worktree):
+All paths below are relative to `$EIGEN_ROOT` (the current working directory):
 
 - **Manifest**: `eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
 - **Epic file**: `eigen_initiative/phases/phase_N/epic_M/epic.md`
 - **Plan file**: `eigen_initiative/phases/phase_N/epic_M/plan.md`
 - **Task files**: `eigen_initiative/phases/phase_N/epic_M/tasks/`
-- **Integration branch**: `feat/P<N>.E<M>` (already checked out — this IS the worktree's branch)
-- **Worktree**: `$EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>/` (created by `/create_issues_from_plan_swarm`)
+- **Integration branch**: `feat/P<N>.E<M>` (must be checked out before running this command)
 - **Pipeline state**: `eigen_initiative/phases/pipeline_state.json`
 
 ## Overview
 
 You will:
-1. Verify you are inside the integration worktree (created by `/create_issues_from_plan_swarm`)
+1. Verify you are on the integration branch `feat/P<N>.E<M>` (created by `/create_issues_from_plan_swarm`)
 2. Validate the manifest and set up the swarm team
 3. Spawn teammates wave by wave, each executing `design_validation_tests_swarm` then `code_from_validation_tests_swarm`
 4. React to incoming teammate messages and act as staff engineer
@@ -85,8 +84,8 @@ You will:
 - **Wave discipline**: NEVER spawn a later wave's teammates until ALL tasks in the current wave are complete.
 - **File ownership is absolute**: Workers MUST NOT modify files outside their `files_owned` and `test_files_owned`.
 - **No code from the leader**: Your role is to coordinate, not implement. The teammates do the work. Exception: integration verification fixes.
-- **Worktree isolation**: ALL teammates operate inside the worktree. No additional branches or worktrees.
-- **Worktree required**: This command MUST run from inside the worktree created by `/create_issues_from_plan_swarm`. Running from `$EIGEN_ROOT` directly risks modifying `$EIGEN_BRANCH`.
+- **Branch isolation**: ALL teammates operate on the `feat/P<N>.E<M>` branch. No additional branches.
+- **Integration branch required**: This command MUST run while the `feat/P<N>.E<M>` branch is checked out. Running from `$EIGEN_BRANCH` directly risks modifying the default branch.
 
 ### Testing Philosophy
 
@@ -116,25 +115,25 @@ For feature epics, the workers' validation tests (from the TDD workflow) serve a
 
 ## Phase 0: Setup and Validation
 
-### 0.1 Verify Worktree and Detect Epic
+### 0.1 Verify Integration Branch and Detect Epic
 
-The worktree and integration branch were created by `/create_issues_from_plan_swarm`. The user MUST launch Claude Code from inside the worktree before running this command.
+The integration branch was created by `/create_issues_from_plan_swarm`. The user must checkout the branch before running this command.
 
-**Step 1: Verify we are inside a worktree:**
+**Step 1: Verify we are on an integration branch:**
 
 ```bash
-# .git is a FILE (not directory) inside worktrees
-test -f "$(git rev-parse --show-toplevel)/.git" && echo "INSIDE_WORKTREE" || echo "MAIN_REPO"
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 ```
 
-If `MAIN_REPO` → **STOP.** Print:
+If the branch does NOT match the pattern `feat/P<N>.E<M>` → **STOP.** Print:
 ```
-ERROR: You are NOT inside a worktree. orchestrate_swarm must run from inside
-the integration worktree created by /create_issues_from_plan_swarm.
+ERROR: Current branch '<branch>' is not an integration branch.
+orchestrate_swarm must run on a feat/P<N>.E<M> branch created by
+/create_issues_from_plan_swarm.
 
 To start the swarm:
-  cd $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>
-  claude
+  cd $EIGEN_ROOT
+  git checkout feat/P<N>.E<M>
 Then run /orchestrate_swarm
 ```
 
@@ -146,20 +145,15 @@ git rev-parse --abbrev-ref HEAD
 
 Parse the branch name to extract phase N and epic M from the pattern `feat/P<N>.E<M>` (e.g., `feat/P1.E2` → Phase 1, Epic 2).
 
-If the branch name does not match the pattern `feat/P<N>.E<M>` → **STOP.** Print:
-```
-ERROR: Current branch '<branch>' does not match the expected pattern feat/P<N>.E<M>.
-This command must run from a worktree created by /create_issues_from_plan_swarm.
-```
+If the branch name does not match the pattern `feat/P<N>.E<M>` (and wasn't already caught in Step 1) → **STOP.**
 
 **Step 3: Resolve paths and verify manifest:**
 
 ```bash
-WORKTREE_ABS=$(pwd)
 test -f eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json
 ```
 
-If manifest is missing → **STOP.** Print: "Manifest not found in worktree. Run `/create_issues_from_plan_swarm` first."
+If manifest is missing → **STOP.** Print: "Manifest not found. Run `/create_issues_from_plan_swarm` first."
 
 Print: `Detected Phase <N>, Epic <M> (P<N>.E<M>) from branch feat/P<N>.E<M>.`
 
@@ -202,7 +196,6 @@ Create internal tracking variables:
 - `decision_precedents` — map of question types → previous decisions
 - `interface_providers` — map of stub_file → provider info
 - `stubs_ready` — set of confirmed stub files
-- `worktree_abs_path` — absolute path to the worktree
 - `integration_branch` — `feat/P<N>.E<M>`
 
 > **Compaction Resilience**: These variables are persisted to the shared task list via `[WAVE-STATUS]`, `[INTEGRATION-REQUEST]`, `[STUB-READY]` task prefixes. If context compaction occurs, all variables can be fully reconstructed from `TaskList()`. See the State Reconstruction section.
@@ -260,7 +253,7 @@ Create `[WAVE-STATUS]` tracking task with all leader state for compaction resili
 ```javascript
 TaskCreate({
   subject: "[WAVE-STATUS] Swarm P<N>.E<M>",
-  description: "Wave: 1\nActive: none\nCompleted: <pre-completed IDs or 'none'>\nStubs ready: none\nTask map: <full mapping>\nFix budgets: <task_id>: 5/5, ... (for all tasks)\nTech stack: <detected stack>\nRelevant skills: <skills>\nWorktree path: <worktree_abs_path>\nIntegration branch: feat/P<N>.E<M>"
+  description: "Wave: 1\nActive: none\nCompleted: <pre-completed IDs or 'none'>\nStubs ready: none\nTask map: <full mapping>\nFix budgets: <task_id>: 5/5, ... (for all tasks)\nTech stack: <detected stack>\nRelevant skills: <skills>\nIntegration branch: feat/P<N>.E<M>"
 })
 ```
 
@@ -291,15 +284,13 @@ Spawn a teammate called "worker-<task.id>" using model opus with this prompt:
 
 "You are a swarm worker assigned to task <task.id> under epic P<N>.E<M>.
 
-WORKTREE VERIFICATION (MANDATORY FIRST ACTION):
-You should already be inside the worktree. Before ANY other action, VERIFY this:
-  1. Run: test -f "$(git rev-parse --show-toplevel)/.git" && echo "INSIDE_WORKTREE" || echo "MAIN_REPO"
-  2. Run: pwd
-  3. Run: git rev-parse --abbrev-ref HEAD
-If you see MAIN_REPO, or pwd does NOT output <worktree_abs_path>, or branch is NOT feat/P<N>.E<M>:
-  STOP IMMEDIATELY. Send a [BLOCKER] to team-lead: "Worker not inside worktree. pwd=<output>, branch=<output>."
-  Do NOT proceed — working outside the worktree will corrupt $EIGEN_BRANCH.
-If all checks pass: you are in the correct worktree. All file paths are relative to this directory.
+BRANCH VERIFICATION (MANDATORY FIRST ACTION):
+Before ANY other action, VERIFY you are on the correct branch:
+  1. Run: git rev-parse --abbrev-ref HEAD
+If branch is NOT feat/P<N>.E<M>:
+  STOP IMMEDIATELY. Send a [BLOCKER] to team-lead: "Worker on wrong branch. branch=<output>."
+  Do NOT proceed — working on the wrong branch will corrupt $EIGEN_BRANCH.
+If the check passes: you are on the correct integration branch. All file paths are relative to $EIGEN_ROOT.
 
 YOUR ASSIGNMENT:
 - Task specification: eigen_initiative/phases/phase_N/epic_M/tasks/<task_file>
@@ -383,12 +374,12 @@ COMMUNICATION RULES:
 - For completion: mark your [WORK] task as completed and send a message
 
 FILE OWNERSHIP AND ISOLATION:
-- You verified the worktree in your first action — stay there
+- You verified the branch in your first action — stay on it
 - NEVER modify files outside your files_owned and test_files_owned
 - NEVER modify shared files — send an integration request instead
 - NEVER use git add . or git add -A — only add your owned files by path
-- NEVER create branches, switch branches, or create worktrees
-- NEVER cd to any directory outside the worktree"
+- NEVER create branches, switch branches, or checkout other branches
+- NEVER cd to any directory outside $EIGEN_ROOT"
 ```
 
 ### Sub-phase 2A: Spawn Interface Providers First
@@ -427,7 +418,7 @@ Do NOT spawn the next wave until ALL tasks in the current wave are completed.
 | `stubs_ready` | All `[STUB-READY]` tasks where status = completed. |
 | `decision_precedents` | All `[QUESTION]` tasks where status = completed with "DECISION:" in description. |
 | `interface_providers` | Re-derive from manifest (always on disk). |
-| `worktree_abs_path` | From `[WAVE-STATUS]` ("Worktree path: ..."). |
+| `integration_branch` | From `[WAVE-STATUS]` ("Integration branch: ..."). |
 | `fix_budgets` | From `[WAVE-STATUS]` ("Fix budgets: ..."). Cross-check against `[STUCK]` task count per worker. |
 | `e2e_iteration` | From `[WAVE-STATUS]` ("E2E iteration: N"). Only present for E2E Testing epic. |
 | `e2e_status` | From `[WAVE-STATUS]` ("E2E status: ..."). Only present for E2E Testing epic. |
@@ -435,7 +426,7 @@ Do NOT spawn the next wave until ALL tasks in the current wave are completed.
 
 3. Re-read the manifest to derive `interface_providers`, `execution_waves`, `shared_files`, `tasks`.
 4. If `plan_content` is needed, re-read from the plan file.
-5. Verify working directory is the worktree.
+5. Verify current branch is `feat/P<N>.E<M>`.
 
 ---
 
@@ -697,13 +688,11 @@ Spawn a teammate called "integrator" using model opus with this prompt:
 
 "You are the integration specialist for epic P<N>.E<M>.
 
-WORKTREE VERIFICATION (MANDATORY FIRST ACTION):
-You should already be inside the worktree. VERIFY:
-  1. Run: test -f "$(git rev-parse --show-toplevel)/.git" && echo "INSIDE_WORKTREE" || echo "MAIN_REPO"
-  2. Run: pwd — must output <worktree_abs_path>
-  3. Run: git rev-parse --abbrev-ref HEAD — must be feat/P<N>.E<M>
-If any check fails: STOP and send [BLOCKER] to team-lead.
-All file paths are relative to this directory. Do NOT operate outside this worktree.
+BRANCH VERIFICATION (MANDATORY FIRST ACTION):
+VERIFY you are on the correct branch:
+  1. Run: git rev-parse --abbrev-ref HEAD — must be feat/P<N>.E<M>
+If check fails: STOP and send [BLOCKER] to team-lead.
+All file paths are relative to $EIGEN_ROOT. Do NOT switch branches.
 
 YOUR ROLE:
 All feature tasks are complete. Integrate the shared files.
@@ -874,7 +863,7 @@ This is the key differentiator from the post-integration fix loop. E2E failures 
 
 For each attributed CODE_BUG:
 1. Check fix budgets: skip if worker's budget exhausted or total fix spawns at max
-2. Spawn a fix worker in the E2E worktree (where all feature code is already merged):
+2. Spawn a fix worker on the integration branch (where all feature code is already merged):
    ```
    "E2E FIX MODE for <task_id> (cross-epic):
    An E2E test is failing. This failure was attributed to your code from epic P<N>.E<M>.
@@ -932,10 +921,10 @@ When all E2E tests pass (or user accepts current state):
 
 For each still-active teammate, request shutdown.
 
-### 5.2 Verify Worktree State
+### 5.2 Verify Branch State
 
 ```bash
-cd <worktree_abs_path>
+cd $EIGEN_ROOT
 git status --porcelain
 ```
 
@@ -946,8 +935,8 @@ If uncommitted changes exist, warn the user. If clean, proceed.
 Create a PR from the integration branch to `$EIGEN_BRANCH`:
 
 ```bash
-cd <worktree_abs_path>
-git push -u origin feat/P<N>.E<M>
+cd $EIGEN_ROOT
+git push origin feat/P<N>.E<M>
 gh pr create --base $EIGEN_BRANCH --head feat/P<N>.E<M> \
   --title "feat: P<N>.E<M> — <epic_name>" \
   --body "## Epic P<N>.E<M>: <epic_name>
@@ -967,7 +956,7 @@ Capture the PR URL and number from the `gh pr create` output.
 
 ### 5.4 Store PR in Pipeline State
 
-Update `eigen_initiative/phases/pipeline_state.json` (relative to the worktree root) to record the PR and swarm execution status. This enables `/review_swarm_pr` to auto-detect the PR without arguments.
+Update `eigen_initiative/phases/pipeline_state.json` to record the PR and swarm execution status. This enables `/review_swarm_pr` to auto-detect the PR without arguments.
 
 Add to `state.phases[N].plans[M]`:
 
@@ -993,7 +982,7 @@ git commit -m "chore: record PR for P<N>.E<M> in pipeline state"
 git push origin feat/P<N>.E<M>
 ```
 
-This is the handoff point — `/review_swarm_pr` reads `swarm_execution` from the worktree branch to detect the PR and track review iterations. Both commands run from the same worktree on the same branch.
+This is the handoff point — `/review_swarm_pr` reads `swarm_execution` from the integration branch to detect the PR and track review iterations. Both commands run on the same branch.
 
 ### 5.5 Cleanup Team
 
@@ -1068,8 +1057,8 @@ If the same issue comes up 3 times without resolution: STOP, report to user, ask
 - **Be responsive**: messages arrive automatically — react promptly
 - **Tasks for traceability**: all questions/decisions through `[QUESTION]`/`[BLOCKER]` prefixes
 - **Do not modify code directly** (except integration verification)
-- **Worktree isolation**: all teammates operate inside the worktree (created by `/create_issues_from_plan_swarm`), no additional branches
-- **Must run from worktree**: this command verifies it is inside the worktree on entry — if not, it STOPs with instructions
+- **Branch isolation**: all teammates operate on the `feat/P<N>.E<M>` branch, no additional branches
+- **Must run from integration branch**: this command verifies the branch on entry — if not on `feat/P<N>.E<M>`, it STOPs with instructions
 - **Testing philosophy**: real dependencies, minimal mocks, always — enforce this with workers
 - **E2E Testing epic**: when running the E2E Testing epic, workers create infrastructure and E2E tests as their normal tasks. After integration, the leader runs the E2E fix loop (Phase 4.8) to attribute and fix cross-epic failures before creating the PR.
 - **Guided assistance**: when workers send `[STUCK]` tasks, analyze the failure yourself and provide specific fix guidance — don't just relay errors
@@ -1090,17 +1079,16 @@ Before reporting completion:
 - [ ] PR info stored in pipeline_state.json (`swarm_execution`)
 - [ ] Summary report presented to user
 - [ ] All `[QUESTION]`, `[BLOCKER]`, and `[STUCK]` tasks resolved
-- [ ] Worktree path persisted in `[WAVE-STATUS]`
-- [ ] All teammates operated inside the worktree
+- [ ] Integration branch persisted in `[WAVE-STATUS]`
+- [ ] All teammates operated on the integration branch
 
 ---
 
 ## Auto-Chain (claude-tasks integration)
 
-If `$CLAUDE_TASKS_API` is set, schedule `/review_swarm_pr` as the next command. The working_dir is the current worktree (same location). If not set, skip.
+If `$CLAUDE_TASKS_API` is set, schedule `/review_swarm_pr` as the next command. The working_dir is `$EIGEN_ROOT`. If not set, skip.
 
 ```bash
-WORKTREE_ABS=$(pwd)
 NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
 
 # Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
@@ -1111,7 +1099,7 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
     "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:review_swarm_pr\"). Follow all its instructions completely.",
     "cron_expr": "",
     "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$WORKTREE_ABS'",
+    "working_dir": "'$EIGEN_ROOT'",
     "enabled": true,
     "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
   }'

@@ -43,34 +43,25 @@ This command uses the same environment variables as all eigen-squared commands:
      export EIGEN_BRANCH=main
    ```
 
-### Worktree Verification and Epic Detection
+### Branch Verification and Epic Detection
 
-This command MUST run from inside the same worktree used by `/orchestrate_swarm`. No arguments needed — everything is derived from the branch name.
+This command MUST run on the same integration branch used by `/orchestrate_swarm`. No arguments needed — everything is derived from the branch name.
 
-1. Verify we are inside a worktree:
+1. Verify we are on an integration branch:
    ```bash
-   test -f "$(git rev-parse --show-toplevel)/.git" && echo "INSIDE_WORKTREE" || echo "MAIN_REPO"
+   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
    ```
-   If `MAIN_REPO` → **STOP.** Print:
+   If the branch does NOT match the pattern `feat/P<N>.E<M>` → **STOP.** Print:
    ```
-   ERROR: You are NOT inside a worktree. review_swarm_pr must run from inside
-   the integration worktree (same one used by /orchestrate_swarm).
+   ERROR: Current branch is not an integration branch. review_swarm_pr must run
+   on the feat/P<N>.E<M> branch (same one used by /orchestrate_swarm).
 
-   cd $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M>
-   claude
+   cd $EIGEN_ROOT
+   git checkout feat/P<N>.E<M>
    Then run /review_swarm_pr
    ```
 
-2. Parse the branch name to extract phase N and epic M from `feat/P<N>.E<M>`:
-   ```bash
-   git rev-parse --abbrev-ref HEAD
-   ```
-   If branch doesn't match the pattern → **STOP.**
-
-3. Resolve the worktree absolute path:
-   ```bash
-   WORKTREE_ABS=$(pwd)
-   ```
+2. Extract phase N and epic M from the branch name `feat/P<N>.E<M>`.
 
 4. Verify the manifest exists:
    ```bash
@@ -82,7 +73,7 @@ Print: `Detected Phase <N>, Epic <M> (P<N>.E<M>) from branch feat/P<N>.E<M>.`
 
 ### Fixed Paths
 
-All paths are relative to the worktree root (current working directory):
+All paths are relative to `$EIGEN_ROOT` (current working directory):
 
 - **Manifest**: `eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
 - **Epic file**: `eigen_initiative/phases/phase_N/epic_M/epic.md`
@@ -95,7 +86,7 @@ All paths are relative to the worktree root (current working directory):
 ## Overview
 
 You will:
-1. Verify worktree, detect epic, check iteration state
+1. Verify integration branch, detect epic, check iteration state
 2. Load scope context from manifest, epic, plan, and PR metadata
 3. Fetch the PR diff and filter to scope files
 4. Spawn review agents in parallel
@@ -111,7 +102,7 @@ You will:
 
 ### Detect Iteration Context
 
-1. Read `eigen_initiative/phases/pipeline_state.json` from the worktree.
+1. Read `eigen_initiative/phases/pipeline_state.json` from the integration branch.
 2. Check `state.phases[N].plans[M].swarm_execution`:
    - `status == "converged"` → **STOP.** Print: "Review for P<N>.E<M> has already converged. PR is ready to merge."
    - `review_iteration` field → current iteration number (0 = first review)
@@ -155,7 +146,7 @@ Validate:
 
 ### 0.2 Read Swarm Manifest
 
-1. Read the manifest from the worktree.
+1. Read the manifest from the integration branch.
 2. Extract: `tasks`, `shared_files`, `e2e_config`, `epic_id`.
 3. Build `scope_files` — union of all `files_owned`, `test_files_owned`, `shared_files`, and `e2e_config.e2e_test_dir` files.
 
@@ -264,7 +255,7 @@ For each finding (P1, P2, and P3 — all severities get fixup tasks):
 
 ### 4.3 Create Task Files
 
-For each finding, create directly in the worktree:
+For each finding, create directly on the integration branch:
 
 File: `eigen_initiative/phases/phase_N/epic_M/tasks/task_R<K padded to 3>.md`
 
@@ -384,7 +375,7 @@ git push origin feat/P<N>.E<M>
 
 ### 6.1 Determine Lesson Scope
 
-Check if the current epic is the **E2E Testing epic** (read `epic_dag.json` from the worktree — the E2E epic has `name == "E2E Testing"` and `features == []`).
+Check if the current epic is the **E2E Testing epic** (read `epic_dag.json` — the E2E epic has `name == "E2E Testing"` and `features == []`).
 
 - **If E2E Testing epic**: create lessons for **ALL findings (P1, P2, and P3)**. The E2E Testing epic is the most critical learning opportunity in each phase — every finding here (infrastructure failures, cross-component bugs, integration patterns) is a systemic insight that improves future phases. Do not skip any severity.
 
@@ -404,7 +395,7 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`.
 
 ### 7.1 Update Pipeline State
 
-Update `eigen_initiative/phases/pipeline_state.json` in the worktree:
+Update `eigen_initiative/phases/pipeline_state.json` on the integration branch:
 
 **If converged:**
 ```json
@@ -458,15 +449,14 @@ Convergence: <CONVERGED | CONTINUE — N findings remain (P1: x, P2: y, P3: z)>
 
 Next steps:
   If CONTINUE:
-    Stay in this worktree and run /orchestrate_swarm
+    Stay on this branch and run /orchestrate_swarm
     The manifest has been updated — only new review tasks will execute.
     After fixups complete, run /review_swarm_pr again (iteration <N+1>).
   If CONVERGED:
     Merge the PR:
       gh pr merge <pr_number> --squash
     Then clean up:
-      cd $EIGEN_ROOT
-      git worktree remove .claude/worktrees/feat-P<N>.E<M>
+      git checkout $EIGEN_BRANCH
       git branch -d feat/P<N>.E<M>
     Proceed to the next epic in the phase.
 ```
@@ -486,12 +476,12 @@ Next steps:
 
 - **Scope is king**: never flag issues outside the swarm's scope.
 - **No code modifications**: this command reviews, creates tasks, updates manifest. No source code changes.
-- **Runs from the worktree**: same worktree as orchestrate_swarm. All artifacts committed to `feat/P<N>.E<M>`.
+- **Runs from the integration branch**: same branch as orchestrate_swarm. All artifacts committed to `feat/P<N>.E<M>`.
 - **Review task IDs**: `P<N>.E<M>.R<K>` format (R for Review).
 - **Convergence**: ALL findings (P1, P2, and P3) must be resolved. Max 8 iterations. Oscillation breaks the cycle.
 - **Push after every commit**: the PR updates automatically when the branch is pushed.
 - **Merge is manual**: after convergence, the user merges the PR. This brings all artifacts (code, tasks, manifest, pipeline_state, reports) to `$EIGEN_BRANCH`.
-- **Worktree cleanup is manual**: after merge, user removes the worktree and deletes the local branch.
+- **Branch cleanup is manual**: after merge, user switches to `$EIGEN_BRANCH` and deletes the local integration branch.
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
 
 ---
@@ -502,9 +492,9 @@ If `$CLAUDE_TASKS_API` is set, schedule the next command based on convergence. I
 
 **Determine next command:**
 
-- **If CONTINUE** (findings remain) → `/orchestrate_swarm` (same worktree, fixup tasks)
+- **If CONTINUE** (findings remain) → `/orchestrate_swarm` (same branch, fixup tasks)
 - **If CONVERGED** → check if this is the E2E Testing epic (last epic in phase):
-  1. Read `eigen_initiative/phases/phase_N/epic_dag.json` from the worktree
+  1. Read `eigen_initiative/phases/phase_N/epic_dag.json` from the branch
   2. Find the last epic in the `epics[]` array
   3. **If current epic IS the E2E Testing epic** (`name == "E2E Testing"` AND `features == []`) → **STOP.** Phase is complete. Do NOT create a next task. Print: `Phase <N> complete. All epics including E2E Testing have converged. Manual testing and PR merges required.`
   4. **If current epic is NOT the last** → schedule `/plan_phase_epic` for the next epic (working_dir back to `$EIGEN_ROOT`)
@@ -514,7 +504,6 @@ NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
 
 # If CONTINUE (fixup needed):
 # Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-WORKTREE_ABS=$(pwd)
 curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
   -H "Content-Type: application/json" \
   -d '{
@@ -522,7 +511,7 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
     "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:orchestrate_swarm\"). Follow all its instructions completely.",
     "cron_expr": "",
     "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$WORKTREE_ABS'",
+    "working_dir": "'$EIGEN_ROOT'",
     "enabled": true,
     "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
   }'
