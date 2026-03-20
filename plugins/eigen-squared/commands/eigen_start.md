@@ -289,9 +289,10 @@ git check-ignore -q .claude/settings.json 2>/dev/null
 ```bash
 git add .claude/settings.json
 git commit -m "chore: add eigen-squared pipeline settings"
+git push origin $EIGEN_BRANCH
 ```
 
-Print: `Settings committed to $EIGEN_BRANCH — integration branches will inherit pipeline configuration.`
+Print: `Settings committed and pushed to $EIGEN_BRANCH — integration branches will inherit pipeline configuration.`
 
 **If gitignored** (exit code 0 — git DOES ignore it):
 Do NOT force-add. **STOP and ask the user** using AskUserQuestion:
@@ -320,8 +321,9 @@ echo '!.claude/settings.json' >> $EIGEN_ROOT/.gitignore
 cd $EIGEN_ROOT
 git add .gitignore .claude/settings.json
 git commit -m "chore: add eigen-squared pipeline settings (gitignore exception)"
+git push origin $EIGEN_BRANCH
 ```
-Print: `Fixed. .claude/settings.json is now committed — integration branches will inherit pipeline configuration.`
+Print: `Fixed. .claude/settings.json is now committed and pushed — integration branches will inherit pipeline configuration.`
 
 **If option 2** (continue):
 Print: `Continuing. Settings will be available on integration branches since they inherit from $EIGEN_BRANCH.`
