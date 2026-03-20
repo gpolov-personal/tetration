@@ -117,24 +117,31 @@ For feature epics, the workers' validation tests (from the TDD workflow) serve a
 
 ### 0.1 Verify Integration Branch and Detect Epic
 
-The integration branch was created by `/create_issues_from_plan_swarm`. The user must checkout the branch before running this command.
+The integration branch was created by `/create_issues_from_plan_swarm`.
 
-**Step 1: Verify we are on an integration branch:**
+**Step 1: Detect and checkout the integration branch:**
 
 ```bash
+cd $EIGEN_ROOT
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 ```
 
-If the branch does NOT match the pattern `feat/P<N>.E<M>` → **STOP.** Print:
-```
-ERROR: Current branch '<branch>' is not an integration branch.
-orchestrate_swarm must run on a feat/P<N>.E<M> branch created by
-/create_issues_from_plan_swarm.
+If the current branch already matches `feat/P<N>.E<M>` → proceed to Step 2.
 
-To start the swarm:
-  cd $EIGEN_ROOT
-  git checkout feat/P<N>.E<M>
-Then run /orchestrate_swarm
+If the current branch is `$EIGEN_BRANCH` (or any non-integration branch) → auto-detect the integration branch from `pipeline_state.json`:
+1. Read `eigen_initiative/phases/pipeline_state.json`
+2. Find the first epic with `swarm_execution.status` in `("not_started", "pr_created", "iterating")` and `swarm_execution.integration_branch` set
+3. Checkout that branch: `git checkout <integration_branch>`
+
+If no integration branch found → **STOP.** Print:
+```
+ERROR: No active integration branch found. Run /create_issues_from_plan_swarm first.
+```
+
+**Step 1.5: Sync with remote:**
+
+```bash
+git pull origin feat/P<N>.E<M>
 ```
 
 **Step 2: Extract phase and epic from the branch name:**

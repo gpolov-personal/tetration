@@ -74,6 +74,13 @@ No arguments are required. The target phase is auto-detected from the pipeline s
 
 Print: `Auto-detected Phase <N> for bootstrap.`
 
+### Sync with Remote
+
+```bash
+cd $EIGEN_ROOT
+git pull origin $EIGEN_BRANCH
+```
+
 ### Fixed Paths
 
 - **Target repo**: `$EIGEN_ROOT` (the project root itself)

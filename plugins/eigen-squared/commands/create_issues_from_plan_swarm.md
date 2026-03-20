@@ -481,10 +481,11 @@ After all tasks and the manifest are created, create the integration branch and 
 
 ### 5.1 Create the Integration Branch from $EIGEN_BRANCH
 
-**CRITICAL: The branch MUST be created from `origin/$EIGEN_BRANCH`.** Creating from the wrong branch causes files to disappear or be in the wrong state.
+**CRITICAL: The branch MUST be created from the latest `$EIGEN_BRANCH`.** Pull first to ensure we have all merged changes (especially from previous epics).
 
 ```bash
 cd $EIGEN_ROOT
+git pull origin $EIGEN_BRANCH
 git checkout -b feat/P<N>.E<M>
 ```
 
