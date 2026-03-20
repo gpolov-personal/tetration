@@ -277,7 +277,7 @@ Store the resolved time as the scheduled start.
 
 ## Step 5.5: Commit Settings to $EIGEN_BRANCH (if not gitignored)
 
-Worktrees created by `/create_issues_from_plan_swarm` inherit files from `$EIGEN_BRANCH`. If `.claude/settings.json` is committed to `$EIGEN_BRANCH`, every worktree will have the pipeline env vars automatically.
+Integration branches created by `/create_issues_from_plan_swarm` are based on `$EIGEN_BRANCH`. If `.claude/settings.json` is committed to `$EIGEN_BRANCH`, the integration branches will have the pipeline env vars automatically.
 
 ```bash
 cd $EIGEN_ROOT
@@ -291,7 +291,7 @@ git add .claude/settings.json
 git commit -m "chore: add eigen-squared pipeline settings"
 ```
 
-Print: `Settings committed to $EIGEN_BRANCH — worktrees will inherit pipeline configuration.`
+Print: `Settings committed to $EIGEN_BRANCH — integration branches will inherit pipeline configuration.`
 
 **If gitignored** (exit code 0 — git DOES ignore it):
 Do NOT force-add. **STOP and ask the user** using AskUserQuestion:
@@ -299,12 +299,12 @@ Do NOT force-add. **STOP and ask the user** using AskUserQuestion:
 ```
 WARNING: .claude/settings.json is in .gitignore
 
-This will cause problems in later pipeline stages — worktrees created by
+This will cause problems in later pipeline stages — integration branches created by
 /create_issues_from_plan_swarm will NOT inherit pipeline settings
 (EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, plugin configuration).
 
 There is a defensive fallback in /create_issues_from_plan_swarm that copies
-settings into each worktree, but the recommended fix is to allow
+settings into each branch, but the recommended fix is to allow
 settings.json in git.
 
 Options:
@@ -321,10 +321,10 @@ cd $EIGEN_ROOT
 git add .gitignore .claude/settings.json
 git commit -m "chore: add eigen-squared pipeline settings (gitignore exception)"
 ```
-Print: `Fixed. .claude/settings.json is now committed — worktrees will inherit pipeline configuration.`
+Print: `Fixed. .claude/settings.json is now committed — integration branches will inherit pipeline configuration.`
 
 **If option 2** (continue):
-Print: `Continuing. The /create_issues_from_plan_swarm fallback will copy settings into each worktree.`
+Print: `Continuing. Settings will be available on integration branches since they inherit from $EIGEN_BRANCH.`
 
 **If option 3** (stop):
 **STOP.** Print: `Pipeline launch cancelled. Fix .gitignore and re-run /eigen_start.`
