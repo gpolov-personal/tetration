@@ -327,26 +327,48 @@ Verify that infrastructure set up by other tasks in the E2E Testing epic is runn
 2. Attempt health checks on expected services (database, cache, queue, app server)
 3. Check connectivity to expected ports
 
-Classify what is available and determine the test connection method:
+#### Step 2: Classify Infrastructure Tier
 
-- **Full stack available**: App server + all backing services are running and healthy.
+Based on what is available, classify into one of three tiers:
+
+- **Tier 1 — Full Stack** (preferred): App server + all backing services are running and healthy.
   - Tests MUST use real HTTP/network requests to the running server (e.g., `http://localhost:<port>`)
   - Do NOT use in-process test clients, test app factories, or embedded servers
   - The test exercises the REAL deployed application, including routing, middleware, and serialization
   - See "E2E Test Type Tooling" → `test_type: api` in the `language-profiles` skill for language-specific HTTP clients
 
-- **Partial infrastructure**: Some services running (e.g., DB, cache) but app server not available.
+- **Tier 2 — Infrastructure Only** (fallback): Some services running (e.g., DB, cache) but app server not available.
   - In-process test clients are acceptable, BUT they MUST connect to the REAL running services (real database, real cache, real queue)
   - NEVER substitute with SQLite, in-memory fakes, or mocked connections
   - The test verifies business logic against real data stores, even if the HTTP layer is in-process
 
-- **No infrastructure**: Nothing is running.
+- **Tier 3 — No Infrastructure**: Nothing is running.
   - Report as `[BLOCKER]` — infrastructure should have been set up by other tasks in the E2E Testing epic
   - Do NOT fall back to mocks or fakes. Wait for infrastructure to be available.
 
-#### Step 2: Handle Missing Infrastructure
+- **NEVER acceptable** (regardless of tier): Pure mocks, SQLite as PostgreSQL substitute, in-memory fakes for Redis/S3/queues, monkeypatched connections, tests passing without ANY real service running.
 
-**If required infrastructure is NOT running:**
+#### Step 3: Request Tier Approval from Leader (MANDATORY)
+
+Send a tier proposal to team-lead and **WAIT** for approval:
+
+```javascript
+SendMessage({
+  to: "team-lead",
+  type: "message",
+  content: "E2E Infrastructure Tier Proposal:\n- Proposed tier: <1_full_stack|2_infra_only|3_no_infrastructure>\n- Reason: <why this tier — what succeeded, what failed>\n- Services available: <list with ports>\n- Services unavailable: <list>\n- Existing fixtures found: <list from Phase 1 discovery, or 'none'>\n- Proposed test connection method: <real_http|test_client_real_services|no_infrastructure_needed>\n\nWaiting for approval or override.",
+  summary: "E2E tier proposal: Tier <N>"
+})
+```
+
+**STOP and WAIT** for the leader's response. The leader may:
+- **Approve** the proposed tier → proceed with that connection method
+- **Override** to a higher tier with fix instructions (e.g., "Use Tier 1 — the app service error is a missing env var, set X=Y and retry")
+- **Reject** and investigate further before approving
+
+#### Step 4: Handle Missing Infrastructure (Tier 3)
+
+**If classified as Tier 3 (no infrastructure) AND leader does not provide a fix:**
 
 Report a `[BLOCKER]` to team-lead:
 
@@ -375,11 +397,14 @@ SendMessage({
 - Proceed without infrastructure
 - Note in working notes that tests run without external services
 
-#### Step 3: Persist Infrastructure State
+#### Step 5: Persist Infrastructure State
 
 Update working notes:
 ```markdown
 ## Infrastructure
+- Approved tier: <1|2|3>
+- Tier reason: <reason>
+- Leader approval: confirmed
 - Status: <running|partial|none>
 - Services running: <list with ports>
 - Services unavailable: <list, or 'none'>
@@ -528,7 +553,7 @@ If resuming: Results parsed. Proceed to Phase 4 (report results).
    ```javascript
    TaskCreate({
      subject: "[E2E-RESULT] Iteration <iteration> — <passed>/<total> passed",
-     description: "Iteration: <iteration>\nTest connection method: <real_http|test_client_real_services|no_infrastructure_needed>\nServices: <list>\nTotal: <total>\nPassed: <passed>\nFailed: <failed>\nFlaky: <flaky_count>\nInfrastructure failures: <infra_count>\nCode bugs: <code_bug_count>\nTest issues: <test_issue_count>\nFailures:\n- <test_name> | <error_type> | <stack_files comma-separated> | <FLAKY|INFRASTRUCTURE|CODE_BUG|TEST_ISSUE>\n- ...\nInfrastructure status: <healthy|degraded|down>",
+     description: "Iteration: <iteration>\nApproved tier: <1|2|3>\nTest connection method: <real_http|test_client_real_services|no_infrastructure_needed>\nServices: <list>\nTotal: <total>\nPassed: <passed>\nFailed: <failed>\nFlaky: <flaky_count>\nInfrastructure failures: <infra_count>\nCode bugs: <code_bug_count>\nTest issues: <test_issue_count>\nFailures:\n- <test_name> | <error_type> | <stack_files comma-separated> | <FLAKY|INFRASTRUCTURE|CODE_BUG|TEST_ISSUE>\n- ...\nInfrastructure status: <healthy|degraded|down>",
      activeForm: "E2E results recorded"
    })
    // Immediately mark completed — it is a fact record
@@ -547,6 +572,11 @@ If resuming: Results parsed. Proceed to Phase 4 (report results).
    ```
 
    **NEVER** use `git add .` or `git add -A`.
+
+   **IMPORTANT**: Include the approved tier in the results. The leader will verify tier compliance by reading one of your test files to check that the connection method matches the approved tier:
+   - Tier 1: should see `httpx`, `requests`, `fetch`, or real URL like `http://localhost:`
+   - Tier 2: should see `TestClient` with real DB URL (NOT `sqlite://` or `:memory:`)
+   - If your test code contradicts the reported tier, the leader will reject results and re-spawn you with corrections.
 
 **Checkpoint: post-report**
 

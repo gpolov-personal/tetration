@@ -768,6 +768,7 @@ Next steps:
 cd $EIGEN_ROOT
 git add eigen_initiative/phases/phase_N/feedback/ eigen_initiative/phases/pipeline_state.json
 git commit -m "pipeline: deepen_space_split phase <N> — iteration <N>, <CONVERGED|CONTINUE>"
+git push origin $EIGEN_BRANCH
 ```
 
 ---

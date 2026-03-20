@@ -569,6 +569,7 @@ Commit bootstrap artifacts and pipeline state to `$EIGEN_BRANCH`:
 cd $EIGEN_ROOT
 git add eigen_initiative/phases/phase_N/
 git commit -m "pipeline: bootstrap phase <N> — foundation created"
+git push origin $EIGEN_BRANCH
 ```
 
 ---

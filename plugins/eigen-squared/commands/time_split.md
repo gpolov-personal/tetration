@@ -522,6 +522,7 @@ Commit all pipeline artifacts to `$EIGEN_BRANCH`:
 cd $EIGEN_ROOT
 git add eigen_initiative/phases/
 git commit -m "pipeline: time_split — <phase_count> phases generated"
+git push origin $EIGEN_BRANCH
 ```
 
 ---

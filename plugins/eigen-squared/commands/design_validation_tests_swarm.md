@@ -106,6 +106,7 @@ SendMessage({
 - `task_classification` — Is this INTERFACE_ABSTRACTION, REFACTORING, NEW_FEATURE, or ENHANCEMENT?
 - `coverage_decision` — Should I extend an existing test, create a complementary one, or skip?
 - `test_placement` — Where should this test go? (with proposed locations)
+- `test_issue` — An existing test appears wrong or contradicts requirements (with evidence and suggested fix)
 - `final_review` — All tests designed, requesting approval before finalizing
 
 #### Reporting a Blocker

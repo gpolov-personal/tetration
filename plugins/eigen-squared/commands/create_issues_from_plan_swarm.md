@@ -490,7 +490,7 @@ git checkout -b feat/P<N>.E<M> origin/$EIGEN_BRANCH
 git checkout -   # return to original branch
 ```
 
-If `feat/P<N>.E<M>` already exists locally (from a previous run), warn the user and ask whether to reuse or recreate it.
+If `feat/P<N>.E<M>` already exists locally (from a previous run): **Manual mode** (`$CLAUDE_TASKS_API` not set): warn the user and ask whether to reuse or recreate it. **Autonomous mode** (`$CLAUDE_TASKS_API` is set): reuse the existing branch (less destructive).
 
 ### 5.2 Create the Worktree
 
@@ -499,7 +499,7 @@ mkdir -p $EIGEN_ROOT/.claude/worktrees
 git worktree add $EIGEN_ROOT/.claude/worktrees/feat-P<N>.E<M> feat/P<N>.E<M>
 ```
 
-If the worktree already exists, warn the user and proceed with the existing one.
+If the worktree already exists: **Manual mode**: warn the user and proceed with the existing one. **Autonomous mode**: proceed silently with the existing worktree.
 
 Disable auto-gc in the worktree:
 ```bash

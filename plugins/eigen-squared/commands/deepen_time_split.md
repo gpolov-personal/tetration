@@ -590,6 +590,7 @@ Next steps:
 cd $EIGEN_ROOT
 git add eigen_initiative/phases/feedback/ eigen_initiative/phases/pipeline_state.json
 git commit -m "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>"
+git push origin $EIGEN_BRANCH
 ```
 
 ---
