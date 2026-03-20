@@ -38,7 +38,16 @@ This command uses the same environment variables as all eigen-squared commands:
 
 ### Epic Auto-Detection
 
-No arguments are required. The target phase and epic are auto-detected from the pipeline state:
+No arguments are required. The target phase and epic are auto-detected from the pipeline state.
+
+### Sync with Remote
+
+```bash
+cd $EIGEN_ROOT
+git pull origin $EIGEN_BRANCH
+```
+
+### Auto-Detection
 
 1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
    ```

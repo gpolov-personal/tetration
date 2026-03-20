@@ -481,12 +481,12 @@ After all tasks and the manifest are created, create the integration branch and 
 
 ### 5.1 Create the Integration Branch from $EIGEN_BRANCH
 
-**CRITICAL: The branch MUST be created from `origin/$EIGEN_BRANCH`.** Creating from the wrong branch causes files to disappear or be in the wrong state.
+**CRITICAL: The branch MUST be created from the latest `$EIGEN_BRANCH`.** Pull first to ensure we have all merged changes (especially from previous epics).
 
 ```bash
 cd $EIGEN_ROOT
-git fetch origin $EIGEN_BRANCH
-git checkout -b feat/P<N>.E<M> origin/$EIGEN_BRANCH
+git pull origin $EIGEN_BRANCH
+git checkout -b feat/P<N>.E<M>
 ```
 
 If `feat/P<N>.E<M>` already exists locally (from a previous run): **Manual mode** (`$CLAUDE_TASKS_API` not set): warn the user and ask whether to reuse or recreate it. **Autonomous mode** (`$CLAUDE_TASKS_API` is set): checkout the existing branch (`git checkout feat/P<N>.E<M>`).
@@ -499,7 +499,7 @@ The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/
 cd $EIGEN_ROOT
 git add eigen_initiative/phases/phase_N/epic_M/
 git commit -m "chore: add swarm manifest, tasks, and plan for P<N>.E<M>"
-git push origin feat/P<N>.E<M>
+git push --set-upstream origin feat/P<N>.E<M>
 ```
 
 ### 5.3 Return to $EIGEN_BRANCH

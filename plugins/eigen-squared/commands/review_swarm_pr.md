@@ -47,21 +47,21 @@ This command uses the same environment variables as all eigen-squared commands:
 
 This command MUST run on the same integration branch used by `/orchestrate_swarm`. No arguments needed — everything is derived from the branch name.
 
-1. Verify we are on an integration branch:
+1. Detect and checkout the integration branch:
    ```bash
+   cd $EIGEN_ROOT
    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
    ```
-   If the branch does NOT match the pattern `feat/P<N>.E<M>` → **STOP.** Print:
-   ```
-   ERROR: Current branch is not an integration branch. review_swarm_pr must run
-   on the feat/P<N>.E<M> branch (same one used by /orchestrate_swarm).
+   If the current branch already matches `feat/P<N>.E<M>` → proceed.
+   If not → auto-detect from `pipeline_state.json`: find the first epic with `swarm_execution.status` in `("pr_created", "iterating")` and checkout `swarm_execution.integration_branch`.
+   If no active integration branch found → **STOP.**
 
-   cd $EIGEN_ROOT
-   git checkout feat/P<N>.E<M>
-   Then run /review_swarm_pr
+2. Sync with remote:
+   ```bash
+   git pull origin feat/P<N>.E<M>
    ```
 
-2. Extract phase N and epic M from the branch name `feat/P<N>.E<M>`.
+3. Extract phase N and epic M from the branch name `feat/P<N>.E<M>`.
 
 4. Verify the manifest exists:
    ```bash

@@ -72,6 +72,15 @@ This command requires two environment variables:
      mkdir -p $EIGEN_ROOT/eigen_initiative
    ```
 
+### Sync with Remote
+
+Before reading any pipeline artifacts, ensure the local branch is up to date:
+
+```bash
+cd $EIGEN_ROOT
+git pull origin $EIGEN_BRANCH
+```
+
 ### Fixed Paths
 
 All paths in this command are derived from the environment — no arguments needed:

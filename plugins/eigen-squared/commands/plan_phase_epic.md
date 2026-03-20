@@ -76,6 +76,13 @@ No arguments are required. The target phase and epic are auto-detected from the 
 
 Print: `Auto-detected Phase <N>, Epic <M> (P<N>.E<M>) for plan_phase_epic.`
 
+### Sync with Remote
+
+```bash
+cd $EIGEN_ROOT
+git pull origin $EIGEN_BRANCH
+```
+
 ### Fixed Paths
 
 - **Epic directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`

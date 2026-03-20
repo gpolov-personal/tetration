@@ -39,6 +39,13 @@ This command uses the same environment variables as all eigen-squared commands:
    Run /time_split first to generate the phase split.
    ```
 
+### Sync with Remote
+
+```bash
+cd $EIGEN_ROOT
+git pull origin $EIGEN_BRANCH
+```
+
 ### Fixed Paths
 
 - **Phases directory**: `$EIGEN_ROOT/eigen_initiative/phases`

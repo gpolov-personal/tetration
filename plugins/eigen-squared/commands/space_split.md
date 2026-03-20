@@ -77,6 +77,13 @@ All paths are derived from `$EIGEN_ROOT` and the detected phase number N:
 
 No arguments are required. The phase is auto-detected from the pipeline state.
 
+### Sync with Remote
+
+```bash
+cd $EIGEN_ROOT
+git pull origin $EIGEN_BRANCH
+```
+
 The phase manifest (`phase_N_manifest.md`) must exist and contain the features, dependencies, clusters, blackbox specs, and optionally whitebox sections produced by `/time_split`. The phase directory (`phase_N/`) must contain `bootstrap-report.json` from `/bootstrap`.
 
 ## ID Convention
