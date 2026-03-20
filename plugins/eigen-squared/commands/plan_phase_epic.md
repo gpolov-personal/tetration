@@ -421,6 +421,7 @@ Next steps:
 cd $EIGEN_ROOT
 git add eigen_initiative/phases/phase_N/epic_M/ eigen_initiative/phases/pipeline_state.json
 git commit -m "pipeline: plan P<N>.E<M> — plan created"
+git push origin $EIGEN_BRANCH
 ```
 
 ---
