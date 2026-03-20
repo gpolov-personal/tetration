@@ -432,7 +432,31 @@ git commit -m "chore: update pipeline state — review iteration <N> for P<N>.E<
 git push origin feat/P<N>.E<M>
 ```
 
-### 7.2 Report
+### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
+
+**Skip this section entirely if not converged.**
+
+When converged, automatically merge the PR and prepare for the next epic:
+
+```bash
+# Merge the PR (squash to keep history clean, --delete-branch removes remote branch)
+gh pr merge <pr_number> --squash --delete-branch
+
+# Return to $EIGEN_BRANCH and pull the merged changes
+git checkout $EIGEN_BRANCH
+git pull origin $EIGEN_BRANCH
+
+# Delete local integration branch (safety net if --delete-branch didn't clean up)
+git branch -d feat/P<N>.E<M> 2>/dev/null
+```
+
+This ensures:
+1. The PR is merged automatically — no manual step needed
+2. `$EIGEN_BRANCH` has the latest code including this epic's changes
+3. The next epic's `/plan_phase_epic` reads the correct pipeline state
+4. The integration branch is cleaned up (both remote and local)
+
+### 7.3 Report
 
 ```
 === Review Complete — P<N>.E<M> (Iteration <N>) ===
@@ -453,12 +477,9 @@ Next steps:
     The manifest has been updated — only new review tasks will execute.
     After fixups complete, run /review_swarm_pr again (iteration <N+1>).
   If CONVERGED:
-    Merge the PR:
-      gh pr merge <pr_number> --squash
-    Then clean up:
-      git checkout $EIGEN_BRANCH
-      git branch -d feat/P<N>.E<M>
-    Proceed to the next epic in the phase.
+    PR #<pr_number> merged to $EIGEN_BRANCH. Branch feat/P<N>.E<M> deleted.
+    Now on $EIGEN_BRANCH with latest changes.
+    Proceeding to next epic in the phase.
 ```
 
 ---
@@ -480,8 +501,8 @@ Next steps:
 - **Review task IDs**: `P<N>.E<M>.R<K>` format (R for Review).
 - **Convergence**: ALL findings (P1, P2, and P3) must be resolved. Max 8 iterations. Oscillation breaks the cycle.
 - **Push after every commit**: the PR updates automatically when the branch is pushed.
-- **Merge is manual**: after convergence, the user merges the PR. This brings all artifacts (code, tasks, manifest, pipeline_state, reports) to `$EIGEN_BRANCH`.
-- **Branch cleanup is manual**: after merge, user switches to `$EIGEN_BRANCH` and deletes the local integration branch.
+- **Merge is automatic on convergence**: when converged, the command merges the PR via `gh pr merge --squash --delete-branch`, checks out `$EIGEN_BRANCH`, pulls, and deletes the local branch. No manual step needed.
+- **Post-merge state**: after auto-merge, the working directory is on `$EIGEN_BRANCH` with all epic artifacts (code, tasks, manifest, pipeline_state, reports) merged in.
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
 
 ---
@@ -494,9 +515,9 @@ If `$CLAUDE_TASKS_API` is set, schedule the next command based on convergence. I
 
 - **If CONTINUE** (findings remain) → `/orchestrate_swarm` (same branch, fixup tasks)
 - **If CONVERGED** → check if this is the E2E Testing epic (last epic in phase):
-  1. Read `eigen_initiative/phases/phase_N/epic_dag.json` from the branch
+  1. Read `eigen_initiative/phases/phase_N/epic_dag.json` (already on `$EIGEN_BRANCH` after merge)
   2. Find the last epic in the `epics[]` array
-  3. **If current epic IS the E2E Testing epic** (`name == "E2E Testing"` AND `features == []`) → **STOP.** Phase is complete. Do NOT create a next task. Print: `Phase <N> complete. All epics including E2E Testing have converged. Manual testing and PR merges required.`
+  3. **If current epic IS the E2E Testing epic** (`name == "E2E Testing"` AND `features == []`) → **STOP.** Phase is complete. Do NOT create a next task. Print: `Phase <N> complete. All epics including E2E Testing have converged. All PRs merged. Run /eigen_continue to review and start next phase.`
   4. **If current epic is NOT the last** → schedule `/plan_phase_epic` for the next epic (working_dir back to `$EIGEN_ROOT`)
 
 ```bash
@@ -535,4 +556,4 @@ curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
 ```
 
 Print (if chaining): `Auto-chain: /<next_command> scheduled in 3 minutes.`
-Print (if stopping): `Phase <N> complete. Autonomous pipeline finished. Review and merge PRs manually.`
+Print (if stopping): `Phase <N> complete. Autonomous pipeline finished. All PRs merged. Run /eigen_continue to review and start next phase.`
