@@ -47,7 +47,7 @@ This applies to ALL E2E tests written by this command:
 
 ## Prerequisites
 
-- `swarm-manifest.json` in the worktree with `e2e_config` section
+- `swarm-manifest.json` in the repository with `e2e_config` section
 - All `[WORK]` tasks in the current epic completed
 - Integration phase completed (if applicable)
 - Full test suite passing (verified by the leader after integration)
