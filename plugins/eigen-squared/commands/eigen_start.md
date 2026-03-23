@@ -359,35 +359,109 @@ Each command runs ~3 minutes after the previous finishes.
 
 ---
 
-## Step 7: Create the First Task
+## Step 7: Register Pipeline Controller Hook
+
+The pipeline controller hook fires on every Claude Code `Stop` event. It reads `pipeline_state.json`, determines the next command, checks out the correct branch, and schedules it automatically. This replaces all manual task scheduling.
+
+### 7.1 Install hook scripts into the project
+
+Copy the pipeline controller scripts from the plugin into the project's `.eigen/` directory.
+
+The source files are in the `hooks/` directory of this plugin — a sibling of the `commands/` directory you are reading right now. Use the Glob tool to find them: search for `**/hooks/pipeline_hook.sh` and `**/hooks/pipeline_controller.py` near this file's location. Then use the Read tool to get their contents and the Write tool to write them into the project:
+
+```
+$EIGEN_ROOT/.eigen/pipeline_hook.sh    ← copy from plugin hooks/pipeline_hook.sh
+$EIGEN_ROOT/.eigen/pipeline_controller.py  ← copy from plugin hooks/pipeline_controller.py
+```
+
+After writing both files, make them executable:
 
 ```bash
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
+chmod +x $EIGEN_ROOT/.eigen/pipeline_hook.sh
+chmod +x $EIGEN_ROOT/.eigen/pipeline_controller.py
+```
+
+### 7.2 Write `.eigen/env`
+
+Create `$EIGEN_ROOT/.eigen/env` with the pipeline environment variables that are set. Only include variables that have values — do not write empty or placeholder entries:
+
+```bash
+cat > $EIGEN_ROOT/.eigen/env << 'ENVEOF'
+export EIGEN_ROOT="<absolute path>"
+export EIGEN_BRANCH="<branch name>"
+export CLAUDE_TASKS_API="<api url>"
+ENVEOF
+```
+
+If notification env vars are configured (any of `EIGEN_TELEGRAM_CHAT_ID`, `EIGEN_SLACK_WEBHOOK`, `EIGEN_DISCORD_WEBHOOK`), include only the ones that have values. These are optional — if none are set, the hook runs without notifications.
+
+### 7.3 Ensure `.eigen/` is gitignored
+
+```bash
+# Add .eigen/ to .gitignore if not already present
+grep -qxF '.eigen/' $EIGEN_ROOT/.gitignore 2>/dev/null || echo '.eigen/' >> $EIGEN_ROOT/.gitignore
+```
+
+### 7.4 Register Stop hook in project settings
+
+Read `$EIGEN_ROOT/.claude/settings.json`. Find or create the `hooks.Stop` array. Add (or update) the eigen-managed entry:
+
+```json
+{
+  "hooks": [
+    {
+      "type": "command",
+      "command": "bash $EIGEN_ROOT/.eigen/pipeline_hook.sh"
+    }
+  ],
+  "_eigen_managed": true
+}
+```
+
+Note: use the **absolute path** to `$EIGEN_ROOT/.eigen/pipeline_hook.sh` (resolve the variable, don't write the literal `$EIGEN_ROOT`).
+
+**If an `_eigen_managed` entry already exists**: update its command path.
+**If other Stop hooks exist**: preserve them — append the eigen entry, don't replace.
+
+### 7.4 Initialize pipeline state
+
+Initialize `pipeline_state.json` with `time_split.status = "not_started"` (as before).
+
+### 7.5 Schedule the first task
+
+The Stop hook was just registered in settings.json, but Claude Code loads hooks at **session start** — so the hook won't fire when THIS session ends. To bridge the gap, `eigen_start` is the only command that schedules a task directly via curl:
+
+```bash
+NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
+
+# Only include notification webhooks if configured.
 curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
   -H "Content-Type: application/json" \
   -d '{
     "name": "eigen: time_split (pipeline start)",
     "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:time_split\"). Follow all its instructions completely.",
     "cron_expr": "",
-    "scheduled_at": "'$SCHEDULED_AT'",
+    "scheduled_at": "'$NEXT_RUN'",
     "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
+    "enabled": true
   }'
 ```
 
+From this point on, the pipeline controller hook handles all subsequent scheduling automatically. No other command uses curl for task scheduling.
 
 Print:
 ```
 === Pipeline Launched! ===
 
-First task: /time_split
-Scheduled: <human-readable time>
+Pipeline controller hook installed at $EIGEN_ROOT/.eigen/
+First task: /time_split (scheduled in 3 minutes)
+
+From now on, the Stop hook handles all command scheduling automatically.
 
 Monitor progress:
   - List tasks: curl $CLAUDE_TASKS_API/api/v1/tasks
   - Latest run: curl $CLAUDE_TASKS_API/api/v1/tasks/<id>/runs/latest
-  - Task output: curl $CLAUDE_TASKS_API/api/v1/tasks/<id>/runs/latest | jq .output
+  - Hook log: cat $EIGEN_ROOT/.eigen/hook_log.jsonl
 
 The pipeline runs autonomously until the phase is complete.
 It STOPS after the E2E Testing epic converges.
@@ -401,7 +475,8 @@ To cancel: disable the pending task in claude-tasks TUI or API.
 
 - **This command runs interactively** — it asks questions and validates before launching.
 - **Env vars MUST be in `.claude/settings.json`** — never in the shell. This prevents cross-project contamination.
-- **First run requires a restart** — after writing settings.json, Claude Code must restart to load the new env vars.
+- **No restart needed** — `eigen_start` schedules the first task (`time_split`) directly via curl. The Stop hook activates on the next session automatically. Env vars written to settings.json take effect when `time_split` starts its own session.
 - **claude-tasks must be running** in a separate terminal (`claude-tasks serve`).
 - **One claude-tasks server, multiple projects** — each project's `working_dir` points to its own root, and each has its own `.claude/settings.json` with isolated env vars.
 - **ONE-TIME use only** — this command is for fresh pipelines. If the pipeline has already started, use `/eigen_continue` to review the completed phase and launch the next one.
+- **Pipeline controller hook** — the Stop hook handles all command scheduling and branch management. Commands no longer contain auto-chain logic.

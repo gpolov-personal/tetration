@@ -782,43 +782,8 @@ git push origin $EIGEN_BRANCH
 
 ---
 
-## Auto-Chain (claude-tasks integration)
+## Pipeline Continuation
 
-If `$CLAUDE_TASKS_API` is set, schedule the next command based on convergence. If not set, skip.
+After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-- **If CONTINUE** → `/space_split`
-- **If CONVERGED** → `/plan_phase_epic`
-
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-# If CONTINUE:
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: space_split (iteration)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:space_split\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-
-# If CONVERGED:
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: plan_phase_epic",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:plan_phase_epic\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-```
-
-Print: `Auto-chain: /<next_command> scheduled in 3 minutes.`
+**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.

@@ -27,6 +27,16 @@ You are NOT a walking skeleton builder. You create structure and contracts only,
 - No E2E test infrastructure — the E2E Testing epic (created by `/space_split`) owns this
 - No application Dockerfiles — the swarm creates these as part of implementation
 
+### Schema Source Priority
+
+When creating entity stubs, the source of truth for field names, types, and constraints depends on what's available:
+
+1. **If the project already has code** (existing codebase, refactoring): use actual schema/migration files as the primary source. Cross-reference against whitebox (if exists) and blackbox, but trust the code over the docs.
+2. **If whitebox exists** (reference system documented): use the whitebox database schema section for field-level details. It's more reliable than blackbox for exact names, types, and constraints.
+3. **If only blackbox exists** (greenfield, no reference): blackbox specs are the source of truth. Flag any ambiguities in field names or types for downstream commands to resolve.
+
+Never assume docs are accurate if actual code is available to check.
+
 ## Environment Variables
 
 This command uses the same environment variables as all eigen-squared commands:
@@ -581,25 +591,8 @@ git push origin $EIGEN_BRANCH
 
 ---
 
-## Auto-Chain (claude-tasks integration)
+## Pipeline Continuation
 
-If `$CLAUDE_TASKS_API` is set, schedule `/deepen_bootstrap` as the next command. If not set, skip.
+After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: deepen_bootstrap",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:deepen_bootstrap\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-```
-
-
-Print: `Auto-chain: /deepen_bootstrap scheduled in 3 minutes.`
+**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.

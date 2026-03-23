@@ -223,59 +223,33 @@ Do NOT update pipeline state. Exit.
 
 2. Determine next phase:
    - Read `initiative_summary.json` for total phase count
-   - If Phase N is the LAST phase → **STOP.** Print:
-     ```
-     === All Phases Complete ===
+   - If Phase N is the LAST phase → print the completion message
+   - If more phases remain → print the continuation message
 
-     Phase <N> was the final phase. The initiative is complete!
-
-     Remaining actions:
-       - Merge any remaining PRs
-       - Run /compound_improve to apply lessons learned
-       - Archive the eigen_initiative/ directory
-     ```
-
-   - If more phases remain → schedule next phase's `/time_split`:
-
-3. Schedule next phase via claude-tasks (if `$CLAUDE_TASKS_API` is set):
-   ```bash
-   NEXT_RUN=$(date -u -d '+5 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-   # Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-   curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "eigen: time_split (Phase <N+1>)",
-       "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:time_split\"). Follow all its instructions completely.",
-       "cron_expr": "",
-       "scheduled_at": "'$NEXT_RUN'",
-       "working_dir": "'$EIGEN_ROOT'",
-       "enabled": true,
-       "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-     }'
-   ```
-
-4. Print:
+3. Print (if more phases remain):
    ```
    === Phase <N> Approved — Continuing to Phase <N+1> ===
 
    Phase <N>: approved at <timestamp>
-   Phase <N+1>: /time_split scheduled in 5 minutes
 
-   The autonomous pipeline will resume and run Phase <N+1> to completion.
+   The pipeline controller hook will schedule the next phase automatically
+   when this session ends. The autonomous pipeline will resume and run
+   Phase <N+1> to completion.
+
    When Phase <N+1> finishes, run /eigen_continue again.
    ```
 
-   If `$CLAUDE_TASKS_API` is NOT set:
+   Print (if last phase):
    ```
-   === Phase <N> Approved ===
+   === All Phases Complete! ===
 
    Phase <N>: approved at <timestamp>
+   The initiative is complete!
 
-   To start Phase <N+1> manually:
-     Run /time_split (it will auto-detect Phase <N+1>)
-
-   Or set $CLAUDE_TASKS_API and run /eigen_continue again to schedule it automatically.
+   Remaining actions:
+     - Merge any remaining PRs
+     - Run /compound_improve to apply lessons learned
+     - Archive the eigen_initiative/ directory
    ```
 
 ---
@@ -287,5 +261,4 @@ Do NOT update pipeline state. Exit.
 - **Never skips user confirmation** — the pipeline MUST NOT cross phase boundaries without human approval.
 - **Merge order matters** — PRs should be merged in epic wave order (Wave 1 first, E2E Testing last).
 - **Testing recipe is generated, not hardcoded** — it reads from `phase_e2e_config.json` and the `language-profiles` skill.
-- **5-minute delay for next phase** (not 3) — gives more time after a phase transition than between pipeline steps.
-- **Works without claude-tasks** — if `$CLAUDE_TASKS_API` is not set, it still approves the phase and tells the user to run `/time_split` manually.
+- **Pipeline controller hook** — after this session ends, the Stop hook reads `pipeline_state.json` and schedules the next phase's bootstrap automatically. No manual task scheduling needed.

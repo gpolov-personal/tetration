@@ -166,6 +166,8 @@ After collecting all findings (Phase 5), apply these convergence rules **in orde
 3. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json` — bootstrap context (entity paths, tooling decisions)
 4. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json` — inter-epic dependency context
 
+When reviewing the plan, verify that its claims about the codebase (entity counts, field names, SDK usage, test coverage) match what's actually in `$EIGEN_ROOT`. The plan should have checked the code — flag findings where it relied on docs without verifying.
+
 ### 0.3 Load Existing Lessons
 
 1. Glob `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/*.json`.
@@ -485,43 +487,8 @@ git push origin $EIGEN_BRANCH
 
 ---
 
-## Auto-Chain (claude-tasks integration)
+## Pipeline Continuation
 
-If `$CLAUDE_TASKS_API` is set, schedule the next command based on convergence. If not set, skip.
+After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-- **If CONTINUE** → `/plan_phase_epic` (re-iterate on same epic)
-- **If CONVERGED** → `/create_issues_from_plan_swarm` (immediately proceed to task generation for THIS epic — epics are done one at a time: plan → create issues → orchestrate → review → next epic)
-
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-# If CONTINUE:
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: plan_phase_epic (iteration)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:plan_phase_epic\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-
-# If CONVERGED:
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: create_issues_from_plan_swarm",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:create_issues_from_plan_swarm\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-```
-
-Print: `Auto-chain: /<next_command> scheduled in 3 minutes.`
+**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
