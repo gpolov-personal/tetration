@@ -26,6 +26,14 @@ This command is **pipeline-aware** — it reads from local `epic.md` files creat
 - Research findings and best practices
 - **Parallelization strategy** (which components can be developed concurrently)
 
+### Verify Against the Actual Codebase
+
+By the time this command runs, bootstrap has already created entity stubs, contracts, and project structure. Prior phases may have added real implementations. When making architectural decisions, defining interfaces, or counting entities:
+
+- **Read the actual code in `$EIGEN_ROOT`** — not just the blackbox specs or epic.md. If bootstrap used different field names, or a previous phase changed the schema, trust the code.
+- **Grep for actual imports and SDK usage** before choosing approaches. Don't assume which methods are available — check what's actually imported.
+- **Read actual test files** before claiming coverage gaps. Don't inherit gap claims from upstream docs — they may be stale.
+
 ## Environment Variables
 
 This command uses the same environment variables as all eigen-squared commands:
@@ -450,24 +458,8 @@ git push origin $EIGEN_BRANCH
 
 ---
 
-## Auto-Chain (claude-tasks integration)
+## Pipeline Continuation
 
-If `$CLAUDE_TASKS_API` is set, schedule `/deepen_plan_phase_epic` as the next command. If not set, skip.
+After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: deepen_plan_phase_epic",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:deepen_plan_phase_epic\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-```
-
-Print: `Auto-chain: /deepen_plan_phase_epic scheduled in 3 minutes.`
+**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
