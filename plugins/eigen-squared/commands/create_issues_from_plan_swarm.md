@@ -502,13 +502,9 @@ git commit -m "chore: add swarm manifest, tasks, and plan for P<N>.E<M>"
 git push --set-upstream origin feat/P<N>.E<M>
 ```
 
-### 5.3 Return to $EIGEN_BRANCH
+### 5.3 Branch state
 
-After committing and pushing the artifacts to the integration branch, return to `$EIGEN_BRANCH` so that subsequent pipeline commands (for other epics) operate on the correct branch:
-
-```bash
-git checkout $EIGEN_BRANCH
-```
+After committing and pushing, the working directory remains on the `feat/P<N>.E<M>` integration branch. The pipeline controller hook handles checking out the correct branch for the next command (orchestrate_swarm on this same branch, or EIGEN_BRANCH for other commands).
 
 ---
 
@@ -581,25 +577,8 @@ Before finalizing, verify:
 
 ---
 
-## Auto-Chain (claude-tasks integration)
+## Pipeline Continuation
 
-If `$CLAUDE_TASKS_API` is set, schedule `/orchestrate_swarm` as the next command. The working_dir is `$EIGEN_ROOT` — orchestrate_swarm will checkout the integration branch itself.
+After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: orchestrate_swarm P<N>.E<M>",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:orchestrate_swarm\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-```
-
-Print: `Auto-chain: /orchestrate_swarm scheduled in 3 minutes.`
+**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
