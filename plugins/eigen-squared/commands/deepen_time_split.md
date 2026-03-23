@@ -222,11 +222,13 @@ For each phase (cumulative — phase N includes features from phases 1..N):
 3. Is there at least one persistence/storage feature?
 4. Is there at least one frontend/output/API feature?
 5. Does the e2e_summary in the manifest accurately describe a testable flow?
+6. If ANY phase manifest or the Initiative mentions containerized deployment (Docker, Fly.io, Kubernetes, docker-compose): does Phase 1 include the containerization feature? Does Phase 1's e2e_summary mention running against the containerized stack? If containerization features exist in the Initiative but are deferred to Phase 2+, flag as e2e_gap with high severity — Phase 1 E2E tests would validate a configuration that doesn't exist in production.
 
 Phase manifests with their e2e_summary:
 <all phase manifests>
 
-For each phase, rate E2E coverage as: COMPLETE / PARTIAL (missing which layer?) / BROKEN (no testable flow)"
+For each phase, rate E2E coverage as: COMPLETE / PARTIAL (missing which layer?) / BROKEN (no testable flow)
+For Phase 1 specifically: if Initiative mentions deployment/containers, check containerization is present — PRESENT / MISSING"
 ```
 
 ### 1.4 Phase Balance Agent

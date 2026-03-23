@@ -458,7 +458,9 @@ updated_at: "<ISO 8601>"
   - `pipeline` → data source + data sink infrastructure (S3/MinIO, message broker, target database)
   - `full_stack` → combination of the above
 
-  This section informs `/plan_phase_epic` when it plans the E2E Testing epic — it will know what infrastructure to set up (docker-compose, emulators, dev servers, etc.)
+  **If bootstrap created Docker artifacts** (check `bootstrap-report.json` → `delta_applied.dockerfile_created`): bootstrap provides a minimal Dockerfile and docker-compose.yml (health check only). Feature epics may extend them as they add functionality (system deps, new services). The E2E Testing epic **completes and finalizes** the Docker setup for testing: ensures the full stack works end-to-end, adds test-specific configuration (seed data, environment variables, additional services if needed), and writes tests against it. Set `test_environment` to `"container_parity"` in the phase_e2e_config. Include the startup/teardown commands for the containerized stack.
+
+  This section informs `/plan_phase_epic` when it plans the E2E Testing epic — it will know what infrastructure to set up (or reference from bootstrap).
 
 ### 2.3 Update Epic Cross-References
 
@@ -611,10 +613,15 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/phase_e2e_config.json`:
   ],
   "infrastructure_requirements": {
     "test_types_detected": ["api", "browser"],
+    "test_environment": "container_parity",
     "needs_docker": true,
     "needs_emulator": false,
     "needs_browser_automation": true,
-    "services": ["postgresql", "redis"],
+    "compose_file": "docker-compose.yml",
+    "startup_command": "docker compose up -d --wait",
+    "health_check": "http://localhost:8000/api/health",
+    "teardown_command": "docker compose down -v",
+    "services": ["app", "postgresql", "redis"],
     "notes": "<any additional infrastructure context derived from the features>"
   }
 }

@@ -27,6 +27,133 @@ For multi-language projects, identify the role of each language (e.g., "Python: 
 
 ---
 
+## Server Project Detection
+
+A **server project** is any project that deploys a running process (web app, API, background worker). Container parity is the default for server projects — `docker compose up` should produce the complete environment for local dev, CI, and E2E testing.
+
+**Detect by framework dependencies** (check manifest files):
+
+| Language | Framework Indicators |
+|----------|---------------------|
+| Python | `fastapi`, `flask`, `django`, `starlette`, `litestar` in pyproject.toml/requirements |
+| JavaScript/TypeScript | `express`, `fastify`, `next`, `hono`, `koa`, `nestjs` in package.json |
+| Go | `net/http`, `gin-gonic/gin`, `labstack/echo`, `gofiber/fiber` in go.mod or imports |
+| Rust | `actix-web`, `axum`, `rocket` in Cargo.toml |
+| C#/.NET | `Microsoft.AspNetCore` in .csproj references |
+| Kotlin/Android | Not typically a server (mobile app) — skip unless Spring Boot detected |
+| Java | `spring-boot-starter-web`, `jakarta.servlet` in pom.xml/build.gradle |
+
+**Detect infrastructure services** (from Initiative tech stack + dependencies):
+
+| Dependency | Service | Container Image |
+|-----------|---------|-----------------|
+| `sqlalchemy`, `prisma`, `typeorm`, `diesel`, `sequelize` | PostgreSQL (default) | `postgres:16-alpine` |
+| `pymysql`, `mysql2`, `mysql-connector` | MySQL | `mysql:8` |
+| `pymongo`, `mongoose` | MongoDB | `mongo:7` |
+| `sqlite`, `better-sqlite3` | Embedded (no container) | — |
+| `redis`, `ioredis`, `aioredis` | Redis | `redis:7-alpine` |
+| `celery`, `bullmq`, `amqplib` | RabbitMQ | `rabbitmq:3-alpine` |
+| `boto3`, `@aws-sdk/client-s3`, `minio` | MinIO (S3-compatible) | `minio/minio` |
+| `elasticsearch-py`, `@elastic/elasticsearch` | Elasticsearch | `elasticsearch:8` |
+
+**Rules**:
+- If server project detected AND no explicit opt-out in Initiative → `container_parity = true`
+- Bootstrap creates Dockerfile + docker-compose.yml (app + all detected infra services)
+- time_split places containerization features in Phase 1
+- E2E tests run against the full `docker compose up` stack
+
+**When container parity does NOT apply** (opt-out):
+- Libraries/packages (no deployment)
+- Serverless functions (Lambda, Cloud Functions)
+- CLI tools (no server process)
+- Mobile-only projects (Kotlin/Android, Swift/iOS, Flutter)
+
+---
+
+## Dockerfile Templates
+
+For server projects, bootstrap uses these minimal templates. Feature epics extend them as needed (e.g., adding system dependencies).
+
+### Python (FastAPI/Flask/Django)
+```dockerfile
+FROM python:3.x-slim
+WORKDIR /app
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir .
+COPY src/ src/
+EXPOSE 8000
+CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### TypeScript/Node (Express/Fastify/Next)
+```dockerfile
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+```
+
+### Go (Gin/Echo/Fiber)
+```dockerfile
+FROM golang:1.22-alpine AS build
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /server ./cmd/server
+
+FROM alpine:latest
+COPY --from=build /server /server
+EXPOSE 8080
+CMD ["/server"]
+```
+
+### Rust (Actix/Axum/Rocket)
+```dockerfile
+FROM rust:1.78 AS build
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+COPY --from=build /app/target/release/app /app
+EXPOSE 8080
+CMD ["/app"]
+```
+
+### Python + React Monorepo
+```dockerfile
+FROM node:20-alpine AS frontend-build
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+FROM python:3.x-slim
+WORKDIR /app
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir .
+COPY src/ src/
+COPY --from=frontend-build /app/frontend/dist frontend/dist
+EXPOSE 8000
+CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+These are minimal starting points. Bootstrap adapts them based on the detected language version, package manager (uv vs pip, pnpm vs npm), and project structure.
+
+---
+
 ## Language Profiles
 
 ### Python

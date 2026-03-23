@@ -319,31 +319,49 @@ E2E tests MUST run against real infrastructure. In the new model, infrastructure
 
 Refer to the **Testing Philosophy** at the top of this command — it is non-negotiable during infrastructure verification.
 
-#### Step 1: Check Infrastructure Availability
+#### Step 1: Check for Container Parity
+
+Read `phase_e2e_config.json` → `infrastructure_requirements.test_environment`:
+
+- **If `"container_parity"`**: The project has a `docker-compose.yml` (created by bootstrap) that defines the full stack. Use it:
+  1. `docker compose build` — build the app image
+  2. Run the `startup_command` from phase_e2e_config (typically `docker compose up -d --wait`)
+  3. Poll the `health_check` URL until the app responds (implies all dependencies are ready)
+  4. If health check fails after 60 seconds → report as `[BLOCKER]`
+  5. Record the `teardown_command` (typically `docker compose down -v`) for cleanup after tests
+
+  **Skip to Step 3** (Tier 1 is guaranteed when container parity is active).
+
+- **If `"external_services"` or not set**: Fall back to the manual infrastructure check below.
+
+#### Step 2: Check Infrastructure Availability (non-container-parity only)
 
 Verify that infrastructure set up by other tasks in the E2E Testing epic is running:
 
-1. Check for running Docker containers (`docker ps`, `docker-compose ps`)
+1. Check for running Docker containers (`docker ps`, `docker compose ps`)
 2. Attempt health checks on expected services (database, cache, queue, app server)
 3. Check connectivity to expected ports
 
-#### Step 2: Classify Infrastructure Tier
+#### Step 3: Classify Infrastructure Tier
 
 Based on what is available, classify into one of three tiers:
 
-- **Tier 1 — Full Stack** (preferred): App server + all backing services are running and healthy.
-  - Tests MUST use real HTTP/network requests to the running server (e.g., `http://localhost:<port>`)
+- **Tier 0 — Container Parity Stack** (best): Full stack via `docker compose up`. App + all services running in containers. This is the tier when `phase_e2e_config.json` has `test_environment: "container_parity"`.
+  - Tests MUST use real HTTP/network requests to the containerized app (e.g., `http://localhost:<port>`)
+  - The containers are the SAME as production — no test-specific configuration
+  - After tests complete, run the `teardown_command` from phase_e2e_config for clean isolation
+
+- **Tier 1 — Full Stack** (good): App server + all backing services are running and healthy (not via container parity).
+  - Tests MUST use real HTTP/network requests to the running server
   - Do NOT use in-process test clients, test app factories, or embedded servers
-  - The test exercises the REAL deployed application, including routing, middleware, and serialization
   - See "E2E Test Type Tooling" → `test_type: api` in the `language-profiles` skill for language-specific HTTP clients
 
 - **Tier 2 — Infrastructure Only** (fallback): Some services running (e.g., DB, cache) but app server not available.
-  - In-process test clients are acceptable, BUT they MUST connect to the REAL running services (real database, real cache, real queue)
+  - In-process test clients are acceptable, BUT they MUST connect to the REAL running services
   - NEVER substitute with SQLite, in-memory fakes, or mocked connections
-  - The test verifies business logic against real data stores, even if the HTTP layer is in-process
 
 - **Tier 3 — No Infrastructure**: Nothing is running.
-  - Report as `[BLOCKER]` — infrastructure should have been set up by other tasks in the E2E Testing epic
+  - Report as `[BLOCKER]` — infrastructure should have been set up by other tasks or by container parity
   - Do NOT fall back to mocks or fakes. Wait for infrastructure to be available.
 
 - **NEVER acceptable** (regardless of tier): Pure mocks, SQLite as PostgreSQL substitute, in-memory fakes for Redis/S3/queues, monkeypatched connections, tests passing without ANY real service running.

@@ -22,10 +22,16 @@ You are a **Project Foundation Architect** responsible for creating the structur
 You are NOT a walking skeleton builder. You create structure and contracts only, never business logic. The first wave of epics provides the real implementation.
 
 **What bootstrap does NOT do:**
-- No Docker/docker-compose — infrastructure setup is handled by the feature epics that need it and the E2E Testing epic
 - No database migrations — persistence setup is part of the epic that introduces it
 - No E2E test infrastructure — the E2E Testing epic (created by `/space_split`) owns this
-- No application Dockerfiles — the swarm creates these as part of implementation
+- No business logic — entity stubs are empty, routes have no handlers
+
+**What bootstrap DOES create for server projects:**
+- **Dockerfile** — minimal multi-stage build using templates from the `language-profiles` skill
+- **docker-compose.yml** — app service + all infrastructure services detected from dependencies (database, cache, queue, storage). If it runs as a managed service in production, it runs as a container locally. For library/CLI projects, skip Docker artifacts.
+- **.dockerignore** — standard ignores for the detected language
+
+These Docker artifacts are a **minimal starting point** — the app builds, starts, and the health check passes. Nothing else. Feature epics extend the Dockerfile (e.g., adding system dependencies) or add services to docker-compose.yml as their features require. The E2E Testing epic completes and finalizes the Docker setup for end-to-end testing.
 
 ### Schema Source Priority
 
@@ -399,7 +405,12 @@ Execute in two waves:
 4. Create quality config files: .editorconfig, linting config, formatting config, type checker config, test runner config
 5. Create basic CI: `.github/workflows/ci.yml` with lint + type-check + test (non-E2E)
 6. If monorepo (multiple languages): create workspace structure with separate package manifests
-7. Commit: `"bootstrap: project scaffold"`
+7. **If server project** (detected via `language-profiles` skill → Server Project Detection):
+   - Create Dockerfile using the template from `language-profiles` skill → Dockerfile Templates, adapted for the detected language version, package manager, and project structure
+   - Create docker-compose.yml with the app service + all infrastructure services detected from dependencies (use the Infrastructure Service Detection table in `language-profiles`)
+   - Create .dockerignore with standard ignores for the detected language
+   - Verify: `docker compose config` validates without errors (if docker is available)
+8. Commit: `"bootstrap: project scaffold"`
 
 **Wave 1 (Parallel sub-agent via `Task general-purpose` — Contract Generator):**
 
@@ -510,7 +521,12 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`:
     "message_contracts_created": 1,
     "config_files_created": 4,
     "ci_created": true,
-    "total_files_created": 28,
+    "server_project_detected": true,
+    "dockerfile_created": true,
+    "docker_compose_created": true,
+    "docker_compose_services": ["app", "db"],
+    "dockerignore_created": true,
+    "total_files_created": 31,
     "total_files_modified": 0,
     "total_files_skipped": 0
   },

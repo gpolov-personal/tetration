@@ -315,6 +315,7 @@ Phase 1 is the foundation. It must contain:
 2. **All roots on critical paths** — unblock the longest dependency chains early
 3. **Minimum features for first E2E**: enough for a data-in → processing → storage → minimal-output flow. This typically means at least one feature from each layer (input, processing, persistence, output/UI)
 4. **Cluster integrity**: if any feature from a cluster is in Phase 1, pull the entire cluster
+5. **Containerization**: any feature whose name or description involves Dockerfile, docker-compose, container, or deployment infrastructure MUST be in Phase 1. If the Initiative mentions containerized deployment (Docker, Fly.io, Kubernetes, etc.), the E2E test for Phase 1 should validate the containerized application, not a bare process. Deferring containerization to Phase 2+ means Phase 1 E2E tests validate a configuration that doesn't exist in production.
 
 ### 1.3 Layer Remaining Features
 
@@ -334,7 +335,8 @@ For each phase (cumulative — phase N includes all features from phases 1..N):
 
 1. Check that the cumulative feature set enables an E2E flow covering input → processing → persistence → output
 2. If a phase breaks the E2E chain, pull the minimum features from the next phase to restore it
-3. Generate a 1-2 sentence E2E test description per phase explaining what user flow is testable after this phase completes
+3. If the Initiative mentions containerized deployment (Docker, Fly.io, Kubernetes, etc.): verify Phase 1 includes the containerization feature. The E2E description for Phase 1 should mention running against the containerized stack, not a bare process
+4. Generate a 1-2 sentence E2E test description per phase explaining what user flow is testable after this phase completes
 
 Include these descriptions in the phase manifests and summary JSON.
 
