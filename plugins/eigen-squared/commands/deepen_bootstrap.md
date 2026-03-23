@@ -297,25 +297,35 @@ Report every issue: {config_file, issue_type, details}"
 
 Spawn **all agents in parallel:**
 
-### 2.1 Entity-to-Blackbox Fidelity Agent
+### 2.1 Entity Fidelity Agent
 
 ```
-Prompt: "Compare each entity stub's fields against the full blackbox specifications.
+Prompt: "Compare each entity stub's fields against the most authoritative schema source available.
+
+Schema source priority:
+- If actual schema/migration files exist in $EIGEN_ROOT (e.g., SQL migrations, ORM model files, schema.prisma): use these as primary source
+- If a whitebox reference guide exists with a database schema section: use it as primary source
+- Otherwise: use blackbox specs
 
 For each entity stub in $EIGEN_ROOT:
 1. Read the stub file and extract field names and types
-2. Read ALL blackbox specs that reference this entity
-3. Flag: fields described in blackbox but missing from stub
-4. Flag: fields in stub not mentioned in any blackbox spec
-5. Flag: type mismatches (e.g., blackbox says 'timestamp' but stub has 'str')
+2. Read the primary schema source (per priority above) for this entity
+3. Also read ALL blackbox specs that reference this entity (for cross-reference)
+4. Flag: fields in schema source but missing from stub
+5. Flag: fields in stub not in schema source or any blackbox spec
+6. Flag: type mismatches between stub and schema source
+7. Flag: enum/constraint values that don't match schema source
 
 Entity stubs:
 <entity files with contents from repo scan>
 
+Schema sources (if found):
+<migration files, model files, or whitebox schema section>
+
 Blackbox specs:
 <blackbox specs>
 
-Report every mismatch: {entity_name, field_name, issue_type, expected, actual}"
+Report every mismatch: {entity_name, field_name, issue_type, expected, actual, source}"
 ```
 
 ### 2.2 Package Manifest Agent
@@ -736,44 +746,8 @@ git push origin $EIGEN_BRANCH
 
 ---
 
-## Auto-Chain (claude-tasks integration)
+## Pipeline Continuation
 
-If `$CLAUDE_TASKS_API` is set, schedule the next command based on convergence. If not set, skip.
+After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-- **If CONTINUE** → `/bootstrap`
-- **If CONVERGED** → `/space_split`
-
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-# If CONTINUE:
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: bootstrap (iteration)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:bootstrap\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-
-# If CONVERGED:
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: space_split",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:space_split\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-```
-
-
-Print: `Auto-chain: /<next_command> scheduled in 3 minutes.`
+**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
