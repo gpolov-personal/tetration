@@ -454,7 +454,7 @@ Print:
 === Pipeline Launched! ===
 
 Pipeline controller hook installed at $EIGEN_ROOT/.eigen/
-First task: /time_split (scheduled in 1 minute)
+First task: /time_split (scheduled in 3 minutes)
 
 From now on, the Stop hook handles all command scheduling automatically.
 
