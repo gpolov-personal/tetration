@@ -4,7 +4,7 @@
 # Responsibilities: env setup, lockfile, branch checkout, delegate to Python
 #
 # This script is copied into $EIGEN_ROOT/.eigen/ by eigen_start.
-# It sources .eigen_env (in the same directory) for environment variables,
+# It sources .eigen/env (in the same directory) for environment variables,
 # resolves the correct git branch for the next command, checks it out,
 # then delegates scheduling to pipeline_controller.py (also in this directory).
 
@@ -21,7 +21,8 @@ if [ ! -f "$EIGEN_ENV_FILE" ]; then
     exit 0  # No env file — hook not set up for this project
 fi
 
-source "$EIGEN_ENV_FILE"
+# Guard against syntax errors in env file
+source "$EIGEN_ENV_FILE" || exit 0
 
 # Verify required vars after sourcing
 if [ -z "${EIGEN_ROOT:-}" ] || [ -z "${CLAUDE_TASKS_API:-}" ]; then
@@ -33,18 +34,26 @@ if [ ! -f "$STATE_FILE" ]; then
     exit 0  # No pipeline state — nothing to do
 fi
 
-HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGEN_DIR="$EIGEN_ROOT/.eigen"
 LOCK_FILE="$EIGEN_DIR/hook.lock"
 mkdir -p "$EIGEN_DIR"
 
 # ── 2. Lockfile — prevent concurrent hook runs ──
 
-exec 200>"$LOCK_FILE"
-if ! flock -n 200; then
-    exit 0  # Another hook invocation is running — skip
+# flock is Linux-only. On macOS, use mkdir-based lock as fallback.
+if command -v flock &>/dev/null; then
+    exec 200>"$LOCK_FILE"
+    if ! flock -n 200; then
+        exit 0  # Another hook invocation is running — skip
+    fi
+    # Lock released automatically when fd 200 closes (script exit)
+else
+    # macOS fallback: mkdir is atomic
+    if ! mkdir "$LOCK_FILE.d" 2>/dev/null; then
+        exit 0  # Another hook invocation is running — skip
+    fi
+    trap 'rmdir "$LOCK_FILE.d" 2>/dev/null || true' EXIT
 fi
-# Lock released automatically when fd 200 closes (script exit)
 
 # ── 3. Resolve target branch for the next command ──
 
@@ -63,9 +72,6 @@ cd "$EIGEN_ROOT"
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
 if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]; then
-    # Stash any uncommitted changes as safety measure
-    git stash --quiet 2>/dev/null || true
-
     git checkout "$TARGET_BRANCH" --quiet 2>/dev/null || {
         # Checkout failed — maybe branch doesn't exist locally yet
         git fetch origin "$TARGET_BRANCH" --quiet 2>/dev/null || true

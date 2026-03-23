@@ -552,3 +552,108 @@ class TestMakeContextKey:
     def test_epic_scope(self):
         key = pc.make_context_key({"scope": "epic", "phase": 2, "epic": 3})
         assert key == "epic:P2:E3"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v1.3.1 BUG FIX REGRESSION TESTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestV131Fixes:
+    """Regression tests for bugs found in v1.3.0 audit."""
+
+    def test_missing_state_key_returns_none(self):
+        """#1: Missing state.time_split shouldn't crash."""
+        state = {"state": {}}
+        result = pc.determine_next(state)
+        assert result is None
+
+    def test_missing_deepen_space_split_no_crash(self):
+        """#4: Phase with space_split but no deepen_space_split."""
+        phase = make_phase()
+        del phase["deepen_space_split"]
+        phase["space_split"]["status"] = "not_started"
+        phase["space_split"]["convergence"]["converged"] = False
+        state = make_pipeline_state(phases={"1": phase})
+        result = pc.determine_next(state)
+        assert result is not None
+        assert result[0] == "space_split"
+
+    def test_missing_plan_sub_keys_no_crash(self):
+        """#5: Plan entry exists but missing plan_phase_epic sub-key."""
+        phase = make_phase(plans={"1": {"swarm_execution": make_swarm_state()}})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch.object(pc, "load_epic_order", return_value=[1]):
+            with patch.object(pc, "epic_dependencies_met", return_value=True):
+                result = pc.determine_next(state)
+        assert result is not None
+        assert result[0] == "plan_phase_epic"
+
+    def test_phase_count_as_string(self):
+        """#6: phase_count stored as string '3' not int 3."""
+        state = make_pipeline_state(time_split_converged=True, phase_count=1)
+        state["state"]["time_split"]["phase_count"] = "1"
+        phase = make_phase(bootstrap_converged=False)
+        phase["bootstrap"]["status"] = "not_started"
+        state["state"]["phases"] = {"1": phase}
+        result = pc.determine_next(state)
+        assert result is not None
+        assert result[0] == "bootstrap"
+
+    def test_noop_log_not_matched_by_retry(self, tmp_path):
+        """#7: Noop log entries should not be matched by check_retry."""
+        log_file = tmp_path / "hook_log.jsonl"
+        # Write a noop entry (status="noop", no command)
+        log_file.write_text(json.dumps({
+            "action": "noop",
+            "command": None,
+            "context_key": None,
+            "status": "noop",
+            "reason": "human checkpoint",
+            "timestamp": "2026-01-01T00:00:00Z",
+        }) + "\n")
+        with patch.object(pc, "HOOK_LOG", log_file):
+            proceed, attempt = pc.check_retry("time_split", "initiative")
+        # Should not match noop → attempt 1, proceed
+        assert proceed is True
+        assert attempt == 1
+
+    def test_deadlock_detected_not_silent(self):
+        """#10: All epics blocked on deps should alert, not silently return None."""
+        phase = make_phase(plans={})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch.object(pc, "load_epic_order", return_value=[1, 2]):
+            with patch.object(pc, "epic_dependencies_met", return_value=False):
+                with patch.object(pc, "alert") as mock_alert:
+                    result = pc.determine_next(state)
+        assert result is None
+        # Should have called alert with warning about unmet deps
+        mock_alert.assert_called()
+        assert "unmet dependencies" in mock_alert.call_args[0][1]
+
+    def test_last_confirmed_ignores_noop(self, tmp_path):
+        """last_confirmed_entry skips noop entries (status != 'confirmed')."""
+        log_file = tmp_path / "hook_log.jsonl"
+        lines = [
+            json.dumps({"command": "time_split", "context_key": "initiative",
+                        "status": "confirmed", "attempt": 1, "timestamp": "t1"}),
+            json.dumps({"action": "noop", "command": None, "status": "noop",
+                        "timestamp": "t2"}),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+        with patch.object(pc, "HOOK_LOG", log_file):
+            entry = pc.last_confirmed_entry()
+        assert entry is not None
+        assert entry["command"] == "time_split"
+
+    def test_last_confirmed_requires_command_field(self, tmp_path):
+        """last_confirmed_entry requires a non-null command field."""
+        log_file = tmp_path / "hook_log.jsonl"
+        # Entry with confirmed status but no command — should be skipped
+        log_file.write_text(json.dumps({
+            "status": "confirmed",
+            "timestamp": "t1",
+        }) + "\n")
+        with patch.object(pc, "HOOK_LOG", log_file):
+            entry = pc.last_confirmed_entry()
+        assert entry is None

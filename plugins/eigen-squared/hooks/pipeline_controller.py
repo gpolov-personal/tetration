@@ -85,18 +85,34 @@ def log_entry(entry):
 
 
 def last_confirmed_entry():
-    """Read the most recent 'confirmed' entry from hook_log."""
+    """Read the most recent 'confirmed' entry with a command from hook_log.
+
+    Only returns entries that have both 'status'='confirmed' AND a 'command' field.
+    This excludes noop entries which have status=confirmed but no command.
+    Reads only the last 8KB of the file to avoid O(n) full-file reads on large logs.
+    """
     if not HOOK_LOG.exists():
         return None
-    for line in reversed(HOOK_LOG.read_text().strip().split("\n")):
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-            if entry.get("status") == "confirmed":
-                return entry
-        except json.JSONDecodeError:
-            continue
+    try:
+        file_size = HOOK_LOG.stat().st_size
+        with open(HOOK_LOG, "r") as f:
+            # Read last 8KB (enough for ~40 entries)
+            read_from = max(0, file_size - 8192)
+            f.seek(read_from)
+            if read_from > 0:
+                f.readline()  # Discard partial first line
+            tail = f.read()
+        for line in reversed(tail.strip().split("\n")):
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                if entry.get("status") == "confirmed" and entry.get("command"):
+                    return entry
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        pass
     return None
 
 
@@ -249,18 +265,29 @@ def determine_next(state):
     Returns:
         (command_name, context_dict) or None for human checkpoint / complete.
     """
-    s = state["state"]
+    s = state.get("state")
+    if not s:
+        return None
 
     # ── Initiative level: time_split ↔ deepen_time_split ──
 
-    result = next_for_convergence_pair(s["time_split"], s["deepen_time_split"])
+    ts = s.get("time_split")
+    dts = s.get("deepen_time_split")
+    if not ts or not dts:
+        alert("error", "pipeline_state missing time_split or deepen_time_split")
+        return None
+
+    result = next_for_convergence_pair(ts, dts)
     if result[0] == "run_main":
         return ("time_split", {"scope": "initiative"})
     if result[0] == "run_deepen":
         return ("deepen_time_split", {"scope": "initiative"})
 
-    # Validate phase_count
-    phase_count = s["time_split"].get("phase_count") or 0
+    # Validate phase_count (may be string from JSON)
+    try:
+        phase_count = int(ts.get("phase_count") or 0)
+    except (ValueError, TypeError):
+        phase_count = 0
     if phase_count == 0:
         alert("error", "time_split converged but phase_count is 0/null")
         return None
@@ -293,13 +320,16 @@ def determine_next(state):
 
         # ── Space_split ↔ deepen_space_split ──
 
-        if "space_split" not in phase:
+        ss = phase.get("space_split")
+        dss = phase.get("deepen_space_split")
+        if not ss:
             alert("warning", f"Phase {phase_num} missing space_split state")
             return None
+        if not dss:
+            # deepen_space_split not yet initialized — run space_split first
+            dss = {"status": "not_started", "feedback_consumed": False}
 
-        result = next_for_convergence_pair(
-            phase["space_split"], phase["deepen_space_split"]
-        )
+        result = next_for_convergence_pair(ss, dss)
         if result[0] == "run_main":
             return ("space_split", {"scope": "phase", "phase": phase_num})
         if result[0] == "run_deepen":
@@ -331,9 +361,22 @@ def determine_next(state):
 
             # ── Plan ↔ deepen_plan ──
 
-            result = next_for_convergence_pair(
-                plan["plan_phase_epic"], plan["deepen_plan_phase_epic"]
-            )
+            ppe = plan.get("plan_phase_epic")
+            dppe = plan.get("deepen_plan_phase_epic")
+            if not ppe:
+                # Plan entry exists but sub-keys not populated — treat as not started
+                if epic_dependencies_met(phase, epic_num, phase_num):
+                    return (
+                        "plan_phase_epic",
+                        {"scope": "epic", "phase": phase_num, "epic": epic_num},
+                    )
+                else:
+                    all_epics_converged = False
+                    continue
+            if not dppe:
+                dppe = {"status": "not_started", "feedback_consumed": False}
+
+            result = next_for_convergence_pair(ppe, dppe)
             if result[0] == "run_main":
                 return (
                     "plan_phase_epic",
@@ -397,6 +440,16 @@ def determine_next(state):
                     )
                 # Both "not_started" and "testing" = wait for human
                 return None
+        else:
+            # Not all converged, but no actionable step was found in this phase.
+            # This means epics are blocked on dependencies that aren't yet met.
+            # Don't skip to the next phase — this phase isn't done.
+            alert(
+                "warning",
+                f"Phase {phase_num}: epics have unmet dependencies. "
+                f"Pipeline waiting for in-progress work to complete.",
+            )
+            return None
 
     # All phases approved
     alert("info", "All phases complete! Initiative finished.")
@@ -651,7 +704,9 @@ def main():
             log_entry(
                 {
                     "action": "noop",
-                    "status": "confirmed",
+                    "command": None,
+                    "context_key": None,
+                    "status": "noop",
                     "reason": "human checkpoint or complete",
                 }
             )
@@ -659,6 +714,29 @@ def main():
 
         command, context = result
         context_key = make_context_key(context)
+
+        # Verify branch consistency: if --resolve-branch ran first and the
+        # bash wrapper checked out a different branch, the state we just read
+        # may differ from what --resolve-branch saw. Verify the command we
+        # picked is appropriate for the branch we're on.
+        if command in INTEGRATION_BRANCH_COMMANDS:
+            expected_branch = context.get("branch")
+            if expected_branch:
+                try:
+                    actual = subprocess.run(
+                        ["git", "-C", EIGEN_ROOT, "rev-parse", "--abbrev-ref", "HEAD"],
+                        capture_output=True, text=True
+                    )
+                    current = actual.stdout.strip()
+                    if current and current != expected_branch:
+                        alert(
+                            "warning",
+                            f"Branch mismatch: on {current}, expected {expected_branch} "
+                            f"for {command}. Skipping — will self-correct next cycle.",
+                        )
+                        return
+                except Exception:
+                    pass  # Can't verify — proceed anyway
 
         # Retry check
         should_proceed, attempt = check_retry(command, context_key)
