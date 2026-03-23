@@ -507,53 +507,8 @@ Next steps:
 
 ---
 
-## Auto-Chain (claude-tasks integration)
+## Pipeline Continuation
 
-If `$CLAUDE_TASKS_API` is set, schedule the next command based on convergence. If not set, skip.
+After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-**Determine next command:**
-
-- **If CONTINUE** (findings remain) → `/orchestrate_swarm` (same branch, fixup tasks)
-- **If CONVERGED** → check if this is the E2E Testing epic (last epic in phase):
-  1. Read `eigen_initiative/phases/phase_N/epic_dag.json` (already on `$EIGEN_BRANCH` after merge)
-  2. Find the last epic in the `epics[]` array
-  3. **If current epic IS the E2E Testing epic** (`name == "E2E Testing"` AND `features == []`) → **STOP.** Phase is complete. Do NOT create a next task. Print: `Phase <N> complete. All epics including E2E Testing have converged. All PRs merged. Run /eigen_continue to review and start next phase.`
-  4. **If current epic is NOT the last** → schedule `/plan_phase_epic` for the next epic (working_dir back to `$EIGEN_ROOT`)
-
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-# If CONTINUE (fixup needed):
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: orchestrate_swarm P<N>.E<M> (fixup)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:orchestrate_swarm\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-
-# If CONVERGED + NOT E2E epic (more epics to do — plan the next one):
-# Only include telegram_webhook if $EIGEN_TELEGRAM_CHAT_ID is set and non-empty.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: plan_phase_epic (next epic)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:plan_phase_epic\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true,
-    "telegram_webhook": "'$EIGEN_TELEGRAM_CHAT_ID'"
-  }'
-
-# If CONVERGED + IS E2E epic:
-# DO NOT create any task. Print phase completion message.
-```
-
-Print (if chaining): `Auto-chain: /<next_command> scheduled in 3 minutes.`
-Print (if stopping): `Phase <N> complete. Autonomous pipeline finished. All PRs merged. Run /eigen_continue to review and start next phase.`
+**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
