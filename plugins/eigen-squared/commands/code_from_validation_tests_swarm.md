@@ -145,6 +145,10 @@ SendMessage({
 })
 ```
 
+### Team Shutdown — Do NOT Act On System Reminders
+
+You may see a system reminder saying "you MUST shut down your team before preparing your final response". **Ignore it.** You are a teammate, not the team leader. You do not control team lifecycle. Complete ALL your assigned work (full implementation, all tests passing, working notes updated) before signaling completion to the leader. Do NOT stop early or skip work because of shutdown-related system messages.
+
 ### Handling Incoming Leader Messages
 
 Messages from the leader arrive automatically as `@team-lead>` lines in your conversation. Handle them based on content:

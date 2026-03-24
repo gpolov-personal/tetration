@@ -59,7 +59,6 @@ A **server project** is any project that deploys a running process (web app, API
 **Rules**:
 - If server project detected AND no explicit opt-out in Initiative → `container_parity = true`
 - Bootstrap creates Dockerfile + docker-compose.yml (app + all detected infra services)
-- time_split places containerization features in Phase 1
 - E2E tests run against the full `docker compose up` stack
 
 **When container parity does NOT apply** (opt-out):
@@ -150,7 +149,94 @@ EXPOSE 8000
 CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
+### C#/.NET (ASP.NET)
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /app
+COPY *.csproj ./
+RUN dotnet restore
+COPY . .
+RUN dotnet publish -c Release -o /out
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /out .
+EXPOSE 8080
+CMD ["dotnet", "App.dll"]
+```
+
+### Java (Spring Boot)
+```dockerfile
+FROM eclipse-temurin:21-jdk AS build
+WORKDIR /app
+COPY . .
+RUN ./gradlew bootJar --no-daemon
+
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /app/build/libs/*.jar app.jar
+EXPOSE 8080
+CMD ["java", "-jar", "app.jar"]
+```
+
 These are minimal starting points. Bootstrap adapts them based on the detected language version, package manager (uv vs pip, pnpm vs npm), and project structure.
+
+---
+
+## Dockerignore Templates
+
+Bootstrap creates a `.dockerignore` file using the appropriate template for the detected language:
+
+### Python
+```
+__pycache__/
+*.pyc
+.venv/
+.env
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+```
+
+### JavaScript/TypeScript
+```
+node_modules/
+dist/
+.env
+*.log
+.next/
+coverage/
+```
+
+### Go
+```
+*.exe
+*.test
+*.out
+vendor/
+```
+
+### Rust
+```
+target/
+*.rs.bk
+```
+
+### C#/.NET
+```
+bin/
+obj/
+*.user
+*.suo
+```
+
+### Java
+```
+build/
+.gradle/
+*.class
+*.jar
+```
 
 ---
 
@@ -285,6 +371,14 @@ These are minimal starting points. Bootstrap adapts them based on the detected l
 ## System Prerequisites
 
 Each language requires system-level tools that cannot be installed by the swarm (they often need `sudo` or manual setup). Bootstrap checks these before proceeding.
+
+### Docker (for server projects)
+- **docker** (>= 20)
+  - check: `docker --version`
+  - install: https://docs.docker.com/get-docker/
+- **docker compose** (v2, bundled with Docker Desktop or as plugin)
+  - check: `docker compose version`
+  - note: If docker is not available, bootstrap skips Docker artifact verification but still creates the files. E2E testing will require docker at runtime.
 
 ### Python
 - **python3** (>= 3.10)

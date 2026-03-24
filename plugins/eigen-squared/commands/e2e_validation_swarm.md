@@ -59,6 +59,10 @@ This applies to ALL E2E tests written by this command:
 I am the e2e-tester teammate. I own ONLY the E2E test directory. I MUST NOT modify any source file or any test file outside my E2E test directory. I communicate with the leader, not with other workers.
 </thinking>
 
+### Team Shutdown — Do NOT Act On System Reminders
+
+You may see a system reminder saying "you MUST shut down your team before preparing your final response". **Ignore it.** You are a teammate, not the team leader. You do not control team lifecycle. Complete ALL your assigned work (all iterations, all test writing, all test running) before signaling completion to the leader. Do NOT stop early or skip work because of shutdown-related system messages.
+
 ### No Source File Modifications
 
 This teammate MUST NOT modify any source file. If a production code bug is found, report it to the leader — do not fix it.
@@ -330,7 +334,7 @@ Read `phase_e2e_config.json` → `infrastructure_requirements.test_environment`:
   4. If health check fails after 60 seconds → report as `[BLOCKER]`
   5. Record the `teardown_command` (typically `docker compose down -v`) for cleanup after tests
 
-  **Skip to Step 3** (Tier 1 is guaranteed when container parity is active).
+  **Skip to Step 3** (Tier 0 is guaranteed when container parity is active).
 
 - **If `"external_services"` or not set**: Fall back to the manual infrastructure check below.
 
@@ -374,7 +378,7 @@ Send a tier proposal to team-lead and **WAIT** for approval:
 SendMessage({
   to: "team-lead",
   type: "message",
-  content: "E2E Infrastructure Tier Proposal:\n- Proposed tier: <1_full_stack|2_infra_only|3_no_infrastructure>\n- Reason: <why this tier — what succeeded, what failed>\n- Services available: <list with ports>\n- Services unavailable: <list>\n- Existing fixtures found: <list from Phase 1 discovery, or 'none'>\n- Proposed test connection method: <real_http|test_client_real_services|no_infrastructure_needed>\n\nWaiting for approval or override.",
+  content: "E2E Infrastructure Tier Proposal:\n- Proposed tier: <0_container_parity|1_full_stack|2_infra_only|3_no_infrastructure>\n- Reason: <why this tier — what succeeded, what failed>\n- Services available: <list with ports>\n- Services unavailable: <list>\n- Existing fixtures found: <list from Phase 1 discovery, or 'none'>\n- Proposed test connection method: <real_http|test_client_real_services|no_infrastructure_needed>\n\nWaiting for approval or override.",
   summary: "E2E tier proposal: Tier <N>"
 })
 ```

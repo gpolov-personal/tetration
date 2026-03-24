@@ -458,9 +458,18 @@ updated_at: "<ISO 8601>"
   - `pipeline` → data source + data sink infrastructure (S3/MinIO, message broker, target database)
   - `full_stack` → combination of the above
 
-  **If bootstrap created Docker artifacts** (check `bootstrap-report.json` → `delta_applied.dockerfile_created`): bootstrap provides a minimal Dockerfile and docker-compose.yml (health check only). Feature epics may extend them as they add functionality (system deps, new services). The E2E Testing epic **completes and finalizes** the Docker setup for testing: ensures the full stack works end-to-end, adds test-specific configuration (seed data, environment variables, additional services if needed), and writes tests against it. Set `test_environment` to `"container_parity"` in the phase_e2e_config. Include the startup/teardown commands for the containerized stack.
+  **If bootstrap created Docker artifacts** (check `bootstrap-report.json` → `delta_applied.dockerfile_created`): bootstrap provides a minimal Dockerfile and docker-compose.yml (health check only). Feature epics may extend them as they add functionality (system deps, new services). The E2E Testing epic **completes and finalizes** the Docker setup for testing: ensures the full stack works end-to-end, adds test-specific configuration (seed data, environment variables, additional services if needed), and writes tests against it.
 
-  This section informs `/plan_phase_epic` when it plans the E2E Testing epic — it will know what infrastructure to set up (or reference from bootstrap).
+  When populating `infrastructure_requirements` in `phase_e2e_config.json`:
+  - Set `test_environment` to `"container_parity"`
+  - Set `services` from `bootstrap-report.json` → `delta_applied.docker_compose_services`
+  - Set `health_check` to `http://localhost:<port><path>` using `delta_applied.exposed_port` and `delta_applied.health_check_path` from the bootstrap report
+  - Set `startup_command` to `docker compose up -d --wait`
+  - Set `teardown_command` to `docker compose down -v`
+
+  **If bootstrap did NOT create Docker artifacts**: set `test_environment` to `"external_services"`. The E2E Testing epic sets up its own infrastructure. Leave `compose_file`, `startup_command`, `health_check`, and `teardown_command` empty.
+
+  This section informs `/plan_phase_epic` when it plans the E2E Testing epic — it will know what infrastructure to use.
 
 ### 2.3 Update Epic Cross-References
 
@@ -613,15 +622,15 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/phase_e2e_config.json`:
   ],
   "infrastructure_requirements": {
     "test_types_detected": ["api", "browser"],
-    "test_environment": "container_parity",
+    "test_environment": "<container_parity|external_services>",
     "needs_docker": true,
     "needs_emulator": false,
     "needs_browser_automation": true,
     "compose_file": "docker-compose.yml",
     "startup_command": "docker compose up -d --wait",
-    "health_check": "http://localhost:8000/api/health",
+    "health_check": "http://localhost:<port><path>",
     "teardown_command": "docker compose down -v",
-    "services": ["app", "postgresql", "redis"],
+    "services": ["<from bootstrap-report.docker_compose_services>"],
     "notes": "<any additional infrastructure context derived from the features>"
   }
 }

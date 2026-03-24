@@ -396,7 +396,7 @@ For each finding, assign:
   - `structural_error` — DAG violation, cluster split, missing dependency
   - `balance_issue` — phase too large/small, priority misordering, bottleneck placement
   - `content_gap` — missing blackbox spec, irrelevant/missing whitebox section
-  - `e2e_gap` — phase doesn't enable progressive E2E testing
+  - `e2e_gap` — phase doesn't enable progressive E2E testing (phase-level; distinct from `e2e_coverage_gap` used by deepen_space_split for epic-level gaps)
   - `strategic_concern` — risk concentration, architectural ordering issue
   - `cross_phase_dep_error` — missing or incorrect cross-phase dependency
   - `false_positive` — agent flagged something that's actually correct upon analysis

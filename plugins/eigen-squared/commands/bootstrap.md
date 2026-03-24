@@ -27,7 +27,7 @@ You are NOT a walking skeleton builder. You create structure and contracts only,
 - No business logic — entity stubs are empty, routes have no handlers
 
 **What bootstrap DOES create for server projects:**
-- **Dockerfile** — minimal multi-stage build using templates from the `language-profiles` skill
+- **Dockerfile** — minimal build using templates from the `language-profiles` skill (multi-stage where appropriate)
 - **docker-compose.yml** — app service + all infrastructure services detected from dependencies (database, cache, queue, storage). If it runs as a managed service in production, it runs as a container locally. For library/CLI projects, skip Docker artifacts.
 - **.dockerignore** — standard ignores for the detected language
 
@@ -406,9 +406,10 @@ Execute in two waves:
 5. Create basic CI: `.github/workflows/ci.yml` with lint + type-check + test (non-E2E)
 6. If monorepo (multiple languages): create workspace structure with separate package manifests
 7. **If server project** (detected via `language-profiles` skill → Server Project Detection):
-   - Create Dockerfile using the template from `language-profiles` skill → Dockerfile Templates, adapted for the detected language version, package manager, and project structure
-   - Create docker-compose.yml with the app service + all infrastructure services detected from dependencies (use the Infrastructure Service Detection table in `language-profiles`)
-   - Create .dockerignore with standard ignores for the detected language
+   - Create a minimal health check endpoint (e.g., `GET /health` or `GET /api/health` returning 200 OK) in the appropriate framework convention. This is the ONLY route bootstrap creates — it validates the app starts and responds.
+   - Create Dockerfile using the template from `language-profiles` skill → Dockerfile Templates, adapted for the detected language version, package manager, and project structure. Record the exposed port from the template.
+   - Create docker-compose.yml with the app service + all infrastructure services detected from dependencies (use the "Detect infrastructure services" table in the Server Project Detection section of `language-profiles`)
+   - Create .dockerignore with standard ignores for the detected language (see Dockerignore Templates in `language-profiles`)
    - Verify: `docker compose config` validates without errors (if docker is available)
 8. Commit: `"bootstrap: project scaffold"`
 
@@ -524,8 +525,10 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`:
     "server_project_detected": true,
     "dockerfile_created": true,
     "docker_compose_created": true,
-    "docker_compose_services": ["app", "db"],
+    "docker_compose_services": ["app", "postgres"],
     "dockerignore_created": true,
+    "exposed_port": 8000,
+    "health_check_path": "/api/health",
     "total_files_created": 31,
     "total_files_modified": 0,
     "total_files_skipped": 0
