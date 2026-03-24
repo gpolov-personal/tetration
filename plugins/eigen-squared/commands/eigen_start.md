@@ -457,36 +457,23 @@ Note: use the **absolute path** to `$EIGEN_ROOT/.eigen/pipeline_hook.sh` (resolv
 
 Initialize `pipeline_state.json` with `time_split.status = "not_started"` (as before).
 
-### 7.5 Schedule the first task
+### 7.5 First task scheduling
 
-The Stop hook was just registered in settings.json, but Claude Code loads hooks at **session start** — so the hook won't fire when THIS session ends. To bridge the gap, `eigen_start` is the only command that schedules a task directly via curl:
+The Stop hook handles ALL task scheduling, including the first one. When this `eigen_start` session ends, the Stop hook will fire, read `pipeline_state.json` (which shows `time_split.status = "not_started"`), and schedule `time_split` automatically.
 
-```bash
-NEXT_RUN=$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)
-
-# Only include notification webhooks if configured.
-curl -s -X POST $CLAUDE_TASKS_API/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "eigen: time_split (pipeline start)",
-    "prompt": "Use the Skill tool to invoke Skill(\"eigen-squared:time_split\"). Follow all its instructions completely.",
-    "cron_expr": "",
-    "scheduled_at": "'$NEXT_RUN'",
-    "working_dir": "'$EIGEN_ROOT'",
-    "enabled": true
-  }'
-```
-
-From this point on, the pipeline controller hook handles all subsequent scheduling automatically. No other command uses curl for task scheduling.
+**Do NOT schedule tasks via curl.** The hook handles it.
 
 Print:
 ```
 === Pipeline Launched! ===
 
 Pipeline controller hook installed at $EIGEN_ROOT/.eigen/
-First task: /time_split (scheduled in 3 minutes)
+pipeline_state.json initialized with time_split.status = "not_started"
 
-From now on, the Stop hook handles all command scheduling automatically.
+When this session ends, the Stop hook will automatically schedule /time_split.
+
+IMPORTANT: Make sure claude-tasks server is running before exiting:
+  claude-tasks serve
 
 Monitor progress:
   - List tasks: curl $CLAUDE_TASKS_API/api/v1/tasks
@@ -505,7 +492,7 @@ To cancel: disable the pending task in claude-tasks TUI or API.
 
 - **This command runs interactively** — it asks questions and validates before launching.
 - **Env vars MUST be in `.claude/settings.json`** — never in the shell. This prevents cross-project contamination.
-- **No restart needed** — `eigen_start` schedules the first task (`time_split`) directly via curl. The Stop hook activates on the next session automatically. Env vars written to settings.json take effect when `time_split` starts its own session.
+- **No restart needed** — when the `eigen_start` session ends, the Stop hook fires and schedules `time_split` automatically. Env vars written to settings.json take effect when `time_split` starts its own session. Make sure claude-tasks server is running before exiting.
 - **claude-tasks must be running** in a separate terminal (`claude-tasks serve`).
 - **One claude-tasks server, multiple projects** — each project's `working_dir` points to its own root, and each has its own `.claude/settings.json` with isolated env vars.
 - **ONE-TIME use only** — this command is for fresh pipelines. If the pipeline has already started, use `/eigen_continue` to review the completed phase and launch the next one.
