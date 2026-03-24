@@ -329,6 +329,8 @@ Quality (<language>):
 Hint: to change these decisions, run /deepen_bootstrap after bootstrap completes.
 ```
 
+6. **Module system** (for JS/TS): check `package.json` `"type"` field — if `"module"` use ESM patterns (`import.meta.url`, `.js` extensions), if `"commonjs"` or absent use CJS patterns (`__dirname`, `require`). For Python: check if project uses `src/` layout. For Go: read `go.mod` module path. Apply the detected patterns when creating config files (vitest.config, eslint.config, etc.).
+
 ---
 
 ## Stage 2: Compute Delta
@@ -341,6 +343,7 @@ For each artifact category, determine what's required based on the phase feature
 2. **Package manifest**: pyproject.toml / package.json / etc. per tooling decisions (only if ABSENT)
 3. **Directory structure**: map each domain in the features to a directory path using whitebox patterns. Include test directories per the language profile's `test_dir`.
 4. **Shared domain entities**: scan all features' blackbox specs for entity references. Build a co-occurrence matrix: entity X is referenced by features [F1, F2, F3]. **Only create stubs for entities referenced by 2+ features spanning 2+ domains** — these are cross-epic shared types. For each, extract fields from blackbox specs (Inputs/Outputs sections), cross-reference with whitebox for field definitions.
+   For cross-cutting features (e.g., access control, validation, logging) that reference ALL or most entities: create minimal stubs (id + foreign keys only) even for entities that belong to later phases. This prevents compile errors when cross-cutting code references entities not yet fully defined. Mark these as `"minimal_stub": true` in the bootstrap report.
 5. **API contracts**: if features reference REST/HTTP/endpoint patterns in blackbox specs, create interface definitions or OpenAPI stubs for inter-domain API boundaries.
 6. **Message contracts**: if features reference queue/event/message/async patterns in blackbox specs, create typed schema stubs.
 7. **Quality config**: linting, formatting, type checking, test runner config per tooling decisions (always if ABSENT)
@@ -405,7 +408,7 @@ Execute in two waves:
 2. Create package manifest per tooling decisions
 3. Create directory structure: all domain directories from phase features + test directories per language profile
 4. Create quality config files: .editorconfig, linting config, formatting config, type checker config, test runner config
-5. Create basic CI: `.github/workflows/ci.yml` with lint + type-check + test (non-E2E)
+5. Create basic CI: `.github/workflows/ci.yml` that delegates to project scripts — use `npm run lint` / `npm run typecheck` / `npm test` (not `npx eslint .` / `npx tsc --noEmit`). The CI workflow should call the same commands developers run locally via package.json scripts or Makefile targets.
 6. If monorepo (multiple languages): create workspace structure with separate package manifests
 7. **If server project** (detected via `language-profiles` skill → Server Project Detection):
    - Create a minimal health check endpoint (e.g., `GET /health` or `GET /api/health` returning 200 OK) in the appropriate framework convention. This is the ONLY route bootstrap creates — it validates the app starts and responds.
@@ -480,7 +483,20 @@ Execute the verification commands appropriate to each detected language:
 
 For multi-language projects, run verification for each language.
 
-### 4.2 Handle Verification Failures
+### 4.2 Report Honest Baselines
+
+For existing codebases (not greenfield): run verification against the FULL repository, not just bootstrap-created files. Report actual counts:
+
+```
+Verification baseline:
+  Lint warnings: <actual count> (N new from bootstrap, M pre-existing)
+  Type errors: <actual count>
+  Test files found: <actual count>
+```
+
+Do NOT claim "passed" when legacy warnings exist. Set honest thresholds: CI should use the baseline count (e.g., `--max-warnings <baseline>`) rather than zero. If the codebase has pre-existing issues, document them in the bootstrap report rather than hiding them.
+
+### 4.3 Handle Verification Failures
 
 If verification fails:
 1. Parse the error output
