@@ -269,6 +269,8 @@ Detected languages:
 
 For each detected language, check that the required system-level tools are installed by running the verification commands from the `language-profiles` skill's `system_prerequisites` section.
 
+Additionally, check if this is a **server project** using the Server Project Detection heuristics in `language-profiles`. If it is a server project, add Docker and Docker Compose to the prerequisite checklist (check: `docker --version` and `docker compose version`). Docker is required for container parity, local infrastructure, and E2E testing.
+
 For each prerequisite, run its `check` command. Collect all that fail.
 
 If ANY prerequisites are missing → **STOP.** Print a checklist with install instructions and stop:

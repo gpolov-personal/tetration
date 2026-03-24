@@ -198,6 +198,29 @@ Make sure it's running before re-running /eigen_start.
 
 ---
 
+## Step 2.5: Check Docker Availability
+
+Check if Docker is available. Most projects need it (container parity, local infrastructure, E2E testing), but some (libraries, CLI tools) don't. This is an early warning — `bootstrap` will enforce Docker as a hard requirement if it detects a server project.
+
+```bash
+docker --version 2>/dev/null
+docker compose version 2>/dev/null
+```
+
+**If both available** → Print: `Docker: available ($(docker --version))` and continue.
+
+**If docker or docker compose is missing** → Print warning and continue:
+```
+WARNING: Docker is not installed (or not on PATH).
+
+If your project deploys a server, Docker will be required later.
+Bootstrap will check and stop if Docker is needed but unavailable.
+
+Install Docker: https://docs.docker.com/get-docker/
+```
+
+---
+
 ## Step 3: Verify Initiative Documents
 
 Check `$EIGEN_ROOT/eigen_initiative/` exists and has the required files:
