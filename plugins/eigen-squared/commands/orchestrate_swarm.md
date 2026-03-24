@@ -76,7 +76,7 @@ You will:
 3. Spawn teammates wave by wave, each executing `design_validation_tests_swarm` then `code_from_validation_tests_swarm`
 4. React to incoming teammate messages and act as staff engineer
 5. Coordinate dependency unblocking between teammates
-6. Run an integration phase for shared files
+6. Run an integration step for shared files
 7. Create a PR and shut down the swarm
 
 ## Critical Constraints
@@ -106,7 +106,7 @@ Each phase has a mandatory **E2E Testing epic** (created by `/space_split`) as t
 - Includes an **Infrastructure Requirements** section describing what the E2E tests need (Docker, emulators, dev servers, etc.)
 - Goes through the normal pipeline: `plan_phase_epic → create_issues_from_plan_swarm → orchestrate_swarm`
 
-When orchestrate_swarm runs for the E2E Testing epic, it operates exactly like any other epic — workers create tasks (infrastructure setup, E2E test files) and the integration phase wires them together. There is no special E2E phase inside the orchestrator.
+When orchestrate_swarm runs for the E2E Testing epic, it operates exactly like any other epic — workers create tasks (infrastructure setup, E2E test files) and the integration step wires them together. There is no special E2E step inside the orchestrator.
 
 **The E2E Testing epic is the PRIMARY learning opportunity for the phase.** Real infrastructure, real connections, cross-component failures, and integration patterns discovered here are the most valuable lessons for future phases. Workers in this epic should document any integration surprises, infrastructure gotchas, and cross-component patterns thoroughly in their working notes. All findings from this epic's review (P1, P2, and P3) are captured as lessons — unlike feature epics where only P1 findings become lessons.
 
@@ -277,9 +277,9 @@ Only spawn teammates for the current wave. Do NOT spawn all upfront.
 
 Pre-completed tasks: skip (do not spawn). If ALL tasks in a wave are pre-completed, advance to the next wave immediately.
 
-If the current wave contains both interface providers and consumers, spawn in two sub-phases:
-- **Sub-phase A**: spawn providers first (they generate stubs)
-- **Sub-phase B**: after all stubs are ready, spawn consumers
+If the current wave contains both interface providers and consumers, spawn in two sub-steps:
+- **Sub-step A**: spawn providers first (they generate stubs)
+- **Sub-step B**: after all stubs are ready, spawn consumers
 
 Otherwise, spawn all tasks in the wave simultaneously.
 
@@ -324,24 +324,24 @@ Your working notes file is: swarm_working_notes/working-notes-<task.id>.md
 The Skill commands below will create and maintain this file with checkpoints at every stage.
 If you are RE-SPAWNED after a crash:
   1. Check if swarm_working_notes/working-notes-<task.id>.md exists
-  2. If it exists: read it to determine where you left off (look for '## Phase:' and 'Last Checkpoint')
+  2. If it exists: read it to determine where you left off (look for '## Step:' and 'Last Checkpoint')
   3. The Skill commands have a resume protocol that reads your notes and continues from the last checkpoint
   4. Do NOT start over from scratch — your working notes preserve all progress and context
 
-WORKFLOW — execute these two phases sequentially using the Skill tool:
+WORKFLOW — execute these two steps sequentially using the Skill tool:
 
-Phase A: Design validation tests
+Step A: Design validation tests
 Skill("eigen-squared:design_validation_tests_swarm", args: "<task.id>")
 
-Phase B: Implement code
-After Phase A is complete, invoke:
+Step B: Implement code
+After Step A is complete, invoke:
 Skill("eigen-squared:code_from_validation_tests_swarm", args: "<task.id>")
 
-COMPACTION RECOVERY — if you lose your detailed phase instructions:
+COMPACTION RECOVERY — if you lose your detailed step instructions:
 Context compaction may discard the full command protocol loaded by a Skill. If you find yourself
-without detailed instructions for your current phase, recover as follows:
+without detailed instructions for your current step, recover as follows:
 1. Read your working notes: swarm_working_notes/working-notes-<task.id>.md
-2. Check the '## Phase:' field to determine which phase you were in:
+2. Check the '## Step:' field to determine which step you were in:
    - 'design_validation_tests' → re-invoke Skill("eigen-squared:design_validation_tests_swarm", args: "<task.id>")
    - 'code_from_validation_tests' → re-invoke Skill("eigen-squared:code_from_validation_tests_swarm", args: "<task.id>")
 3. The reloaded Skill contains a resume protocol that reads your working notes and continues
@@ -350,7 +350,7 @@ Do NOT start over from scratch — your working notes preserve all progress and 
 
 <if task is an interface provider:>
 INTERFACE PROVIDER — STUB GENERATION REQUIRED:
-Before starting Phase A, generate a stub file as your FIRST action:
+Before starting Step A, generate a stub file as your FIRST action:
 1. Your stub file: <stub_file>
 2. Interfaces to define: <interface_names>
 3. Contract: <contract>
@@ -358,8 +358,8 @@ Generate a minimal interface definition that satisfies the contract. Use the lan
 interface_mechanism and not_implemented marker. See "Stub/Interface Lifecycle" in the
 language-profiles skill for language-specific instructions.
 After writing: verify importable, commit, send to team-lead: 'Stub ready: <stub_file>'
-Then proceed with Phase A, Phase B.
-When you implement the real code (Phase B), replace the stub with your real implementation.
+Then proceed with Step A, Step B.
+When you implement the real code (Step B), replace the stub with your real implementation.
 </if>
 
 <if task.interface_deps is not empty:>
@@ -390,11 +390,11 @@ FILE OWNERSHIP AND ISOLATION:
 - NEVER cd to any directory outside $EIGEN_ROOT"
 ```
 
-### Sub-phase 2A: Spawn Interface Providers First
+### Sub-step 2A: Spawn Interface Providers First
 
 Spawn providers and non-provider/non-consumer tasks. Record in `active_teammates`. Update `[WAVE-STATUS]`.
 
-### Sub-phase 2B: Wait for Stubs, Then Spawn Consumers
+### Sub-step 2B: Wait for Stubs, Then Spawn Consumers
 
 Wait for "Stub ready" messages from ALL providers. As each arrives:
 - Add stub_file to `stubs_ready`
@@ -489,7 +489,7 @@ Design decisions affect architecture and need user approval. Contextualize the q
 - **fix loop exhausted** (Stage 4.7, 4.8): Accept the current state and proceed to PR creation. Document unresolved failures in a `[DECISION-AUTONOMOUS]` task. `/review_swarm_pr` will capture them as findings.
 - **worker stuck (budget exhausted)**: Mark the task as failed, skip it and its dependents. Create a `[DECISION-AUTONOMOUS]` task with full context. Continue with the rest of the swarm.
 - **ambiguous requirement**: Choose the simpler interpretation. Document the ambiguity in a `[DECISION-AUTONOMOUS]` task so the reviewer can assess.
-- **stub not replaced / Phase C failure / attribution uncertain**: Take the safest action (skip the questionable component, document it). Never block the pipeline waiting for input that won't come.
+- **stub not replaced / Step C failure / attribution uncertain**: Take the safest action (skip the questionable component, document it). Never block the pipeline waiting for input that won't come.
 
 All `[DECISION-AUTONOMOUS]` tasks will be visible in the PR summary and to `/review_swarm_pr`, which can create fixup tasks if any decision was wrong.
 
@@ -586,7 +586,7 @@ A teammate reports completing code that unblocks other tasks (sent via "Blocker 
         summary: "Unblocked: <blocker_task_id> done" })
       ```
    c. If the teammate is not yet spawned (future wave): record the unblock for wave advancement
-3. **If the resolved task is an interface provider** (stub replaced with real implementation): this triggers Phase C for consumers — handled by the "Provider Implementation Complete" section below
+3. **If the resolved task is an interface provider** (stub replaced with real implementation): this triggers Step C for consumers — handled by the "Provider Implementation Complete" section below
 
 ### Handling: Progress Update Message
 
@@ -678,15 +678,15 @@ For each stub_file in `interface_providers`:
 - Read the file and check if it still contains only stub/interface markers (see "Stub Detection" in the `language-profiles` skill)
 - If a provider completed but the file still looks like a stub: **Manual mode**: escalate to user. **Autonomous mode** (`$CLAUDE_TASKS_API` set): create `[DECISION-AUTONOMOUS]` task noting the unreplaced stub, mark provider task as "failed", continue with integration (the stub will cause test failures that `/review_swarm_pr` will capture)
 
-### 4.3 Verify Consumer Phase C Completion (Safety Check)
+### 4.3 Verify Consumer Step C Completion (Safety Check)
 
 **Skip if no interface providers.**
 
-This is a safety net — consumers self-validate in their Phase C (see `code_from_validation_tests_swarm`), but this step confirms ALL consumers passed.
+This is a safety net — consumers self-validate in their Step C (see `code_from_validation_tests_swarm`), but this check confirms ALL consumers passed.
 
-1. Verify all consumer tasks with `interface_deps` have status "completed". If any consumer is still in_progress or stuck, check their messages for Phase C failures.
+1. Verify all consumer tasks with `interface_deps` have status "completed". If any consumer is still in_progress or stuck, check their messages for Step C failures.
 2. As a belt-and-suspenders check, re-run consumer test suites (use the test runner from the `language-profiles` skill for the detected language).
-3. If tests fail here, it means a consumer's Phase C missed something. Create `[BLOCKER]`. **Manual mode**: escalate to user with failure details. **Autonomous mode** (`$CLAUDE_TASKS_API` set): create `[DECISION-AUTONOMOUS]` task with failure details, proceed to integration anyway (failures will surface in post-integration tests and be captured by `/review_swarm_pr`).
+3. If tests fail here, it means a consumer's Step C missed something. Create `[BLOCKER]`. **Manual mode**: escalate to user with failure details. **Autonomous mode** (`$CLAUDE_TASKS_API` set): create `[DECISION-AUTONOMOUS]` task with failure details, proceed to integration anyway (failures will surface in post-integration tests and be captured by `/review_swarm_pr`).
 4. If all pass, proceed to integration.
 
 ### 4.4 Spawn Integration Teammate
@@ -1077,7 +1077,7 @@ If the same issue comes up 3 times without resolution: STOP, report to user, ask
 Before reporting completion:
 
 - [ ] All manifest tasks are in `completed_tasks`
-- [ ] Integration phase completed (if shared files exist)
+- [ ] Integration step completed (if shared files exist)
 - [ ] Post-integration test failures attributed and fixed (Stage 4.7, if any)
 - [ ] E2E fix loop completed (Stage 4.8, E2E Testing epic only)
 - [ ] Full test suite passes

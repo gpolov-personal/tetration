@@ -1,6 +1,6 @@
 ---
 name: code_from_validation_tests_swarm
-description: "Phase B of swarm worker: implement code to make validation tests pass (TDD)"
+description: "Step B of swarm worker: implement code to make validation tests pass (TDD)"
 argument-hint: (no direct arguments — runs as continuation of design_validation_tests_swarm)
 ---
 
@@ -20,15 +20,15 @@ All Python-specific examples below (pytest commands, import syntax, Protocol/ABC
 
 ## Introduction
 
-This command implements the functionality required by a task, guided by the validation tests created in the previous phase. It follows Test-Driven Development by using the validation tests as a specification, implements the changes to make those tests pass, creates unit tests for the new code, and signals completion to the swarm leader.
+This command implements the functionality required by a task, guided by the validation tests created in the previous step. It follows Test-Driven Development by using the validation tests as a specification, implements the changes to make those tests pass, creates unit tests for the new code, and signals completion to the swarm leader.
 
-This command is designed to run as part of a swarm -- executed by the same teammate that just completed `design_validation_tests_swarm`. The teammate already has context from the test design phase: the assigned task ID, the tracker JSON, and the swarm manifest.
+This command is designed to run as part of a swarm -- executed by the same teammate that just completed `design_validation_tests_swarm`. The teammate already has context from the test design step: the assigned task ID, the tracker JSON, and the swarm manifest.
 
 ## Context Available from Previous Phase
 
 The teammate executing this command already has:
 - `<task_id>` -- the assigned task ID
-- `<tracker_file_path>` -- path to the validation tests tracker JSON produced during the test design phase
+- `<tracker_file_path>` -- path to the validation tests tracker JSON produced during the test design step
 - `<manifest>` -- the parsed `swarm-manifest.json` contents
 - `<my_task>` -- the task entry from the manifest matching the task ID
 - `<files_owned>` -- list of source files this teammate is allowed to modify (from `my_task.files_owned[]`)
@@ -106,7 +106,7 @@ SendMessage({
   summary: "Integration: <task_id> needs <shared file>"
 })
 ```
-Do NOT wait for a response -- the leader collects these for the integration phase.
+Do NOT wait for a response -- the leader collects these for the integration step.
 
 **Test issue report** -- send when a validation test seems wrong:
 ```javascript
@@ -182,7 +182,7 @@ At the very start of this stage, read `swarm_working_notes/working-notes-<task_i
 10. Compare test results with the `Validation Tests Status` from working notes to understand what has changed
 11. Follow the `Next Step` instruction to continue from the correct point
 
-**If the file exists but is from the `design_validation_tests` phase only** (no `code_from_validation_tests` checkpoint): This is the normal flow — the previous phase completed. Read it for context (ownership, decisions, patterns), then proceed to update it for the new phase.
+**If the file exists but is from the `design_validation_tests` step only** (no `code_from_validation_tests` checkpoint): This is the normal flow — the previous step completed. Read it for context (ownership, decisions, patterns), then proceed to update it for the new step.
 
 **If the file does not exist** (unexpected): Create it with the initial template.
 
@@ -317,7 +317,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 4. **Read Task Details**
 
    - Read the task file from the `phases/` directory. Find the task by its ID: scan `phases/phase_*/epic_*/tasks/task_*.md` for a matching `id` in the YAML frontmatter, or derive the path from the manifest. Extract the title, body content, labels, and comments from the markdown file.
-   - Extract `<epic_id>` from the `epic_id` field in `<manifest>` (already loaded from previous phase)
+   - Extract `<epic_id>` from the `epic_id` field in `<manifest>` (already loaded from previous step)
    - Read the plan file at `phases/phase_N/epic_M/plan.md` (derive the phase and epic from the manifest or task path). If the file does not exist, STOP and inform the leader that no plan was found for task <epic_id>.
    - Store the plan file path in working notes for re-reading after compaction.
    - Store the plan content and the parent task body for reference

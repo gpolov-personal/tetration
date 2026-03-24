@@ -1,6 +1,6 @@
 ---
 name: design_validation_tests_swarm
-description: "Phase A of swarm worker: design validation tests (TDD) for an assigned task"
+description: "Step A of swarm worker: design validation tests (TDD) for an assigned task"
 argument-hint: <task_id>
 ---
 
@@ -22,7 +22,7 @@ All Python-specific examples below (pytest commands, import syntax, Protocol/ABC
 
 This command is the swarm-adapted version of `design_validation_tests`. It runs as a **teammate** inside a swarm, not as a standalone command. A teammate executing this command receives its task assignment from the orchestrator (leader) and communicates decisions back to the leader instead of asking a human developer.
 
-After completing the test design phase, the same teammate proceeds to execute `code_from_validation_tests_swarm` to implement the code that makes the tests pass.
+After completing the test design step, the same teammate proceeds to execute `code_from_validation_tests_swarm` to implement the code that makes the tests pass.
 
 ### Testing Philosophy — NON-NEGOTIABLE
 
@@ -676,7 +676,7 @@ Check `swarm-manifest.json`: if any task's `interface_deps` lists your `id` as `
 - Your `stub_file` currently contains the stub you generated at the start
 - Your validation tests should test the REAL behavior you will implement, not the stub structure
 - Classify your task as NEW_FEATURE or ENHANCEMENT (not INTERFACE_ABSTRACTION), because your deliverable is the real implementation
-- When you implement the real code (Phase B), you will overwrite the stub entirely
+- When you implement the real code (Step B), you will overwrite the stub entirely
 
 **Checkpoint: post-test-batch** — Update working notes with tests created and Next Step.
 
@@ -943,7 +943,7 @@ Use a specific marker for contract tests:
    ```javascript
    TaskCreate({
      subject: "[QUESTION] Final review for <task_id> tests",
-     description: "Task: <task_id>\nQuestion type: final_review\n\nTest design complete. Created N tests across M files.\nTask type: <task_type>\nTracker: tests/tracker-files/validation_tests_tracker_<task_id>.json\nTest files: <list>\nAll tests currently FAILING as expected.\n\nOptions:\n1. Approve and proceed to coding phase\n2. Request changes",
+     description: "Task: <task_id>\nQuestion type: final_review\n\nTest design complete. Created N tests across M files.\nTask type: <task_type>\nTracker: tests/tracker-files/validation_tests_tracker_<task_id>.json\nTest files: <list>\nAll tests currently FAILING as expected.\n\nOptions:\n1. Approve and proceed to coding step\n2. Request changes",
      activeForm: "Waiting for final review"
    })
    TaskUpdate({ taskId: "<new_task_id>", owner: "team-lead" })
@@ -994,13 +994,13 @@ Use a specific marker for contract tests:
    })
    ```
 
-5. **Proceed to Coding Phase**
+5. **Proceed to Coding Step**
 
-   After signaling completion, the same teammate proceeds to execute the coding phase:
+   After signaling completion, the same teammate proceeds to execute the coding step:
 
    **Execute the `code_from_validation_tests_swarm` command with the same `<task_id>`.**
 
-   The tracker file serves as the handoff artifact — it contains everything the coding phase needs to know about what tests exist and what they expect.
+   The tracker file serves as the handoff artifact — it contains everything the coding step needs to know about what tests exist and what they expect.
 
 ## Important Notes
 
@@ -1049,7 +1049,7 @@ Before considering this stage complete, verify you sent ALL of these:
 - [ ] `[QUESTION]` task(s): coverage decision (for any PARTIALLY_COVERED scenarios)
 - [ ] `[QUESTION]` task: final review (before finalizing)
 - [ ] Progress update: tests created (after writing tests)
-- [ ] Tests complete message (handoff signal to coding phase)
+- [ ] Tests complete message (handoff signal to coding step)
 
 ### What NOT to Do
 
