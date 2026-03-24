@@ -126,7 +126,7 @@ Task IDs use the triplet convention:
 
 ---
 
-## Phase 0: Ingest
+## Stage 0: Ingest
 
 ### 0.1 Read Plan File
 
@@ -161,7 +161,7 @@ Task IDs use the triplet convention:
 
 ---
 
-## Phase 1: Analyze Plan
+## Stage 1: Analyze Plan
 
 ### 1.1 Analyze the Plan
 
@@ -182,7 +182,7 @@ From the plan's Parallelization Strategy section, extract:
 
 ---
 
-## Phase 2: Generate Tasks
+## Stage 2: Generate Tasks
 
 ### 2.1 Determine Task Boundaries with File Ownership
 
@@ -233,7 +233,7 @@ Always create a final integration task that:
 
 ---
 
-## Phase 3: Create Task Files
+## Stage 3: Create Task Files
 
 ### 3.1 Create Task Files
 
@@ -329,7 +329,7 @@ Update `$EIGEN_ROOT/eigen_initiative/_index.md` to include the new tasks. If it 
 
 ---
 
-## Phase 4: Generate Swarm Manifest
+## Stage 4: Generate Swarm Manifest
 
 ### 4.1 Build Manifest
 
@@ -475,7 +475,7 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`, adding to `sta
 
 ---
 
-## Phase 5: Create Integration Branch and Commit Artifacts
+## Stage 5: Create Integration Branch and Commit Artifacts
 
 After all tasks and the manifest are created, create the integration branch and commit the artifacts. The orchestrator and workers will operate on this branch from `$EIGEN_ROOT`.
 
@@ -508,7 +508,7 @@ After committing and pushing, the working directory remains on the `feat/P<N>.E<
 
 ---
 
-## Phase 6: Output Summary
+## Stage 6: Output Summary
 
 Print:
 

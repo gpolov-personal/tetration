@@ -152,7 +152,7 @@ You will:
 
 ### On Exit
 
-After successfully generating outputs (Phase 2), create or update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` (see the `pipeline-state-schema` skill for the full schema):
+After successfully generating outputs (Stage 2), create or update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` (see the `pipeline-state-schema` skill for the full schema):
 
 - If creating for the first time: initialize the full schema with `state.time_split` set to `status: "completed"`, `iteration: 1`, current timestamp, output paths, and phase count. Initialize empty `state.phases` entries for each phase produced. Initialize `recommendations` with empty arrays for all 4 target keys:
   ```json
@@ -215,9 +215,9 @@ Classification rules:
      - `split_phase` / `merge_phases` → regenerate Feature Summary Tables, E2E summaries, Cross-Phase Dependencies, and cluster assignments for ALL affected phases.
      - `update_e2e` → edit the E2E summary text AND verify it references the actual P1 features in that phase.
    - **Edit the STRUCTURAL sections directly** (Feature Summary Tables, Cross-Phase Dependencies tables, YAML frontmatter, E2E summaries). Do NOT address structural findings by adding narrative paragraphs — deepen validates the structural sections, not narrative commentary.
-3. Re-run the full pipeline (Phase 0 → Phase 1 → Phase 2) with these findings as hard constraints during Phase 1 (phase assignment). For example:
+3. Re-run the full pipeline (Stage 0 → Stage 1 → Stage 2) with these findings as hard constraints during Stage 1 (phase assignment). For example:
    - A finding about cluster splits → add cluster integrity constraints
-   - A finding about E2E gaps → adjust E2E seeding in Phase 1.2/1.4
+   - A finding about E2E gaps → adjust E2E seeding in Stage 1.2/1.4
    - A finding about balance → adjust phase size bounds
 
 ### Re-validate After Changes
@@ -240,7 +240,7 @@ If any check fails, fix it NOW before writing the outputs. Do not defer structur
 
 ---
 
-## Phase 0: Ingest & Validate
+## Stage 0: Ingest & Validate
 
 ### 0.1 Locate Input Files
 
@@ -294,7 +294,7 @@ The dependency DAG is built from the `dependencies` column in the Feature Summar
 
 ---
 
-## Phase 1: Compute Phase Assignments
+## Stage 1: Compute Phase Assignments
 
 ### 1.1 Propose Phase Split
 
@@ -351,7 +351,7 @@ For each phase, compute:
 
 ---
 
-## Phase 2: Generate Outputs
+## Stage 2: Generate Outputs
 
 ### 2.1 Create Directory Structure
 

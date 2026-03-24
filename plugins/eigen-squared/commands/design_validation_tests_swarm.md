@@ -233,11 +233,11 @@ Update the working notes file at each of the following checkpoint moments. Each 
 |---|-----------|------|-----------------|
 | 1 | post-manifest | After reading manifest and establishing ownership (Task 1) | files_owned, test_files_owned, blocked_by, interface_deps, epic_id |
 | 2 | post-task-analysis | After analyzing the task and reading plan content (Task 2) | task_type_hypothesis, key_requirements |
-| 3 | post-classification | After leader confirms task classification (Phase 2.5) | confirmed task_type, classification_rationale, leader decision reference |
-| 4 | post-discovery | After test module discovery and coverage mapping (Phase 2.7) | coverage_mapping (ALREADY_COVERED / PARTIALLY_COVERED / NOT_COVERED for each scenario), existing_test_cases summary, affected_modules |
-| 5 | post-test-batch | After completing the test creation loop (Phase 3A/3B/3C) | tests created so far (file:test_name), pending scenarios, any leader decisions received |
-| 6 | post-tracker | After creating tracker file (Phase 4 step 1) | tracker file path, total test count, test file list |
-| 7 | post-commit | After committing tests (Phase 4 step 3) | commit hash, all test files committed |
+| 3 | post-classification | After leader confirms task classification (Stage 2.5) | confirmed task_type, classification_rationale, leader decision reference |
+| 4 | post-discovery | After test module discovery and coverage mapping (Stage 2.7) | coverage_mapping (ALREADY_COVERED / PARTIALLY_COVERED / NOT_COVERED for each scenario), existing_test_cases summary, affected_modules |
+| 5 | post-test-batch | After completing the test creation loop (Stage 3A/3B/3C) | tests created so far (file:test_name), pending scenarios, any leader decisions received |
+| 6 | post-tracker | After creating tracker file (Stage 4 step 1) | tracker file path, total test count, test file list |
+| 7 | post-commit | After committing tests (Stage 4 step 3) | commit hash, all test files committed |
 
 **Checkpoint format in working notes:**
 
@@ -245,7 +245,7 @@ Update the working notes file at each of the following checkpoint moments. Each 
 ## Last Checkpoint: <checkpoint_name>
 
 ## Next Step
-If resuming: <specific instruction, e.g., "Read coverage_mapping below, then proceed to Phase 3A Test Creation Loop. Start with the first NOT_COVERED scenario.">
+If resuming: <specific instruction, e.g., "Read coverage_mapping below, then proceed to Stage 3A Test Creation Loop. Start with the first NOT_COVERED scenario.">
 
 ## Coverage Mapping (persisted at post-discovery)
 - scenario_1: ALREADY_COVERED (existing: test_auth.py::test_login)
@@ -293,7 +293,7 @@ If resuming: <specific instruction, e.g., "Read coverage_mapping below, then pro
 ## Last Checkpoint: post-task-analysis
 
 ## Next Step
-If resuming: Read key requirements below. Re-read plan from the parent epic directory (derived from manifest's `plan_file` field). Proceed to Phase 2 (Task Classification). Use the task_type_hypothesis as starting point for classification question to leader.
+If resuming: Read key requirements below. Re-read plan from the parent epic directory (derived from manifest's `plan_file` field). Proceed to Stage 2 (Task Classification). Use the task_type_hypothesis as starting point for classification question to leader.
 
 ## Key Requirements
 - <requirement_1>
@@ -339,7 +339,7 @@ SendMessage({
 
 ## Execution Workflow
 
-### Phase 1: Environment Verification (Simplified for Swarm)
+### Stage 1: Environment Verification (Simplified for Swarm)
 
 No worktree or branch creation. Just verify the environment is usable:
 
@@ -362,7 +362,7 @@ No worktree or branch creation. Just verify the environment is usable:
 4. **If blocked, wait for unblocking:**
    If `<blocked_by>` is not empty, check task status. If still blocked, check `TaskList()` and wait. Do NOT proceed until unblocked.
 
-### Phase 2: Requirement Analysis
+### Stage 2: Requirement Analysis
 
 <thinking>
 I am a Senior AI Backend Engineer with extensive experience in Test-Driven Development and writing comprehensive validation tests. I must analyze this task thoroughly.
@@ -390,7 +390,7 @@ I am a Senior AI Backend Engineer with extensive experience in Test-Driven Devel
    - Add edge cases and error scenarios
    - Note test data or fixtures needed
 
-### Phase 2.5: Task Type Classification
+### Stage 2.5: Task Type Classification
 
 <thinking>
 I must classify the task type. Instead of asking a human developer, I will present my classification to the leader and wait for confirmation.
@@ -451,7 +451,7 @@ I must classify the task type. Instead of asking a human developer, I will prese
 
 **Checkpoint: post-classification** — Update working notes with confirmed task_type and Next Step.
 
-### Phase 2.7: Existing Test Module Discovery
+### Stage 2.7: Existing Test Module Discovery
 
 **CRITICAL**: This phase is MANDATORY before any test creation. Never skip this phase.
 
@@ -500,7 +500,7 @@ I must classify the task type. Instead of asking a human developer, I will prese
 ## Last Checkpoint: post-discovery
 
 ## Next Step
-If resuming: Read the coverage mapping below. Proceed to Phase 3 (test strategy execution). Task type: <task_type>. Start with the first NOT_COVERED scenario in the list.
+If resuming: Read the coverage mapping below. Proceed to Stage 3 (test strategy execution). Task type: <task_type>. Start with the first NOT_COVERED scenario in the list.
 
 ## Coverage Mapping
 - <scenario_1>: <ALREADY_COVERED|PARTIALLY_COVERED|NOT_COVERED> (<details>)
@@ -510,15 +510,15 @@ If resuming: Read the coverage mapping below. Proceed to Phase 3 (test strategy 
 
 This ensures `<coverage_mapping>` survives compaction. Without it, a compacted teammate would redo the expensive discovery phase and risk creating duplicate tests.
 
-### Phase 3: Test Strategy Execution
+### Stage 3: Test Strategy Execution
 
 **Branch based on `<task_type>`:**
 
-- If `<task_type>` is **REFACTORING** → Go to **Phase 3B**
-- If `<task_type>` is **INTERFACE_ABSTRACTION** → Go to **Phase 3C**
-- If `<task_type>` is **NEW_FEATURE** or **ENHANCEMENT** → Go to **Phase 3A**
+- If `<task_type>` is **REFACTORING** → Go to **Stage 3B**
+- If `<task_type>` is **INTERFACE_ABSTRACTION** → Go to **Stage 3C**
+- If `<task_type>` is **NEW_FEATURE** or **ENHANCEMENT** → Go to **Stage 3A**
 
-### Phase 3A: Validation Test Creation (NEW_FEATURE / ENHANCEMENT)
+### Stage 3A: Validation Test Creation (NEW_FEATURE / ENHANCEMENT)
 
 <thinking>
 These are validation/integration tests that verify business functionality. They should test behavior from an end-user or API consumer perspective. Tests should currently FAIL since the feature is not implemented yet.
@@ -577,7 +577,7 @@ Workers do NOT write E2E tests. E2E tests are written by the dedicated `e2e-test
 
    a. **Check existing coverage first (MANDATORY):**
 
-   Consult `<coverage_mapping>` from Phase 2.7:
+   Consult `<coverage_mapping>` from Stage 2.7:
 
    - **If `ALREADY_COVERED`:** DO NOT create a duplicate test. Document in tracker with `status: "EXISTING"`. Move to next scenario.
 
@@ -680,9 +680,9 @@ Check `swarm-manifest.json`: if any task's `interface_deps` lists your `id` as `
 
 **Checkpoint: post-test-batch** — Update working notes with tests created and Next Step.
 
-**After Phase 3A completion, proceed to Phase 4**
+**After Stage 3A completion, proceed to Stage 4**
 
-### Phase 3B: Existing Test Discovery & Verification (REFACTORING)
+### Stage 3B: Existing Test Discovery & Verification (REFACTORING)
 
 <thinking>
 For refactoring, existing tests should already cover the functionality. The goal is to ensure comprehensive test coverage exists before refactoring begins.
@@ -737,15 +737,15 @@ For refactoring, existing tests should already cover the functionality. The goal
    Wait for leader response and act accordingly.
 
 7. **Create Missing Tests (if leader approves)**
-   - Follow the same test creation loop as Phase 3A
+   - Follow the same test creation loop as Stage 3A
    - Place tests in existing module test files within `<my_test_files_owned>`
    - For refactoring, these tests should PASS (existing functionality)
 
 **Checkpoint: post-test-batch** — Update working notes with tests created and Next Step.
 
-**After Phase 3B completion, proceed to Phase 4**
+**After Stage 3B completion, proceed to Stage 4**
 
-### Phase 3C: Contract Test Creation (INTERFACE_ABSTRACTION)
+### Stage 3C: Contract Test Creation (INTERFACE_ABSTRACTION)
 
 <thinking>
 This path is for interface/abstraction tasks where the deliverable is the contract itself (abstract classes, protocols, factories, stubs), not behavioral functionality. Tests here verify that the interface is correctly defined, not that it does useful work.
@@ -850,9 +850,9 @@ Use a specific marker for contract tests:
 
 **Checkpoint: post-test-batch** — Update working notes with tests created and Next Step.
 
-**After Phase 3C completion, proceed to Phase 4**
+**After Stage 3C completion, proceed to Stage 4**
 
-### Phase 4: Tracker File Creation and Finalization
+### Stage 4: Tracker File Creation and Finalization
 
 1. **Create/Update Tracker File**
 
@@ -1072,7 +1072,7 @@ Before considering this phase complete, verify you sent ALL of these:
 
 ### Test Quality
 - [ ] Task type correctly classified (with leader consultation)
-- [ ] Phase 2.7 (Test Module Discovery) completed before creating tests
+- [ ] Stage 2.7 (Test Module Discovery) completed before creating tests
 - [ ] No duplicate tests created for ALREADY_COVERED scenarios
 - [ ] All new tests have `@pytest.mark.tdd_validation`, `@pytest.mark.tdd_contract`, or `@pytest.mark.tdd_unit`
 - [ ] Tests are distributed across appropriate module test files

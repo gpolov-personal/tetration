@@ -102,7 +102,7 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
   - Set `state.phases[N].plans[M].plan_phase_epic.convergence.decided_by` to `"deepen_plan_phase_epic"`
   - Set `state.phases[N].plans[M].plan_phase_epic.convergence.decided_at` to current ISO 8601 timestamp
   - Set `state.phases[N].plans[M].plan_phase_epic.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Phase 4.5)
+  - Write low-severity findings with downstream impact to `recommendations` (see Stage 4.5)
 - If continuing iteration:
   - Set `state.phases[N].plans[M].plan_phase_epic.status` to `"iterating"`
 - Set `updated_at` to current timestamp
@@ -134,7 +134,7 @@ This protocol is deterministic: file paths don't change between reformulations o
 
 ### Convergence Decision Protocol
 
-After collecting all findings (Phase 5), apply these convergence rules **in order**:
+After collecting all findings (Stage 5), apply these convergence rules **in order**:
 
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain AND Parallelization Strategy validates clean.
    - Rationale: "All significant issues resolved."
@@ -152,7 +152,7 @@ After collecting all findings (Phase 5), apply these convergence rules **in orde
 
 ---
 
-## Phase 0: Ingest
+## Stage 0: Ingest
 
 ### 0.1 Read Plan File
 
@@ -184,7 +184,7 @@ Use as additional context when reviewing the plan:
 
 ---
 
-## Phase 1: Skills Application
+## Stage 1: Skills Application
 
 ### 1.1 Discover and Apply Available Skills
 
@@ -195,13 +195,13 @@ Use as additional context when reviewing the plan:
 
 ---
 
-## Phase 2: Per-Section Research
+## Stage 2: Per-Section Research
 
 For each major section identified in the plan, spawn research agents in parallel to find best practices, common pitfalls, and real-world patterns relevant to that section's topic.
 
 ---
 
-## Phase 3: Review Agents
+## Stage 3: Review Agents
 
 ### 3.1 Discover and Run All Review Agents
 
@@ -222,14 +222,14 @@ Spawn a dedicated validation agent to check:
 
 ---
 
-## Phase 4: Synthesize & Write Feedback
+## Stage 4: Synthesize & Write Feedback
 
 ### 4.1 Collect All Agent Results
 
 Wait for ALL parallel agents to complete. Collect findings from:
-- Skills agents (Phase 1)
-- Research agents (Phase 2)
-- Review agents (Phase 3)
+- Skills agents (Stage 1)
+- Research agents (Stage 2)
+- Review agents (Stage 3)
 
 ### 4.2 Categorize Findings
 
@@ -380,7 +380,7 @@ At convergence, scan low-severity findings for cross-stage insights worth preser
 
 ---
 
-## Phase 5: Lesson Extraction
+## Stage 5: Lesson Extraction
 
 ### 5.1 Generate Lesson JSONs
 
@@ -410,7 +410,7 @@ For each non-false-positive finding, create a lesson JSON:
 
 ### 5.2 Deduplicate Against Existing Lessons
 
-For each new lesson, check the existing lessons loaded in Phase 0.3:
+For each new lesson, check the existing lessons loaded in Stage 0.3:
 - If a lesson with the same `affected_section` + `category` + similar `root_cause` already exists, **skip it**.
 - If the existing lesson has `"status": "applied"`, still skip.
 
@@ -426,7 +426,7 @@ For each new lesson, check the existing lessons loaded in Phase 0.3:
 
 ---
 
-## Phase 6: Summary & Next Steps
+## Stage 6: Summary & Next Steps
 
 Print a comprehensive summary:
 

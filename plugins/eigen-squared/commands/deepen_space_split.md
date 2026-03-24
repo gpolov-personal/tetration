@@ -99,7 +99,7 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
   - Set `state.phases[N].space_split.convergence.decided_by` to `"deepen_space_split"`
   - Set `state.phases[N].space_split.convergence.decided_at` to current ISO 8601 timestamp
   - Set `state.phases[N].space_split.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Convergence Recommendations phase)
+  - Write low-severity findings with downstream impact to `recommendations` (see Convergence Recommendations stage)
 - If continuing iteration:
   - Set `state.phases[N].space_split.status` to `"iterating"`
 - Set `updated_at` to current timestamp
@@ -163,7 +163,7 @@ For each finding that requires changes to epic files, produce explicit instructi
 
 ---
 
-## Phase 0: Ingest
+## Stage 0: Ingest
 
 ### 0.1 Read Epic DAG
 
@@ -215,7 +215,7 @@ Use these as additional context when reviewing space_split's output:
 
 ---
 
-## Phase 1: Epic DAG Validation
+## Stage 1: Epic DAG Validation
 
 Spawn **all DAG validation agents in parallel:**
 
@@ -292,11 +292,11 @@ Report: epics that seem disproportionately large or small, with recommendation t
 
 ---
 
-## Phase 2: Epic Quality Validation
+## Stage 2: Epic Quality Validation
 
 This phase validates the epic file bodies created by `/space_split`. These epic file bodies are the primary input to `/plan_phase_epic` — if they are incomplete, the downstream plans will be poor.
 
-**Skip this entire phase if epic files could not be read in Phase 0.4.** Print: "Skipping epic quality checks — epic files could not be read."
+**Skip this entire stage if epic files could not be read in Stage 0.4.** Print: "Skipping epic quality checks — epic files could not be read."
 
 Spawn **all agents in parallel:**
 
@@ -367,7 +367,7 @@ Report: {epic_id, issue_type, details}"
 
 ---
 
-## Phase 3: Cross-Epic Consistency
+## Stage 3: Cross-Epic Consistency
 
 Spawn agents to check consistency **across** all epics:
 
@@ -460,7 +460,7 @@ Report: missing E2E epic, E2E epic misconfigured, epics without validation scena
 
 ---
 
-## Phase 4: Strategic Review
+## Stage 4: Strategic Review
 
 Spawn **review agents in parallel:**
 
@@ -512,7 +512,7 @@ Phase manifest summary:
 
 ---
 
-## Phase 5: Skills & Learnings Application
+## Stage 5: Skills & Learnings Application
 
 ### 5.1 Discover and Apply Available Skills
 
@@ -523,16 +523,16 @@ Phase manifest summary:
 
 ---
 
-## Phase 6: Synthesize & Enhance
+## Stage 6: Synthesize & Enhance
 
 ### 6.1 Collect All Agent Results
 
 Wait for ALL parallel agents to complete. Collect findings from:
-- DAG validation agents (Phase 1)
-- Epic quality agents (Phase 2)
-- Cross-epic consistency agents (Phase 3)
-- Strategic review agents (Phase 4)
-- Skills agents (Phase 5)
+- DAG validation agents (Stage 1)
+- Epic quality agents (Stage 2)
+- Cross-epic consistency agents (Stage 3)
+- Strategic review agents (Stage 4)
+- Skills agents (Stage 5)
 
 ### 6.2 Categorize Findings
 
@@ -658,7 +658,7 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/f
 
 Apply the Convergence Decision Protocol (from the Iteration Protocol section above) to set `convergence.decision`.
 
-### Phase 6.5: Generate Convergence Recommendations (CONVERGED ONLY)
+### Stage 6.5: Generate Convergence Recommendations (CONVERGED ONLY)
 
 **Skip this section entirely if convergence decision is NOT "converged".**
 
@@ -684,7 +684,7 @@ At convergence, scan findings for cross-stage insights worth preserving for down
 
 ---
 
-## Phase 7: Lesson Extraction
+## Stage 7: Lesson Extraction
 
 ### 7.1 Generate Lesson JSONs
 
@@ -716,7 +716,7 @@ For each non-false-positive finding, create a lesson JSON:
 
 ### 7.2 Deduplicate Against Existing Lessons
 
-For each new lesson, check the existing lessons loaded in Phase 0.6:
+For each new lesson, check the existing lessons loaded in Stage 0.6:
 - If a lesson with the same `affected_phase` + `category` + similar `root_cause` already exists, **skip it**.
 - If the existing lesson has `"status": "applied"`, still skip.
 
@@ -732,7 +732,7 @@ For each new lesson, check the existing lessons loaded in Phase 0.6:
 
 ---
 
-## Phase 8: Summary & Next Steps
+## Stage 8: Summary & Next Steps
 
 Print a comprehensive summary:
 

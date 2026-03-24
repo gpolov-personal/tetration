@@ -228,7 +228,7 @@ If any check fails, fix it NOW before writing the plan. Do not defer structural 
 
 ---
 
-## Phase 0: Read Epic and Context
+## Stage 0: Read Epic and Context
 
 ### 0.1 Read Epic File
 
@@ -244,18 +244,18 @@ If any check fails, fix it NOW before writing the plan. Do not defer structural 
 
 ---
 
-## Phase 1: Research & Context Gathering
+## Stage 1: Research & Context Gathering
 
 Spawn research agents in parallel to understand the project context:
 
 - Spawn a `Task repo-research-analyst` with the epic body content to research the codebase conventions, existing patterns, module boundaries, and file ownership patterns.
 - For each detected language, spawn a research agent using relevant skills from the `language-profiles` skill's Stack-Specific Skills table.
 
-Save the research output — it will be passed as context to the gap analysis agents in Phase 3.
+Save the research output — it will be passed as context to the gap analysis agents in Stage 3.
 
 ---
 
-## Phase 2: Create the Development Plan
+## Stage 2: Create the Development Plan
 
 ### 2.1 Determine Plan Complexity Level
 
@@ -351,7 +351,7 @@ Analyze the plan to produce a machine-readable parallelization strategy consumed
 
 ---
 
-## Phase 3: Gap Analysis & Refinement (STANDARD and COMPREHENSIVE only)
+## Stage 3: Gap Analysis & Refinement (STANDARD and COMPREHENSIVE only)
 
 **Skip if MINIMAL.**
 
@@ -368,7 +368,7 @@ Launch gap analysis sub-phases **in parallel**:
 
 1. Discover all available review agents from all sources
 2. For each agent, spawn with instruction to review the plan for gaps, logical failures, and risks
-3. Pass the Phase 1 research output as context (to avoid redundant research)
+3. Pass the Stage 1 research output as context (to avoid redundant research)
 4. Launch ALL agents in parallel
 
 ### Sub-phase C: Parallelization Strategy Validation
@@ -395,7 +395,7 @@ After ALL sub-phase agents return:
 
 ---
 
-## Phase 4: Output
+## Stage 4: Output
 
 ### 4.1 Write Plan File
 
@@ -406,7 +406,7 @@ After ALL sub-phase agents return:
    - Phase number, epic number, and epic name
    - Epic ID (e.g., `P1.E2`)
    - Date of plan creation
-5. Followed by the complete plan content from Phases 2 and 3
+5. Followed by the complete plan content from Stages 2 and 3
 
 ### 4.2 Update Pipeline State
 

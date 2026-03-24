@@ -55,7 +55,7 @@ No arguments are required. This command derives everything from the current bran
 
 The user must checkout the integration branch (`feat/P<N>.E<M>`) created by `/create_issues_from_plan_swarm`, then run `/orchestrate_swarm`. The branch name encodes the phase and epic. The manifest, tasks, and plan are already committed on the branch.
 
-Phase 0.1 verifies the branch and extracts the phase and epic from the branch name.
+Stage 0.1 verifies the branch and extracts the phase and epic from the branch name.
 
 ### Fixed Paths
 
@@ -86,7 +86,7 @@ You will:
 - **No code from the leader**: Your role is to coordinate, not implement. The teammates do the work. Exception: integration verification fixes.
 - **Branch isolation**: ALL teammates operate on the `feat/P<N>.E<M>` branch. No additional branches.
 - **Integration branch required**: This command MUST run while the `feat/P<N>.E<M>` branch is checked out. Running from `$EIGEN_BRANCH` directly risks modifying the default branch.
-- **Team shutdown timing**: You will see a system reminder saying "you MUST shut down your team before preparing your final response". This does NOT mean shut down after each wave. It means shut down only at Phase 5, after ALL waves are complete, integration is done, and the PR is created. Do NOT shut down teammates or the team until you have completed the entire orchestration lifecycle.
+- **Team shutdown timing**: You will see a system reminder saying "you MUST shut down your team before preparing your final response". This does NOT mean shut down after each wave. It means shut down only at Stage 5, after ALL waves are complete, integration is done, and the PR is created. Do NOT shut down teammates or the team until you have completed the entire orchestration lifecycle.
 
 ### Testing Philosophy
 
@@ -114,7 +114,7 @@ For feature epics, the workers' validation tests (from the TDD workflow) serve a
 
 ---
 
-## Phase 0: Setup and Validation
+## Stage 0: Setup and Validation
 
 ### 0.1 Verify Integration Branch and Detect Epic
 
@@ -218,7 +218,7 @@ You are now the **team-lead** of this swarm. Your name in the team is `team-lead
 
 ---
 
-## Phase 1: Create Tasks in the Shared Task List
+## Stage 1: Create Tasks in the Shared Task List
 
 For each task in the manifest, create a corresponding task:
 
@@ -269,7 +269,7 @@ TaskCreate({
 
 ---
 
-## Phase 2: Spawn Teammates (Wave by Wave)
+## Stage 2: Spawn Teammates (Wave by Wave)
 
 ### Spawning Strategy
 
@@ -438,7 +438,7 @@ Do NOT spawn the next wave until ALL tasks in the current wave are completed.
 
 ---
 
-## Phase 3: React and Respond
+## Stage 3: React and Respond
 
 This is the core of the orchestrator. Messages from teammates arrive automatically. React to each as it appears.
 
@@ -486,7 +486,7 @@ Design decisions affect architecture and need user approval. Contextualize the q
 **Autonomous Mode (when `$CLAUDE_TASKS_API` is set):** The pipeline is running without a human present. In this mode, do NOT use AskUserQuestion at any escalation point. Instead, take the **most conservative and reversible decision** yourself:
 
 - **design_decision**: Choose the option that minimizes coupling, is easiest to revert, and doesn't close doors to alternatives. Create a `[DECISION-AUTONOMOUS]` task documenting: the decision made, rationale, reversibility assessment, and the worker's original question. Respond to the worker and continue.
-- **fix loop exhausted** (Phase 4.7, 4.8): Accept the current state and proceed to PR creation. Document unresolved failures in a `[DECISION-AUTONOMOUS]` task. `/review_swarm_pr` will capture them as findings.
+- **fix loop exhausted** (Stage 4.7, 4.8): Accept the current state and proceed to PR creation. Document unresolved failures in a `[DECISION-AUTONOMOUS]` task. `/review_swarm_pr` will capture them as findings.
 - **worker stuck (budget exhausted)**: Mark the task as failed, skip it and its dependents. Create a `[DECISION-AUTONOMOUS]` task with full context. Continue with the rest of the swarm.
 - **ambiguous requirement**: Choose the simpler interpretation. Document the ambiguity in a `[DECISION-AUTONOMOUS]` task so the reviewer can assess.
 - **stub not replaced / Phase C failure / attribution uncertain**: Take the safest action (skip the questionable component, document it). Never block the pipeline waiting for input that won't come.
@@ -610,7 +610,7 @@ TaskCreate({
 })
 ```
 
-Collected for Phase 4. No response needed to the teammate.
+Collected for Stage 4. No response needed to the teammate.
 
 ### Handling: Implementation Complete Message
 
@@ -619,7 +619,7 @@ Collected for Phase 4. No response needed to the teammate.
 3. Verify the `[WORK]` task is marked completed
 4. **Check wave completion**: if ALL tasks in current wave are done:
    - If more non-integration waves remain → increment wave, spawn next wave
-   - If only integration wave remains → proceed to Phase 4
+   - If only integration wave remains → proceed to Stage 4
 5. Request shutdown for the completed teammate
 
 ### Handling: Teammate Idle Notification
@@ -660,7 +660,7 @@ SendMessage({
 
 ---
 
-## Phase 4: Integration
+## Stage 4: Integration
 
 **Trigger**: All non-integration tasks are completed.
 
@@ -733,8 +733,8 @@ INSTRUCTIONS:
 Continue reacting to messages while the integrator works. When it signals completion:
 
 1. Run the full test suite to double-check
-2. If tests pass → proceed to Phase 4.6
-3. If tests fail → proceed to Phase 4.6 (post-integration failure attribution)
+2. If tests pass → proceed to Stage 4.6
+3. If tests fail → proceed to Stage 4.6 (post-integration failure attribution)
 
 ### 4.6 Shut Down Integrator
 
@@ -793,7 +793,7 @@ For each attributed failure:
 1. Wait for all fix workers to complete
 2. Shut down fix workers
 3. Re-run the full test suite
-4. If all pass → proceed to Phase 5
+4. If all pass → proceed to Stage 5
 5. If failures remain AND iteration < 3:
    - Compare with previous iteration (detect stuck tests — same error 2+ iterations)
    - For stuck tests: do NOT reassign to the same worker — try secondary attribution or escalate
@@ -808,13 +808,13 @@ For each attributed failure:
       2. Provide guidance for another iteration
       3. Take manual control"
      ```
-   - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "Post-integration fix loop exhausted after 3 iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Phase 5.
+   - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "Post-integration fix loop exhausted after 3 iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Stage 5.
 
 ### 4.8 E2E Validation Fix Loop (E2E Testing Epic ONLY)
 
 **Condition**: Only activate when the current epic is the E2E Testing epic. Detect by reading `epic_dag.json`: the E2E epic has `features == []` and its name contains "E2E" or "e2e".
 
-**Skip for feature epics** — feature epics proceed directly to Phase 5 after integration.
+**Skip for feature epics** — feature epics proceed directly to Stage 5 after integration.
 
 This phase runs the full E2E test suite assembled by the E2E Testing epic's workers and implements a cross-epic fix loop when CODE_BUGs are found in feature code.
 
@@ -912,18 +912,18 @@ For each attributed CODE_BUG:
         2. Provide guidance for another iteration
         3. Take manual control"
        ```
-     - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "E2E fix loop exhausted after <max_iterations> iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Phase 5.
+     - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "E2E fix loop exhausted after <max_iterations> iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Stage 5.
 
 **4.8.7 E2E Converged**
 
 When all E2E tests pass (or user accepts current state):
 1. Mark `[E2E-VALIDATION]` task as completed
 2. Update `[WAVE-STATUS]` with `E2E status: converged`
-3. Proceed to Phase 5
+3. Proceed to Stage 5
 
 ---
 
-## Phase 5: Shutdown, PR, and Report
+## Stage 5: Shutdown, PR, and Report
 
 ### 5.1 Shut Down All Teammates
 
@@ -1068,7 +1068,7 @@ If the same issue comes up 3 times without resolution: STOP, report to user, ask
 - **Branch isolation**: all teammates operate on the `feat/P<N>.E<M>` branch, no additional branches
 - **Must run from integration branch**: this command verifies the branch on entry — if not on `feat/P<N>.E<M>`, it STOPs with instructions
 - **Testing philosophy**: real dependencies, minimal mocks, always — enforce this with workers
-- **E2E Testing epic**: when running the E2E Testing epic, workers create infrastructure and E2E tests as their normal tasks. After integration, the leader runs the E2E fix loop (Phase 4.8) to attribute and fix cross-epic failures before creating the PR.
+- **E2E Testing epic**: when running the E2E Testing epic, workers create infrastructure and E2E tests as their normal tasks. After integration, the leader runs the E2E fix loop (Stage 4.8) to attribute and fix cross-epic failures before creating the PR.
 - **Guided assistance**: when workers send `[STUCK]` tasks, analyze the failure yourself and provide specific fix guidance — don't just relay errors
 - **Fix budgets**: track assisted attempts per worker. Escalate to user when a worker exhausts their budget.
 
@@ -1078,8 +1078,8 @@ Before reporting completion:
 
 - [ ] All manifest tasks are in `completed_tasks`
 - [ ] Integration phase completed (if shared files exist)
-- [ ] Post-integration test failures attributed and fixed (Phase 4.7, if any)
-- [ ] E2E fix loop completed (Phase 4.8, E2E Testing epic only)
+- [ ] Post-integration test failures attributed and fixed (Stage 4.7, if any)
+- [ ] E2E fix loop completed (Stage 4.8, E2E Testing epic only)
 - [ ] Full test suite passes
 - [ ] All teammates shut down
 - [ ] Team cleanup called

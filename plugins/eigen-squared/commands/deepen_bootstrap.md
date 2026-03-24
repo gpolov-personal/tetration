@@ -100,7 +100,7 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
   - Set `state.phases[N].bootstrap.convergence.decided_by` to `"deepen_bootstrap"`
   - Set `state.phases[N].bootstrap.convergence.decided_at` to current ISO 8601 timestamp
   - Set `state.phases[N].bootstrap.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Convergence Recommendations phase)
+  - Write low-severity findings with downstream impact to `recommendations` (see Convergence Recommendations stage)
 - If continuing iteration:
   - Set `state.phases[N].bootstrap.status` to `"iterating"`
 - Set `updated_at` to current timestamp
@@ -141,7 +141,7 @@ For each finding that is actionable by bootstrap, produce explicit surgical inst
 
 ---
 
-## Phase 0: Ingest
+## Stage 0: Ingest
 
 ### 0.1 Read Phase Manifest
 
@@ -193,7 +193,7 @@ Use these as additional context when reviewing bootstrap's output:
 
 ---
 
-## Phase 1: Foundation Integrity Validation
+## Stage 1: Foundation Integrity Validation
 
 Spawn **all validation agents in parallel:**
 
@@ -293,7 +293,7 @@ Report every issue: {config_file, issue_type, details}"
 
 ---
 
-## Phase 2: Cross-Reference Validation
+## Stage 2: Cross-Reference Validation
 
 Spawn **all agents in parallel:**
 
@@ -371,7 +371,7 @@ Report: {status, new_warnings, regressions, docker_status (if applicable)}"
 
 ---
 
-## Phase 3: Strategic Review
+## Stage 3: Strategic Review
 
 Spawn **review agents in parallel:**
 
@@ -442,7 +442,7 @@ Report every concern: {file, concern_type, details, recommendation}"
 
 ---
 
-## Phase 4: Incremental Readiness
+## Stage 4: Incremental Readiness
 
 Spawn agents in parallel:
 
@@ -490,7 +490,7 @@ Report every broken reference: {source_file, reference, target, issue_type}"
 
 ---
 
-## Phase 5: Skills Application
+## Stage 5: Skills Application
 
 ### 5.1 Discover and Apply Available Skills
 
@@ -501,16 +501,16 @@ Report every broken reference: {source_file, reference, target, issue_type}"
 
 ---
 
-## Phase 6: Synthesize & Enhance
+## Stage 6: Synthesize & Enhance
 
 ### 6.1 Collect All Agent Results
 
 Wait for ALL parallel agents to complete. Collect findings from:
-- Foundation integrity agents (Phase 1)
-- Cross-reference validation agents (Phase 2)
-- Strategic review agents (Phase 3)
-- Incremental readiness agents (Phase 4)
-- Skills agents (Phase 5)
+- Foundation integrity agents (Stage 1)
+- Cross-reference validation agents (Stage 2)
+- Strategic review agents (Stage 3)
+- Incremental readiness agents (Stage 4)
+- Skills agents (Stage 5)
 
 ### 6.2 Categorize Findings
 
@@ -655,7 +655,7 @@ At convergence, scan low-severity findings for cross-stage insights worth preser
 
 ---
 
-## Phase 7: Lesson Extraction
+## Stage 7: Lesson Extraction
 
 ### 7.1 Generate Lesson JSONs
 
@@ -686,7 +686,7 @@ For each non-false-positive finding, create a lesson JSON:
 
 ### 7.2 Deduplicate Against Existing Lessons
 
-For each new lesson, check the existing lessons loaded in Phase 0.4:
+For each new lesson, check the existing lessons loaded in Stage 0.4:
 - If a lesson with the same `affected_phase` + `category` + similar `root_cause` already exists, **skip it**.
 - If the existing lesson has `"status": "applied"`, still skip.
 
@@ -702,7 +702,7 @@ For each new lesson, check the existing lessons loaded in Phase 0.4:
 
 ---
 
-## Phase 8: Summary & Next Steps
+## Stage 8: Summary & Next Steps
 
 Print a comprehensive summary:
 
