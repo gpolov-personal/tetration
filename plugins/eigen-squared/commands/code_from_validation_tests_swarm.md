@@ -1,6 +1,6 @@
 ---
 name: code_from_validation_tests_swarm
-description: "Phase B of swarm worker: implement code to make validation tests pass (TDD)"
+description: "Step B of swarm worker: implement code to make validation tests pass (TDD)"
 argument-hint: (no direct arguments — runs as continuation of design_validation_tests_swarm)
 ---
 
@@ -20,15 +20,15 @@ All Python-specific examples below (pytest commands, import syntax, Protocol/ABC
 
 ## Introduction
 
-This command implements the functionality required by a task, guided by the validation tests created in the previous phase. It follows Test-Driven Development by using the validation tests as a specification, implements the changes to make those tests pass, creates unit tests for the new code, and signals completion to the swarm leader.
+This command implements the functionality required by a task, guided by the validation tests created in the previous step. It follows Test-Driven Development by using the validation tests as a specification, implements the changes to make those tests pass, creates unit tests for the new code, and signals completion to the swarm leader.
 
-This command is designed to run as part of a swarm -- executed by the same teammate that just completed `design_validation_tests_swarm`. The teammate already has context from the test design phase: the assigned task ID, the tracker JSON, and the swarm manifest.
+This command is designed to run as part of a swarm -- executed by the same teammate that just completed `design_validation_tests_swarm`. The teammate already has context from the test design step: the assigned task ID, the tracker JSON, and the swarm manifest.
 
 ## Context Available from Previous Phase
 
 The teammate executing this command already has:
 - `<task_id>` -- the assigned task ID
-- `<tracker_file_path>` -- path to the validation tests tracker JSON produced during the test design phase
+- `<tracker_file_path>` -- path to the validation tests tracker JSON produced during the test design step
 - `<manifest>` -- the parsed `swarm-manifest.json` contents
 - `<my_task>` -- the task entry from the manifest matching the task ID
 - `<files_owned>` -- list of source files this teammate is allowed to modify (from `my_task.files_owned[]`)
@@ -53,7 +53,7 @@ The leader's name is `team-lead`.
 
 ### Message Formats
 
-**Implementation started** -- send immediately when beginning this phase:
+**Implementation started** -- send immediately when beginning this stage:
 ```javascript
 SendMessage({
   to: "team-lead",
@@ -106,7 +106,7 @@ SendMessage({
   summary: "Integration: <task_id> needs <shared file>"
 })
 ```
-Do NOT wait for a response -- the leader collects these for the integration phase.
+Do NOT wait for a response -- the leader collects these for the integration step.
 
 **Test issue report** -- send when a validation test seems wrong:
 ```javascript
@@ -128,7 +128,7 @@ SendMessage({
 ```
 Wait for the leader's guidance before modifying any test.
 
-**Implementation complete** -- send as the LAST message (AFTER Phase C if you have interface_deps):
+**Implementation complete** -- send as the LAST message (AFTER Stage C if you have interface_deps):
 ```javascript
 // 1. Mark your [WORK] task as completed
 TaskUpdate({
@@ -140,7 +140,7 @@ TaskUpdate({
 SendMessage({
   to: "team-lead",
   type: "message",
-  content: "Implementation complete for <task_id>. Files modified: <list>. Tests passing: true. Phase C: <'completed' if interface_deps else 'N/A'>. Commit: <hash>.",
+  content: "Implementation complete for <task_id>. Files modified: <list>. Tests passing: true. Stage C: <'completed' if interface_deps else 'N/A'>. Commit: <hash>.",
   summary: "Complete: <task_id> — all tests passing (incl. real impls)"
 })
 ```
@@ -166,9 +166,9 @@ Throughout execution, maintain a working notes file at `working-notes-<task_id>.
 
 ### Read Working Notes First — Resume Protocol
 
-At the very start of this phase, read `swarm_working_notes/working-notes-<task_id>.md`.
+At the very start of this stage, read `swarm_working_notes/working-notes-<task_id>.md`.
 
-**If the file exists AND contains a `Last Checkpoint` with value `post-context-load` or later for `code_from_validation_tests` phase**: Context compaction may have occurred during this phase. Execute the resume protocol:
+**If the file exists AND contains a `Last Checkpoint` with value `post-context-load` or later for `code_from_validation_tests` stage**: Context compaction may have occurred during this stage. Execute the resume protocol:
 
 1. Read the working notes file completely
 2. Read the `Last Checkpoint` field to determine where you left off
@@ -177,12 +177,12 @@ At the very start of this phase, read `swarm_working_notes/working-notes-<task_i
 5. Check `TaskList()` for any leader decisions on your `[QUESTION]`/`[BLOCKER]` tasks that arrived while you were compacted
 6. Read the tracker file at the path stored in working notes
 7. Re-read the plan file at `phases/phase_N/epic_M/plan.md` (path stored in working notes). If the file does not exist, STOP and inform the leader.
-8. If working notes contain `## Loaded Skills`, use those skill names and paths directly — do NOT re-discover from the `language-profiles` skill. Re-read the listed SKILL.md files if needed for implementation guidance. If working notes do NOT contain `## Loaded Skills`, follow the standalone fallback in Step 9 of Phase 1.
+8. If working notes contain `## Loaded Skills`, use those skill names and paths directly — do NOT re-discover from the `language-profiles` skill. Re-read the listed SKILL.md files if needed for implementation guidance. If working notes do NOT contain `## Loaded Skills`, follow the standalone fallback in Step 9 of Stage 1.
 9. Run the project's test suite to assess the current state of validation tests (Python: `python -m pytest <test_files> -v`; adapt command per the `language-profiles` skill)
 10. Compare test results with the `Validation Tests Status` from working notes to understand what has changed
 11. Follow the `Next Step` instruction to continue from the correct point
 
-**If the file exists but is from the `design_validation_tests` phase only** (no `code_from_validation_tests` checkpoint): This is the normal flow — the previous phase completed. Read it for context (ownership, decisions, patterns), then proceed to update it for the new phase.
+**If the file exists but is from the `design_validation_tests` step only** (no `code_from_validation_tests` checkpoint): This is the normal flow — the previous step completed. Read it for context (ownership, decisions, patterns), then proceed to update it for the new step.
 
 **If the file does not exist** (unexpected): Create it with the initial template.
 
@@ -194,7 +194,7 @@ Update the working notes to reflect the new phase:
 ## Phase: code_from_validation_tests (updated)
 
 ## Implementation Plan
-(add your implementation plan here after Phase 1)
+(add your implementation plan here after Stage 1)
 
 ## Validation Tests Status
 - Total: N
@@ -226,13 +226,13 @@ Update the working notes file at each of the following checkpoint moments. Each 
 
 | # | Checkpoint | When | What to persist |
 |---|-----------|------|-----------------|
-| 1 | post-context-load | After loading tracker, reading issue, and exploring codebase (Phase 1) | tracker summary, failing test count, plan file path |
-| 2 | post-plan | After creating implementation plan with TodoWrite (Phase 1 step 8) | **implementation plan summary** (persist key steps here — TodoWrite is in-memory only and lost on compaction) |
-| 3 | post-impl-step | After each major implementation step that passes new tests (Phase 2) | which validation tests now pass, which still fail, files modified so far |
-| 4 | post-all-validation | After all validation tests pass (end of Phase 2) | all validation tests passing confirmation, total passing count |
-| 5 | post-unit-tests | After unit tests created (Phase 3) | unit test files and counts, any discovered issues |
-| 6 | post-phase-c | After Phase C re-validation (if applicable) (Phase C) | Phase C result, fixes applied, providers validated |
-| 7 | post-final-commit | After final commit (Phase 5) | final commit hash, all files modified list, integration requests sent list |
+| 1 | post-context-load | After loading tracker, reading issue, and exploring codebase (Stage 1) | tracker summary, failing test count, plan file path |
+| 2 | post-plan | After creating implementation plan with TodoWrite (Stage 1 step 8) | **implementation plan summary** (persist key steps here — TodoWrite is in-memory only and lost on compaction) |
+| 3 | post-impl-step | After each major implementation step that passes new tests (Stage 2) | which validation tests now pass, which still fail, files modified so far |
+| 4 | post-all-validation | After all validation tests pass (end of Stage 2) | all validation tests passing confirmation, total passing count |
+| 5 | post-unit-tests | After unit tests created (Stage 3) | unit test files and counts, any discovered issues |
+| 6 | post-phase-c | After Stage C re-validation (if applicable) (Stage C) | Stage C result, fixes applied, providers validated |
+| 7 | post-final-commit | After final commit (Stage 5) | final commit hash, all files modified list, integration requests sent list |
 
 **Checkpoint format in working notes:**
 
@@ -280,7 +280,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 
 ## Execution Workflow
 
-### Phase 1: Signal Start and Load Context
+### Stage 1: Signal Start and Load Context
 
 1. **Signal implementation started**
 
@@ -317,7 +317,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 4. **Read Task Details**
 
    - Read the task file from the `phases/` directory. Find the task by its ID: scan `phases/phase_*/epic_*/tasks/task_*.md` for a matching `id` in the YAML frontmatter, or derive the path from the manifest. Extract the title, body content, labels, and comments from the markdown file.
-   - Extract `<epic_id>` from the `epic_id` field in `<manifest>` (already loaded from previous phase)
+   - Extract `<epic_id>` from the `epic_id` field in `<manifest>` (already loaded from previous step)
    - Read the plan file at `phases/phase_N/epic_M/plan.md` (derive the phase and epic from the manifest or task path). If the file does not exist, STOP and inform the leader that no plan was found for task <epic_id>.
    - Store the plan file path in working notes for re-reading after compaction.
    - Store the plan content and the parent task body for reference
@@ -395,7 +395,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
       3. Domain-specific skills (e.g., `rag-implementation` if building RAG features)
 
    c. Store loaded skill knowledge as `<skill_guidance>` and reference it during
-      implementation. Apply skill recommendations as you write code in Phase 2,
+      implementation. Apply skill recommendations as you write code in Stage 2,
       but do NOT let skills override the validation tests — tests are the
       specification, skills inform HOW you implement.
 
@@ -409,7 +409,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
    - `## Loaded Skills` with skill names, paths, and line counts loaded
    This ensures skill info survives context compaction.
 
-### Phase 2: Implementation Loop
+### Stage 2: Implementation Loop
 
 <thinking> You are a Senior AI Backend Engineer working as a teammate in a swarm. You MUST respect file ownership boundaries. You MUST communicate progress to the leader. You follow TDD -- let validation tests guide your implementation. </thinking>
 
@@ -573,7 +573,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 
    **Checkpoint: post-all-validation** — Update working notes confirming all validation tests pass and Next Step.
 
-### Phase 3: Unit Test Creation
+### Stage 3: Unit Test Creation
 
 **ONLY proceed after all validation tests are passing**
 
@@ -624,7 +624,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 
    **Checkpoint: post-unit-tests** — Update working notes with unit test files/counts and Next Step.
 
-### Phase 4: Final Validation
+### Stage 4: Final Validation
 
 1. **Comprehensive Test Suite**
 ```bash
@@ -668,9 +668,9 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 
    If any shared files need changes, ensure you have already sent integration request messages for each one. Review and send any that were missed.
 
-### Phase C: Re-validate Against Real Implementations (consumers with interface_deps only)
+### Stage C: Re-validate Against Real Implementations (consumers with interface_deps only)
 
-**Skip this phase if `<my_interface_deps>` is empty.** Proceed directly to Phase 5.
+**Skip this stage if `<my_interface_deps>` is empty.** Proceed directly to Stage 5.
 
 This phase ensures your code works with the REAL provider implementations, not just with your test fakes/mocks.
 
@@ -686,16 +686,16 @@ For each interface dependency in `<my_interface_deps>`:
        to: "team-lead",
        type: "message",
        content: "Implementation done for <task_id>. Waiting for real interfaces from providers: <list of pending provider issues>. Will re-validate when ready.",
-       summary: "Waiting for providers: <task_id> Phase C pending"
+       summary: "Waiting for providers: <task_id> Stage C pending"
      })
      ```
-   - WAIT for leader messages. When you receive "Interface <name> real impl ready — run Phase C", check again if ALL providers are done. Only proceed to C.2 when all are ready.
+   - WAIT for leader messages. When you receive "Interface <name> real impl ready — run Stage C", check again if ALL providers are done. Only proceed to C.2 when all are ready.
 
 #### C.2 Re-run Tests Against Real Implementations
 
 1. Re-run your FULL test suite (Python: `python -m pytest <my_test_files> -v`; adapt per the `language-profiles` skill).
 
-2. **If all tests pass**: Phase C complete. Proceed to Phase 5 (Final Commit).
+2. **If all tests pass**: Stage C complete. Proceed to Stage 5 (Final Commit).
 
 3. **If tests fail**: The real implementation differs from what your fakes/mocks assumed.
    - Analyze each failure:
@@ -709,19 +709,19 @@ For each interface dependency in `<my_interface_deps>`:
      git commit -m "fix(#<task_id>): adapt to real <interface_name> implementation"
      ```
 
-4. Send Phase C completion to leader:
+4. Send Stage C completion to leader:
    ```javascript
    SendMessage({
      to: "team-lead",
      type: "message",
-     content: "Phase C complete for <task_id>. All tests pass against real implementations. Providers validated: <list>. Fixes applied: <count or 'none'>.",
-     summary: "Phase C done: <task_id> validated against real impls"
+     content: "Stage C complete for <task_id>. All tests pass against real implementations. Providers validated: <list>. Fixes applied: <count or 'none'>.",
+     summary: "Stage C done: <task_id> validated against real impls"
    })
    ```
 
-   **Checkpoint: post-phase-c** — Update working notes with Phase C results and Next Step.
+   **Checkpoint: post-phase-c** — Update working notes with Stage C results and Next Step.
 
-### Phase 5: Final Commit and Signal Completion
+### Stage 5: Final Commit and Signal Completion
 
 1. **Final Commit**
 ```bash
@@ -748,7 +748,7 @@ For each interface dependency in `<my_interface_deps>`:
    This MUST be the last action. Before sending, verify:
    - All validation tests pass
    - All unit tests pass
-   - If you have interface_deps: Phase C is complete (tests pass against real implementations)
+   - If you have interface_deps: Stage C is complete (tests pass against real implementations)
 
    Only then:
 
@@ -763,7 +763,7 @@ TaskUpdate({
 SendMessage({
   to: "team-lead",
   type: "message",
-  content: "Implementation complete for <task_id>. Files modified: <list>. Tests passing: true. Phase C: <'completed' if interface_deps else 'N/A'>. Commit: <COMMIT_HASH>.",
+  content: "Implementation complete for <task_id>. Files modified: <list>. Tests passing: true. Stage C: <'completed' if interface_deps else 'N/A'>. Commit: <COMMIT_HASH>.",
   summary: "Complete: <task_id> — all tests passing (incl. real impls)"
 })
 ```

@@ -97,7 +97,7 @@ Optional columns: Cluster (time_split can compute if missing)
 
 ---
 
-## Phase 0: Discover What Exists
+## Stage 0: Discover What Exists
 
 ### 0.1 Scan Initiative Directory
 
@@ -143,7 +143,7 @@ Project context:
 
 ---
 
-## Phase 1: Analyze Completeness
+## Stage 1: Analyze Completeness
 
 Read whatever documents exist and analyze them against what the pipeline needs.
 
@@ -204,7 +204,7 @@ Check if features are organized into clear domains:
 
 ---
 
-## Phase 2: Report Findings and Ask Questions
+## Stage 2: Report Findings and Ask Questions
 
 ### 2.1 Pipeline Readiness Report
 
@@ -316,7 +316,7 @@ Feature <ID>: <Name>
 
 ---
 
-## Phase 3: Generate/Improve Documents
+## Stage 3: Generate/Improve Documents
 
 Based on the analysis and user answers, generate or update the initiative documents.
 
@@ -411,11 +411,11 @@ This enrichment is optional — `time_split` can compute all of this from the Fe
 
 ---
 
-## Phase 4: Validate and Report
+## Stage 4: Validate and Report
 
 ### 4.1 Re-validate Pipeline Readiness
 
-After all updates, re-run the completeness analysis from Phase 1.
+After all updates, re-run the completeness analysis from Stage 1.
 
 ### 4.2 Print Final Report
 
@@ -443,7 +443,7 @@ Next step:
 
 ---
 
-## Phase 5: Research-Assisted Improvement (optional)
+## Stage 5: Research-Assisted Improvement (optional)
 
 If the initiative documents exist but could be improved, spawn research agents to suggest enhancements:
 

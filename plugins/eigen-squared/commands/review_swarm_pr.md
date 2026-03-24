@@ -108,7 +108,7 @@ You will:
    - `review_iteration` field → current iteration number (0 = first review)
 3. If a previous review report exists (`review_report_iteration_<N-1>.md`), read it for cross-iteration comparison.
 
-### Convergence Decision (after collecting findings, Phase 4)
+### Convergence Decision (after collecting findings, Stage 4)
 
 Apply these rules **in order**:
 
@@ -126,7 +126,7 @@ Apply these rules **in order**:
 
 ---
 
-## Phase 0: Setup and Context Loading
+## Stage 0: Setup and Context Loading
 
 ### 0.1 Validate PR
 
@@ -177,7 +177,7 @@ Assemble for all review agents:
 
 ---
 
-## Phase 1: Spawn Review Agents
+## Stage 1: Spawn Review Agents
 
 ### 1.1 Select Agents
 
@@ -199,7 +199,7 @@ Wait for ALL agents.
 
 ---
 
-## Phase 2: Collect, Filter, and Triage
+## Stage 2: Collect, Filter, and Triage
 
 ### 2.1 Scope Filter
 
@@ -229,16 +229,16 @@ Review Findings (Iteration <N>):
 
 ---
 
-## Phase 3: Convergence Decision
+## Stage 3: Convergence Decision
 
 Apply the convergence rules from the Convergence Protocol section.
 
-- **If CONVERGED** → skip Phase 4 (no fixup tasks), proceed to Phase 5 (post review + report).
-- **If CONTINUE** → proceed to Phase 4 (create fixup tasks).
+- **If CONVERGED** → skip Stage 4 (no fixup tasks), proceed to Stage 5 (post review + report).
+- **If CONTINUE** → proceed to Stage 4 (create fixup tasks).
 
 ---
 
-## Phase 4: Create Fixup Tasks (only if not converged)
+## Stage 4: Create Fixup Tasks (only if not converged)
 
 ### 4.1 Derive File Ownership
 
@@ -337,7 +337,7 @@ Update `eigen_initiative/_index.md` with the new review tasks.
 
 ---
 
-## Phase 5: Post Review on PR
+## Stage 5: Post Review on PR
 
 ### 5.1 Post Structured Review
 
@@ -371,7 +371,7 @@ git push origin feat/P<N>.E<M>
 
 ---
 
-## Phase 6: Lesson Extraction
+## Stage 6: Lesson Extraction
 
 ### 6.1 Determine Lesson Scope
 
@@ -391,7 +391,7 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`.
 
 ---
 
-## Phase 7: Update Pipeline State and Report
+## Stage 7: Update Pipeline State and Report
 
 ### 7.1 Update Pipeline State
 

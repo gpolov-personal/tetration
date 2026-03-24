@@ -191,19 +191,19 @@ Classification rules:
 
 **Critical**: on iteration, do NOT re-scaffold from scratch. Instead:
 
-1. **Scan current repo state** — read `$EIGEN_ROOT` as it exists now (same scan as Phase 0.2).
+1. **Scan current repo state** — read `$EIGEN_ROOT` as it exists now (same scan as Stage 0.2).
 2. **Read `code_change_guidance`** from the feedback file. This contains surgical instructions:
    - `entities_to_add`: new entity stubs to create
    - `entities_to_modify`: existing stubs to update (add/remove/rename fields)
    - `files_to_delete`: files to remove
    - `config_changes`: configuration adjustments
 3. **Apply only feedback-driven changes**.
-4. **Do NOT re-run tooling decisions** (Phase 1 is always skipped on iteration).
+4. **Do NOT re-run tooling decisions** (Stage 1 is always skipped on iteration).
 5. **Do NOT re-scaffold directories** that already exist.
 
 ### Verification and Commit
 
-1. Run the verification gate (Phase 4) after applying changes.
+1. Run the verification gate (Stage 4) after applying changes.
 2. If verification passes: commit with message `"bootstrap: iteration <N> — address deepen feedback"`.
 3. If verification fails:
    - Attempt up to 3 fix-retry cycles.
@@ -222,7 +222,7 @@ Classification rules:
 
 ---
 
-## Phase 0: Ingest and Detect
+## Stage 0: Ingest and Detect
 
 ### 0.1 Read Phase Manifest
 
@@ -291,7 +291,7 @@ The following must be installed before bootstrap can proceed:
 After installing the missing prerequisites, re-run /bootstrap.
 ```
 
-If ALL prerequisites pass → proceed to Phase 1. Print:
+If ALL prerequisites pass → proceed to Stage 1. Print:
 
 ```
 System prerequisites: all satisfied.
@@ -299,9 +299,9 @@ System prerequisites: all satisfied.
 
 ---
 
-## Phase 1: Tooling Decisions
+## Stage 1: Tooling Decisions
 
-**Skip this entire phase if the repo already has package manifests (`PRESENT`).** Tooling decisions are already made and committed — bootstrap reads existing config and proceeds to Phase 2.
+**Skip this entire stage if the repo already has package manifests (`PRESENT`).** Tooling decisions are already made and committed — bootstrap reads existing config and proceeds to Stage 2.
 
 For greenfield repos (first-time bootstrap), you must make key tooling decisions.
 
@@ -331,7 +331,7 @@ Hint: to change these decisions, run /deepen_bootstrap after bootstrap completes
 
 ---
 
-## Phase 2: Compute Delta
+## Stage 2: Compute Delta
 
 ### 2.1 Derive Required Artifacts
 
@@ -372,11 +372,11 @@ Action Summary:
 Estimated files to create: ~<N>
 ```
 
-Proceed to Phase 3.
+Proceed to Stage 3.
 
 ---
 
-## Phase 3: Execute Bootstrap
+## Stage 3: Execute Bootstrap
 
 ### 3.0 Determine Execution Strategy
 
@@ -466,7 +466,7 @@ After the sub-agent returns (or after single-agent execution):
 
 ---
 
-## Phase 4: Verification Gate
+## Stage 4: Verification Gate
 
 ### 4.1 Run Language-Appropriate Verification
 
@@ -492,7 +492,7 @@ If still failing after 3 cycles: print the errors and proceed with warnings. Wri
 
 ---
 
-## Phase 5: Generate Report and Summary
+## Stage 5: Generate Report and Summary
 
 ### 5.1 Generate Bootstrap Report
 

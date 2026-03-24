@@ -200,9 +200,9 @@ When applying feedback, ensure **cascading updates** and **cross-source consiste
 
 Determine how much of the pipeline to re-run based on finding categories:
 
-- **`epic_formation_error` | `dag_error` | `feature_coverage_error`** → re-run from **Phase 1** (rebuild DAG, reform epics, recreate/update all epic files).
-- **`interface_error` | `issue_completeness_error` | `spec_fidelity_error`** → re-run from **Phase 2** only (update epic file bodies, fix interface definitions).
-- **`e2e_coverage_gap`** → re-run from **Phase 3** only (regenerate E2E config, update phase artifacts).
+- **`epic_formation_error` | `dag_error` | `feature_coverage_error`** → re-run from **Stage 1** (rebuild DAG, reform epics, recreate/update all epic files).
+- **`interface_error` | `issue_completeness_error` | `spec_fidelity_error`** → re-run from **Stage 2** only (update epic file bodies, fix interface definitions).
+- **`e2e_coverage_gap`** → re-run from **Stage 3** only (regenerate E2E config, update phase artifacts).
 
 If findings span multiple categories, use the broadest scope needed.
 
@@ -235,7 +235,7 @@ If any check fails, fix it NOW before writing the outputs. Do not defer cross-so
 
 ---
 
-## Phase 0: Ingest
+## Stage 0: Ingest
 
 ### 0.1 Read Phase Manifest
 
@@ -273,7 +273,7 @@ If any check fails, fix it NOW before writing the outputs. Do not defer cross-so
 
 ---
 
-## Phase 1: Build Local DAG & Form Epics
+## Stage 1: Build Local DAG & Form Epics
 
 ### 1.1 Build Local Dependency DAG
 
@@ -337,11 +337,11 @@ Phase <N>: <feature_count> features → <epic_count> epics
 | P<N>.E2 | ...  | N        | ...      | 2    | P<N>.E1    |
 ```
 
-Proceed to Phase 2.
+Proceed to Stage 2.
 
 ---
 
-## Phase 2: Create Epic Files
+## Stage 2: Create Epic Files
 
 ### 2.1 Add the E2E Testing Epic
 
@@ -508,7 +508,7 @@ If `_index.md` already exists with content from other phases, merge the new phas
 
 ---
 
-## Phase 3: Generate Phase-Level Artifacts
+## Stage 3: Generate Phase-Level Artifacts
 
 ### 3.1 Generate Epic DAG
 
@@ -666,7 +666,7 @@ For each scenario (both epic validation and phase E2E), determine `test_type` ba
 
 ---
 
-## Phase 4: Print Summary
+## Stage 4: Print Summary
 
 After generating all files and creating epic files, print:
 

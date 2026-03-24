@@ -222,14 +222,14 @@ If resuming: <specific instruction>
 
 ## Main Workflow
 
-### Phase 0: Determine Mode
+### Stage 0: Determine Mode
 
 Read the `MODE` and `ITERATION` from your spawn prompt:
 
 - **`MODE: write_and_run`** (iteration 1): Proceed through all phases (1→1.5→2→3→4→5)
-- **`MODE: run_only`** (iteration 2+): Skip Phase 2, go 1→1.5→3→4→5
+- **`MODE: run_only`** (iteration 2+): Skip Stage 2, go 1→1.5→3→4→5
 
-### Phase 1: Load Context
+### Stage 1: Load Context
 
 1. Read `swarm-manifest.json` from the repository root
 2. Extract `e2e_config` — store test dir, command, marker, output format, file pattern, scenarios
@@ -255,7 +255,7 @@ Read the `MODE` and `ITERATION` from your spawn prompt:
       - Look for in-process client fixtures (`TestClient`, `Client`, `WebApplicationFactory`)
       - Store findings as `<existing_fixtures>` with: type (testcontainer/test_client), services covered, file path
 
-   d. This information is used in Phase 1.5 to verify infrastructure readiness.
+   d. This information is used in Stage 1.5 to verify infrastructure readiness.
 
 9. **Discover E2E-Relevant Skills**
 
@@ -270,7 +270,7 @@ Read the `MODE` and `ITERATION` from your spawn prompt:
    a. Check if `agent-browser` is in `<relevant_skills>`:
       - If the E2E scenarios involve browser interaction (web UI, forms, navigation),
         load the `agent-browser` skill and use its Vercel agent-browser CLI commands
-        as part of your E2E test execution toolset in Phase 3.
+        as part of your E2E test execution toolset in Stage 3.
       - This is especially valuable when scenarios describe user interactions
         (clicks, form submissions, page navigation).
 
@@ -296,8 +296,8 @@ Read the `MODE` and `ITERATION` from your spawn prompt:
 ## Last Checkpoint: post-context-load
 
 ## Next Step
-If resuming (MODE write_and_run): Read scenarios below, proceed to Phase 2 test design.
-If resuming (MODE run_only): Read existing tests below, proceed to Phase 3 test execution.
+If resuming (MODE write_and_run): Read scenarios below, proceed to Stage 2 test design.
+If resuming (MODE run_only): Read existing tests below, proceed to Stage 3 test execution.
 
 ## Existing E2E Tests
 - <file1>: <test_count> tests (<test_names>)
@@ -315,7 +315,7 @@ SendMessage({
 })
 ```
 
-### Phase 1.5: Infrastructure Verification (MANDATORY)
+### Stage 1.5: Infrastructure Verification (MANDATORY)
 
 <thinking>
 E2E tests MUST run against real infrastructure. In the new model, infrastructure (docker-compose, emulators, etc.) is created by other worker tasks in the E2E Testing epic. My job is to VERIFY it is running, not to set it up. If infrastructure is missing, I report a blocker — I do NOT substitute with mocks or fakes.
@@ -378,7 +378,7 @@ Send a tier proposal to team-lead and **WAIT** for approval:
 SendMessage({
   to: "team-lead",
   type: "message",
-  content: "E2E Infrastructure Tier Proposal:\n- Proposed tier: <0_container_parity|1_full_stack|2_infra_only|3_no_infrastructure>\n- Reason: <why this tier — what succeeded, what failed>\n- Services available: <list with ports>\n- Services unavailable: <list>\n- Existing fixtures found: <list from Phase 1 discovery, or 'none'>\n- Proposed test connection method: <real_http|test_client_real_services|no_infrastructure_needed>\n\nWaiting for approval or override.",
+  content: "E2E Infrastructure Tier Proposal:\n- Proposed tier: <0_container_parity|1_full_stack|2_infra_only|3_no_infrastructure>\n- Reason: <why this tier — what succeeded, what failed>\n- Services available: <list with ports>\n- Services unavailable: <list>\n- Existing fixtures found: <list from Stage 1 discovery, or 'none'>\n- Proposed test connection method: <real_http|test_client_real_services|no_infrastructure_needed>\n\nWaiting for approval or override.",
   summary: "E2E tier proposal: Tier <N>"
 })
 ```
@@ -435,12 +435,12 @@ Update working notes:
 
 ---
 
-### Phase 2: Design E2E Tests (MODE: write_and_run ONLY)
+### Stage 2: Design E2E Tests (MODE: write_and_run ONLY)
 
-**Skip this phase entirely if MODE is `run_only`.**
+**Skip this stage entirely if MODE is `run_only`.**
 
 <thinking>
-I must write meaningful E2E tests that validate real user flows. Each test should exercise the full feature across component boundaries, connecting to REAL running services verified in Phase 1.5. If this test were deleted, would we risk a real user-facing bug going undetected?
+I must write meaningful E2E tests that validate real user flows. Each test should exercise the full feature across component boundaries, connecting to REAL running services verified in Stage 1.5. If this test were deleted, would we risk a real user-facing bug going undetected?
 </thinking>
 
 1. **Create E2E test directory** if it does not exist:
@@ -456,7 +456,7 @@ I must write meaningful E2E tests that validate real user flows. Each test shoul
       - Place in `<e2e_test_dir>` following `<e2e_file_pattern>`
       - Apply `<e2e_marker>` (e.g., `@pytest.mark.e2e` for Python)
       - Test should exercise the FULL user flow described in the scenario
-      - Connect to the REAL running services verified in Phase 1.5:
+      - Connect to the REAL running services verified in Stage 1.5:
         - If full stack is available: make real HTTP requests (`httpx`, `requests`, `fetch`) to `http://localhost:<port>`
         - If only backing services are available: in-process test client is acceptable, BUT it MUST connect to the REAL running DB/cache/queue — NEVER use SQLite or in-memory substitutes
         - If no infrastructure is available: structure tests to validate what is possible, and note limitations
@@ -479,7 +479,7 @@ I must write meaningful E2E tests that validate real user flows. Each test shoul
 ## Last Checkpoint: post-test-design
 
 ## Next Step
-If resuming: Tests are written. Proceed to Phase 3 (run tests). Test files: <list>.
+If resuming: Tests are written. Proceed to Stage 3 (run tests). Test files: <list>.
 
 ## Tests Designed
 - <file>: <test_name> — covers scenario <scenario_name>
@@ -496,11 +496,11 @@ SendMessage({
 })
 ```
 
-### Phase 3: Run E2E Tests
+### Stage 3: Run E2E Tests
 
-1. **Verify infrastructure is still running** (verified in Phase 1.5):
+1. **Verify infrastructure is still running** (verified in Stage 1.5):
    - If infrastructure went down (connection errors, service not responding): report `[BLOCKER]` to team-lead — do NOT attempt to restart infrastructure yourself
-   - If infrastructure was never verified (Phase 1.5 was skipped): STOP — go back and run Phase 1.5
+   - If infrastructure was never verified (Stage 1.5 was skipped): STOP — go back and run Stage 1.5
 
 2. **Execute E2E test suite**:
    ```bash
@@ -556,7 +556,7 @@ SendMessage({
 ## Last Checkpoint: post-test-run
 
 ## Next Step
-If resuming: Results parsed. Proceed to Phase 4 (report results).
+If resuming: Results parsed. Proceed to Stage 4 (report results).
 
 ## Test Results
 - Total: <N>
@@ -568,7 +568,7 @@ If resuming: Results parsed. Proceed to Phase 4 (report results).
   - <test_name>: <error_type> — <brief error> — category: FLAKY
 ```
 
-### Phase 4: Report Results
+### Stage 4: Report Results
 
 1. **Create `[E2E-RESULT]` task** (persists results for leader's state reconstruction):
 
@@ -606,14 +606,14 @@ If resuming: Results parsed. Proceed to Phase 4 (report results).
 ## Last Checkpoint: post-report
 
 ## Next Step
-If resuming: Report already sent. Proceed to Phase 5 (Signal Completion).
+If resuming: Report already sent. Proceed to Stage 5 (Signal Completion).
 
 ## Report Details
 - [E2E-RESULT] task ID: <task_id>
 - Commit hash: <hash> (or "no new files committed" for run_only)
 ```
 
-### Phase 5: Signal Completion
+### Stage 5: Signal Completion
 
 1. **Do NOT mark `[E2E-VALIDATION]` task** — the leader manages this task's lifecycle.
 

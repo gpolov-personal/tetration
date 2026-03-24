@@ -1,6 +1,6 @@
 {
   "name": "eigen-squared",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Autonomous initiative-scale development orchestration via claude-tasks with pipeline controller hook and container parity. Zero-argument pipeline, triplet IDs, language-agnostic, integration branches, convergence loops, real-dependencies testing, Docker-first E2E. Runs a full phase autonomously.",
   "author": {
     "name": "G.Polo.V",

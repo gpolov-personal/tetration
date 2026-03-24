@@ -85,7 +85,7 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
   - Set `state.time_split.convergence.decided_by` to `"deepen_time_split"`
   - Set `state.time_split.convergence.decided_at` to current ISO 8601 timestamp
   - Set `state.time_split.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Phase 5.5 — Generate Convergence Recommendations)
+  - Write low-severity findings with downstream impact to `recommendations` (see Stage 5.5 — Generate Convergence Recommendations)
 - If continuing iteration:
   - Set `state.time_split.status` to `"iterating"`
 - Set `updated_at` to current timestamp
@@ -120,7 +120,7 @@ This protocol is deterministic: feature IDs (F01, F02...) are stable across refo
 
 ### Convergence Decision Protocol
 
-After collecting all findings (Phase 5), apply these convergence rules **in order**:
+After collecting all findings (Stage 5), apply these convergence rules **in order**:
 
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain.
    - Rationale: "All significant issues resolved."
@@ -148,7 +148,7 @@ For each finding, assess its downstream impact on later pipeline commands:
 
 ---
 
-## Phase 0: Ingest
+## Stage 0: Ingest
 
 ### 0.1 Read Initiative Summary
 
@@ -170,11 +170,11 @@ For each finding, assess its downstream impact on later pipeline commands:
 ### 0.4 Load Existing Lessons
 
 1. Glob `$EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/*.json`.
-2. Read and parse each lesson JSON — used to avoid duplicating known issues in Phase 6.
+2. Read and parse each lesson JSON — used to avoid duplicating known issues in Stage 6.
 
 ---
 
-## Phase 1: Structural Validation
+## Stage 1: Structural Validation
 
 Spawn **all validation agents in parallel** (one `Task general-purpose` per check):
 
@@ -273,7 +273,7 @@ Report missing, incorrect, or incomplete cross-phase dependency entries."
 
 ---
 
-## Phase 2: Content Validation
+## Stage 2: Content Validation
 
 Spawn **all content agents in parallel:**
 
@@ -320,7 +320,7 @@ Report: missing domain coverage, irrelevant sections included, important section
 
 ---
 
-## Phase 3: Strategic Review
+## Stage 3: Strategic Review
 
 Spawn **review agents in parallel:**
 
@@ -367,7 +367,7 @@ Phase split summary:
 
 ---
 
-## Phase 4: Skills Application
+## Stage 4: Skills Application
 
 ### 4.1 Discover and Apply Available Skills
 
@@ -378,15 +378,15 @@ Phase split summary:
 
 ---
 
-## Phase 5: Synthesize & Enhance
+## Stage 5: Synthesize & Enhance
 
 ### 5.1 Collect All Agent Results
 
 Wait for ALL parallel agents to complete. Collect findings from:
-- Structural validation agents (Phase 1)
-- Content validation agents (Phase 2)
-- Strategic review agents (Phase 3)
-- Skills agents (Phase 4)
+- Structural validation agents (Stage 1)
+- Content validation agents (Stage 2)
+- Strategic review agents (Stage 3)
+- Skills agents (Stage 4)
 
 ### 5.2 Categorize Findings
 
@@ -509,7 +509,7 @@ At convergence, scan low-severity findings for cross-stage insights worth preser
 
 ---
 
-## Phase 6: Lesson Extraction
+## Stage 6: Lesson Extraction
 
 ### 6.1 Generate Lesson JSONs
 
@@ -540,7 +540,7 @@ For each non-false-positive finding, create a lesson JSON:
 
 ### 6.2 Deduplicate Against Existing Lessons
 
-For each new lesson, check the existing lessons loaded in Phase 0.4:
+For each new lesson, check the existing lessons loaded in Stage 0.4:
 - If a lesson with the same `affected_phase` + `category` + similar `root_cause` already exists, **skip it** (don't write a duplicate).
 - If the existing lesson has `"status": "applied"`, still skip (the command has already been improved for this).
 
@@ -556,7 +556,7 @@ For each new lesson, check the existing lessons loaded in Phase 0.4:
 
 ---
 
-## Phase 7: Summary & Next Steps
+## Stage 7: Summary & Next Steps
 
 Print a comprehensive summary:
 

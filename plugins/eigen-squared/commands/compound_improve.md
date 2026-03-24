@@ -75,7 +75,7 @@ Lessons are read from `$EIGEN_ROOT/eigen_initiative/eigen_lessons/` with one sub
 
 ---
 
-## Phase 0: Load & Analyze Lessons
+## Stage 0: Load & Analyze Lessons
 
 ### 0.1 Read All Lessons
 
@@ -130,7 +130,7 @@ Only read files that have pending lessons — skip commands with zero pending.
 
 ---
 
-## Phase 1: Pattern Analysis
+## Stage 1: Pattern Analysis
 
 ### 1.1 Group Lessons by Command and Section
 
@@ -201,7 +201,7 @@ Store the user's selection and approved patterns.
 
 ---
 
-## Phase 2: Rewrite Commands
+## Stage 2: Rewrite Commands
 
 ### 2.1 Improvement Strategy
 
@@ -246,7 +246,7 @@ If validation fails, revert that specific edit and report.
 
 ---
 
-## Phase 3: Update Metadata
+## Stage 3: Update Metadata
 
 ### 3.1 Bump Plugin Version
 
@@ -296,7 +296,7 @@ This ensures these lessons are skipped in future runs.
 
 ---
 
-## Phase 4: Summary & Next Steps
+## Stage 4: Summary & Next Steps
 
 Print:
 
