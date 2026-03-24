@@ -116,53 +116,6 @@ def last_confirmed_entry():
     return None
 
 
-def is_recently_scheduled(command, context_key):
-    """Check if this command+context was already scheduled within the delay window.
-
-    Scans recent log entries for a 'confirmed' scheduling of the same command
-    and context_key that is still within SCHEDULE_DELAY_MINUTES (i.e., the
-    scheduled task hasn't had time to run yet). Prevents duplicate task creation
-    when multiple Stop events fire in quick succession.
-
-    Returns True if a duplicate exists and scheduling should be skipped.
-    """
-    if not HOOK_LOG.exists():
-        return False
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=SCHEDULE_DELAY_MINUTES)
-    try:
-        file_size = HOOK_LOG.stat().st_size
-        with open(HOOK_LOG, "r") as f:
-            read_from = max(0, file_size - 8192)
-            f.seek(read_from)
-            if read_from > 0:
-                f.readline()
-            tail = f.read()
-        for line in reversed(tail.strip().split("\n")):
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            # Only check confirmed scheduling entries
-            if entry.get("status") != "confirmed" or entry.get("action") != "scheduled":
-                continue
-            # Check if it's the same command+context
-            if entry.get("command") != command or entry.get("context_key") != context_key:
-                continue
-            # Check if it's within the delay window
-            ts = entry.get("timestamp", "")
-            try:
-                entry_time = datetime.fromisoformat(ts)
-                if entry_time > cutoff:
-                    return True  # Recently scheduled — skip
-            except (ValueError, TypeError):
-                continue
-    except OSError:
-        pass
-    return False
-
-
 def check_retry(command, context_key):
     """Check if we're retrying the same command.
 
@@ -784,19 +737,6 @@ def main():
                         return
                 except Exception:
                     pass  # Can't verify — proceed anyway
-
-        # Dedup check: skip if same command was already scheduled recently
-        if is_recently_scheduled(command, context_key):
-            log_entry(
-                {
-                    "action": "dedup_skip",
-                    "command": command,
-                    "context_key": context_key,
-                    "status": "skipped",
-                    "reason": "already scheduled within delay window",
-                }
-            )
-            return
 
         # Retry check
         should_proceed, attempt = check_retry(command, context_key)
