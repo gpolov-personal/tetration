@@ -123,6 +123,7 @@ You will transform the epic file into a well-structured development plan with an
 - **Parallelization Strategy is a protected machine-parseable block** — maintain its structured format for consumption by `/create_issues_from_plan_swarm`.
 - **Feedback files are owned by `/deepen_plan_phase_epic`** — this command reads but never deletes them.
 - **pipeline_state.json is the single source of truth** — per-epic plan state lives at `state.phases[N].plans[M]`.
+- **Single approach per decision**: every architectural or implementation decision must specify exactly ONE approach — never "use X or Y". If alternatives were considered, state the chosen approach and briefly note why alternatives were rejected. Swarm workers need unambiguous instructions.
 
 ---
 
@@ -191,6 +192,14 @@ Classification rules:
 - **REJECT**: the finding is incorrect, outdated, or conflicts with constraints — explain why.
 
 ### Apply Accepted Changes
+
+After applying any feedback change, cross-check that ALL plan sections reflect the update:
+- Summary tables and risk tables
+- Component descriptions in Parallelization Strategy
+- E2E scenarios and acceptance criteria
+- Success criteria
+
+A feedback change that updates one section but leaves others stale is worse than no change — it creates internal contradictions that confuse swarm workers.
 
 1. Apply accepted `section_changes` from `plan_change_guidance`: update strategic sections
 2. Apply accepted `parallelization_changes`: update Parallelization Strategy (add/remove/split/merge components, fix dependencies, update interfaces, move files to shared)
@@ -278,12 +287,15 @@ Using the chosen complexity level, create a plan that includes:
 - Architecture considerations and system impact
 - Integration points and data flow
 - Performance, security, and scalability implications
+- **Security language must be unconditional**: replace "if present" with "MUST verify", "should validate" with "MUST validate", "when available" with "MUST be available". Security requirements are absolute — no conditional language that allows implementers to skip checks.
+- **Every security mitigation must map to a component**: security requirements described in the plan MUST be assigned to a specific component or task in the Parallelization Strategy. No "paper mitigations" — if it's stated as a requirement, a component owns its implementation.
 
 **Implementation Approach:**
 - Logical milestones (if applicable)
 - Dependencies and prerequisites
 - Risk factors and mitigation strategies
 - Quality assurance and testing strategy
+- **Complete Matrix principle**: for every access control rule, interface contract, or test plan, build the complete matrix (all roles × all operations × all contexts). Empty cells must be explicit decisions ("admins cannot delete — not a valid operation"), not oversights. This prevents the common failure of planning read paths but missing write operations.
 
 **Success Criteria:**
 - Measurable acceptance criteria
@@ -311,6 +323,9 @@ Analyze the plan to produce a machine-readable parallelization strategy consumed
   reason: "<why multiple components need this file>"
 
 ### Interfaces Between Components
+
+Interface contracts must use exact function signatures (name, parameter types, return type), not prose descriptions. For REST endpoints: HTTP method, path, request/response schemas. Prose descriptions of contracts lead to parameter-order bugs and type mismatches when swarm workers implement them independently.
+
 - interface: "<interface_name>"
   provider: "<component that defines it>"
   consumers: ["<component_A>", "<component_B>"]

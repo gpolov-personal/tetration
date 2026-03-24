@@ -340,7 +340,16 @@ For each phase (cumulative — phase N includes all features from phases 1..N):
 
 Include these descriptions in the phase manifests and summary JSON.
 
-### 1.5 Compute Phase Metadata
+### 1.5 Verify Domain Coverage
+
+After all features are assigned to phases, verify that every feature's domain has relevant guidance in its phase:
+
+1. For each phase, iterate through ALL assigned features (including P2 and Deferrable)
+2. For each feature, check that its domain has at least one relevant section in the phase manifest (from whitebox if available, or from the Initiative/blackbox)
+3. If a domain has features in the phase but no guidance, flag it — downstream commands will operate with incomplete context
+4. This is especially important for secondary features (P2, Deferrable) whose domains may differ from the phase's primary focus
+
+### 1.6 Compute Phase Metadata
 
 For each phase, compute:
 - Feature count
@@ -487,6 +496,10 @@ created_at: "<ISO 8601 timestamp>"
 ### <Relevant Whitebox Section Title>
 
 <Filtered whitebox content>
+
+## Downstream Notes
+
+<Scan all available documentation (whitebox, Initiative, blackbox) for binding architectural decisions, migration requirements, system transitions, or anti-patterns requiring work that is NOT captured as a feature in this phase. List each as an actionable note with its source reference. If none found, write "None identified for this phase.">
 ```
 
 ### 2.4 Print Summary

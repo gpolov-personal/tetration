@@ -309,6 +309,15 @@ Each epic candidate has: `{epic_id, name, features[], clusters[], domain}`.
 
 ### 1.4 Define Inter-Epic Interfaces
 
+#### Interface Classification
+
+Before defining inter-epic interfaces, classify each cross-epic dependency:
+
+1. **Shared Infrastructure** (types, utils, constants, entity stubs) — any epic can import these directly from bootstrap-created files. These are NOT inter-epic interfaces. Do not add them to `interfaces_provided`/`interfaces_consumed`. They may appear as supporting context but do not create blocking dependencies.
+2. **API Contracts** (service functions, middleware, client modules, route handlers) — requires the provider epic to implement before the consumer can integrate. These ARE inter-epic interfaces and define `blocked_by` relationships.
+
+Only define interfaces (steps below) for API Contract dependencies. Shared Infrastructure imports do not need coordination between epics.
+
 For each cross-epic dependency (feature in E_b depends on feature in E_a):
 
 1. Identify the **interface** — what does E_b need from E_a?
@@ -338,6 +347,26 @@ Phase <N>: <feature_count> features → <epic_count> epics
 ```
 
 Proceed to Stage 2.
+
+### 1.6 Detect File Overlap in Parallel Epics
+
+For each execution wave with more than one epic:
+
+1. Collect each epic's expected files: `concrete_files` from interfaces + entity stubs referenced by the epic's features (from the bootstrap entity file map)
+2. For each pair of same-wave epics, compute the intersection of their file sets
+3. If any pair has overlapping files, add a `shared_files_warning` to the wave in `epic_dag.json`:
+
+```json
+"shared_files_warning": [
+  {
+    "epics": ["P<N>.E1", "P<N>.E3"],
+    "overlapping_files": ["src/models/user.py", "src/lib/auth.ts"],
+    "recommendation": "Coordinate merge order or consider sequential execution"
+  }
+]
+```
+
+If no overlap exists for a wave, set `shared_files_warning` to `[]`.
 
 ---
 
