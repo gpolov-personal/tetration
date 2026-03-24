@@ -427,24 +427,31 @@ grep -qxF '.eigen/' $EIGEN_ROOT/.gitignore 2>/dev/null || echo '.eigen/' >> $EIG
 
 ### 7.4 Register Stop hook in project settings
 
-Read `$EIGEN_ROOT/.claude/settings.json`. Find or create the `hooks.Stop` array. Add (or update) the eigen-managed entry:
+Read `$EIGEN_ROOT/.claude/settings.json`. Find or create the `hooks.Stop` array. Each entry in the `Stop` array must be a **matcher object** with a `matcher` string and a `hooks` array. Add (or update) the eigen-managed entry:
 
 ```json
 {
-  "hooks": [
-    {
-      "type": "command",
-      "command": "bash $EIGEN_ROOT/.eigen/pipeline_hook.sh"
-    }
-  ],
-  "_eigen_managed": true
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $EIGEN_ROOT/.eigen/pipeline_hook.sh"
+          }
+        ],
+        "_eigen_managed": true
+      }
+    ]
+  }
 }
 ```
 
 Note: use the **absolute path** to `$EIGEN_ROOT/.eigen/pipeline_hook.sh` (resolve the variable, don't write the literal `$EIGEN_ROOT`).
 
-**If an `_eigen_managed` entry already exists**: update its command path.
-**If other Stop hooks exist**: preserve them — append the eigen entry, don't replace.
+**If an `_eigen_managed` entry already exists**: update its command path inside the `hooks` array.
+**If other Stop matcher entries exist**: preserve them — append the eigen entry to the `Stop` array, don't replace.
 
 ### 7.4 Initialize pipeline state
 
