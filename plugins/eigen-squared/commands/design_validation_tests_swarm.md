@@ -453,7 +453,7 @@ I must classify the task type. Instead of asking a human developer, I will prese
 
 ### Stage 2.7: Existing Test Module Discovery
 
-**CRITICAL**: This phase is MANDATORY before any test creation. Never skip this phase.
+**CRITICAL**: This stage is MANDATORY before any test creation. Never skip this stage.
 
 1. **Identify Affected Source Modules**
 
@@ -1040,7 +1040,7 @@ ALL new tests MUST have `@pytest.mark.tdd_validation`, `@pytest.mark.tdd_contrac
 
 ### Communication Checklist
 
-Before considering this phase complete, verify you sent ALL of these:
+Before considering this stage complete, verify you sent ALL of these:
 
 - [ ] Progress update: context gathered (after analyzing task)
 - [ ] `[QUESTION]` task: task classification (with your recommendation)

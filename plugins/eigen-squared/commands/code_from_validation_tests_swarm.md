@@ -53,7 +53,7 @@ The leader's name is `team-lead`.
 
 ### Message Formats
 
-**Implementation started** -- send immediately when beginning this phase:
+**Implementation started** -- send immediately when beginning this stage:
 ```javascript
 SendMessage({
   to: "team-lead",
@@ -166,9 +166,9 @@ Throughout execution, maintain a working notes file at `working-notes-<task_id>.
 
 ### Read Working Notes First — Resume Protocol
 
-At the very start of this phase, read `swarm_working_notes/working-notes-<task_id>.md`.
+At the very start of this stage, read `swarm_working_notes/working-notes-<task_id>.md`.
 
-**If the file exists AND contains a `Last Checkpoint` with value `post-context-load` or later for `code_from_validation_tests` phase**: Context compaction may have occurred during this phase. Execute the resume protocol:
+**If the file exists AND contains a `Last Checkpoint` with value `post-context-load` or later for `code_from_validation_tests` stage**: Context compaction may have occurred during this stage. Execute the resume protocol:
 
 1. Read the working notes file completely
 2. Read the `Last Checkpoint` field to determine where you left off

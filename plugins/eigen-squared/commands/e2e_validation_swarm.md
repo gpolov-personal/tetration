@@ -437,7 +437,7 @@ Update working notes:
 
 ### Stage 2: Design E2E Tests (MODE: write_and_run ONLY)
 
-**Skip this phase entirely if MODE is `run_only`.**
+**Skip this stage entirely if MODE is `run_only`.**
 
 <thinking>
 I must write meaningful E2E tests that validate real user flows. Each test should exercise the full feature across component boundaries, connecting to REAL running services verified in Stage 1.5. If this test were deleted, would we risk a real user-facing bug going undetected?

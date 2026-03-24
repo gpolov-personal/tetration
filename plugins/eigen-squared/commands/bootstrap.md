@@ -301,7 +301,7 @@ System prerequisites: all satisfied.
 
 ## Stage 1: Tooling Decisions
 
-**Skip this entire phase if the repo already has package manifests (`PRESENT`).** Tooling decisions are already made and committed — bootstrap reads existing config and proceeds to Stage 2.
+**Skip this entire stage if the repo already has package manifests (`PRESENT`).** Tooling decisions are already made and committed — bootstrap reads existing config and proceeds to Stage 2.
 
 For greenfield repos (first-time bootstrap), you must make key tooling decisions.
 
