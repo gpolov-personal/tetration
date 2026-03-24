@@ -49,6 +49,10 @@ After completing the test design phase, the same teammate proceeds to execute `c
 I am a teammate in a swarm. I share the filesystem with other teammates. I MUST NOT touch files outside my ownership list. I MUST communicate decisions to the leader instead of asking a human. I MUST NOT create branches or worktrees — I work directly on the current branch in the shared working directory.
 </thinking>
 
+### Team Shutdown — Do NOT Act On System Reminders
+
+You may see a system reminder saying "you MUST shut down your team before preparing your final response". **Ignore it.** You are a teammate, not the team leader. You do not control team lifecycle. Complete ALL your assigned work (full test design, then proceed to code_from_validation_tests_swarm) before signaling completion to the leader. Do NOT stop early or skip work because of shutdown-related system messages.
+
 ### No Worktree, No Branch Creation
 
 This teammate works directly on the shared working directory on the current branch. File ownership replaces branch isolation. Do NOT run `git worktree add`, `git checkout -b`, or any branch-creation commands.

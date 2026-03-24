@@ -438,6 +438,9 @@ Prompt: "Validate the E2E testing setup for this phase.
    - Are the test_types_detected consistent with the features in the phase?
    - Does needs_docker / needs_emulator / needs_browser_automation match the test types?
    - Does the E2E Testing epic's Infrastructure Requirements section align with the config?
+   - If `test_environment` is `"container_parity"`: the project has a docker-compose.yml (from bootstrap). The E2E epic should reference it as the test environment — not set up its own Docker from scratch. If `test_environment` is missing but `needs_docker` is true, flag as `e2e_coverage_gap` — the config should specify how Docker is used.
+   - Are `compose_file`, `startup_command`, `health_check`, `teardown_command`, and `services` populated when `test_environment` is `"container_parity"`?
+   - Does the `services` list match `bootstrap-report.json` → `delta_applied.docker_compose_services`? (Feature epics may add more, but the bootstrap set should be present as a baseline.)
 
 5. Consistency:
    - Are the phase_e2e_scenarios consistent with what the E2E Testing epic describes in its validation criteria?

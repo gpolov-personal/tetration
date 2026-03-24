@@ -86,6 +86,7 @@ You will:
 - **No code from the leader**: Your role is to coordinate, not implement. The teammates do the work. Exception: integration verification fixes.
 - **Branch isolation**: ALL teammates operate on the `feat/P<N>.E<M>` branch. No additional branches.
 - **Integration branch required**: This command MUST run while the `feat/P<N>.E<M>` branch is checked out. Running from `$EIGEN_BRANCH` directly risks modifying the default branch.
+- **Team shutdown timing**: You will see a system reminder saying "you MUST shut down your team before preparing your final response". This does NOT mean shut down after each wave. It means shut down only at Phase 5, after ALL waves are complete, integration is done, and the PR is created. Do NOT shut down teammates or the team until you have completed the entire orchestration lifecycle.
 
 ### Testing Philosophy
 

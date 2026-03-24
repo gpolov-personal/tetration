@@ -9,7 +9,7 @@ description: Review bootstrap output with parallel research agents, diagnose err
 
 This command takes the output of `/bootstrap` (committed foundation files in `$EIGEN_ROOT` + `bootstrap-report.json`) and subjects it to comprehensive review by parallel research and review agents. Every structural, architectural, tooling, contract quality, and incremental readiness issue is diagnosed.
 
-Bootstrap creates the universal foundation: directories, entity stubs, contracts, package manifests, quality config, and basic CI. It does NOT create Docker, database migrations, or E2E infrastructure — those are handled by feature epics and the E2E Testing epic.
+Bootstrap creates the universal foundation: directories, entity stubs, contracts, package manifests, quality config, basic CI, and optionally Docker artifacts (Dockerfile, docker-compose.yml, .dockerignore — see `bootstrap-report.json` field `delta_applied.dockerfile_created`). It does NOT create database migrations or E2E test infrastructure — those are handled by feature epics and the E2E Testing epic.
 
 Diagnosed errors are written as structured lesson JSONs to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/`. These lessons are later consumed by `/compound_improve` to permanently improve the `bootstrap` command itself.
 
@@ -361,8 +361,12 @@ Bootstrap used these verification commands:
 2. Check: do they still pass?
 3. If there are new warnings compared to bootstrap's run, flag them
 4. If they fail, identify what changed since bootstrap
+5. If bootstrap_report.delta_applied.server_project_detected is true:
+   - Verify Dockerfile exists and `docker compose config` validates without errors
+   - Verify docker-compose.yml lists the expected services (compare against bootstrap_report.delta_applied.docker_compose_services)
+   - If docker is available: verify `docker compose build` succeeds
 
-Report: {status, new_warnings, regressions}"
+Report: {status, new_warnings, regressions, docker_status (if applicable)}"
 ```
 
 ---
