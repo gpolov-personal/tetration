@@ -1,15 +1,20 @@
 ---
 name: initiative_review
-description: Analyze and improve initiative documents to make them pipeline-ready for time_split and downstream commands
+description: Create or improve initiative documents (Initiative, Blackbox, optional Whitebox) to make them pipeline-ready for time_split and downstream commands
 ---
 
-# Initiative Review — Pipeline Readiness Preparation
+# Initiative Review — Create & Prepare Initiative Documents
 
 ## Your Role
 
-You are an **Initiative Analyst** that helps the user prepare their initiative documents for the eigen-squared pipeline. You analyze the existing documents, identify gaps, ask targeted questions to fill them, and generate or improve the documents so `/time_split` and all downstream commands work effectively.
+You are an **Initiative Architect** that helps the user create or improve their initiative documents for the eigen-squared pipeline. You can work in two modes:
 
-This is the **only interactive command** in the pipeline — you actively ask the user questions to clarify ambiguities, fill gaps, and make decisions about scope, tech stack, and priorities.
+- **Create mode**: start from scratch — interview the user, analyze reference systems, and generate the Initiative, Blackbox, and optionally Whitebox documents
+- **Review mode**: analyze existing documents, identify gaps, and improve them
+
+This is an **interactive command** — you actively ask the user questions to clarify ambiguities, fill gaps, and make decisions about scope, tech stack, and priorities. Unlike the autonomous pipeline commands, this one requires user input at every stage.
+
+---
 
 ## Environment Variables
 
@@ -33,18 +38,7 @@ This command uses the same environment variables as all eigen-squared commands:
      export EIGEN_BRANCH=main
    ```
 3. Verify `$EIGEN_ROOT` exists and is a directory.
-4. Verify agent teams are enabled:
-   ```bash
-   echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-NOT_SET}"
-   ```
-   If not `"1"` → **STOP.** Print:
-   ```
-   ERROR: Agent teams are not enabled. The eigen-squared pipeline requires agent teams.
-   Add these to your .claude/settings.json under "env":
-     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-     "teammateMode": "tmux"
-   ```
-5. Create `$EIGEN_ROOT/eigen_initiative/` if it doesn't exist:
+4. Create `$EIGEN_ROOT/eigen_initiative/` if it doesn't exist:
    ```bash
    mkdir -p $EIGEN_ROOT/eigen_initiative
    ```
@@ -52,7 +46,7 @@ This command uses the same environment variables as all eigen-squared commands:
 ### Fixed Paths
 
 - **Initiative directory**: `$EIGEN_ROOT/eigen_initiative/`
-- **Pipeline state**: `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` (may not exist yet)
+- **Pipeline state**: `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` (should NOT exist — this command runs before the pipeline starts)
 
 ---
 
@@ -62,20 +56,27 @@ The eigen-squared pipeline requires specific information to work effectively. Th
 
 ### Required Documents
 
-1. **Initiative Document** — the strategic overview with:
-   - Initiative name and context
+1. **Initiative Document** (`*Initiative*.md`) — the strategic overview with:
+   - Initiative name, context, and motivation
+   - Scope: inclusions AND exclusions
+   - **Tech Stack** section (languages, frameworks, infrastructure, deployment)
    - **Feature Summary Table** (critical — `time_split` parses this)
-   - Dependency information (enables DAG construction)
+   - Dependency information (enables ordering)
    - Domain/group assignments
    - Priority assignments (P1, P2, Deferrable)
-   - **Tech Stack** section (languages, frameworks — feeds into `bootstrap`)
+   - Non-functional requirements (auth, security, performance, testing)
+   - Success criteria (what "done" looks like)
    - Cluster analysis (optional — `time_split` can compute if missing)
 
-2. **Blackbox Requirements Document** — per-feature specifications with:
+2. **Blackbox Requirements Document** (`*Blackbox*.md`) — per-feature specifications with:
    - Inputs, Outputs, Behavior, Acceptance Criteria for each feature
    - Feature IDs matching the Feature Summary Table
 
-3. **Whitebox Reference Guide** (optional) — implementation patterns from an existing codebase
+3. **Whitebox Reference Guide** (`*Whitebox*.md`, optional) — implementation patterns from an existing or reference codebase:
+   - Database schema details (field names, types, constraints)
+   - Architectural patterns to replicate or avoid
+   - Domain knowledge and business rules
+   - Anti-patterns to NOT replicate
 
 ### Feature Summary Table Format
 
@@ -86,10 +87,9 @@ This is what `time_split` needs to parse:
 
 | ID | Name | Domain | Priority | Dependencies | Cluster |
 |----|------|--------|----------|-------------|---------|
-| IP-1 | Ingest raw data | Ingestion | P1 | — | A |
-| IP-2 | Parse metadata | Ingestion | P1 | IP-1 | A |
-| SD-1 | Full-text search | Search | P1 | IP-2 | B |
-| AL-1 | Alert on keyword | Alerting | P2 | SD-1 | C |
+| INFRA-1 | Project scaffold | Infrastructure | P1 | — | A |
+| AUTH-1 | JWT authentication | Authentication | P1 | INFRA-1 | B |
+| DRL-1 | Create drill | Drill Workflow | P1 | AUTH-1 | C |
 ```
 
 Required columns: ID, Name, Domain, Priority, Dependencies
@@ -111,21 +111,45 @@ Search for documents matching:
 - **Initiative document**: files matching `*Initiative*` or `*initiative*` (markdown)
 - **Blackbox requirements**: files matching `*Blackbox*` or `*blackbox*` AND `*Requirement*` or `*requirement*` (markdown)
 - **Whitebox reference**: files matching `*Whitebox*` or `*whitebox*` (markdown)
-- **Any other markdown files** that might contain relevant content
+- **Any other markdown files** that might contain relevant content (analysis docs, notes, transcriptions)
 
 ### 0.2 Check Pipeline State
 
-If `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` exists, check if `time_split` has already run. If so, warn: "The pipeline has already started. Changes to initiative documents may require re-running `/time_split`."
+If `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` exists → **warn**:
+```
+WARNING: A pipeline is already in progress (pipeline_state.json exists).
+If you modify the initiative documents, you will need to delete
+pipeline_state.json and re-run /eigen_start to restart the pipeline.
+
+Continue anyway? [Y/n]
+```
 
 ### 0.3 Scan Project for Context
 
-If `$EIGEN_ROOT` has an existing codebase (not empty), scan it for context:
+Check if `$EIGEN_ROOT` has useful context:
+
+**If existing codebase** (not empty):
 - Language manifest files (pyproject.toml, package.json, build.gradle, etc.) → detect tech stack
 - Directory structure → understand existing domains
+- Database schema/migration files → understand data model
 - README.md → project description
-- Existing test structure → understand testing patterns
+- API routes → understand endpoints
+- Test structure → understand testing patterns
 
-Print what was found:
+**If reference projects** are mentioned by the user:
+- Ask for the path to the reference project
+- Scan it for architecture patterns, tech stack, DB schema, API structure
+- This becomes input for the whitebox guide
+
+### 0.4 Determine Mode
+
+Based on what was found:
+
+- **No initiative documents found** → **Create mode**: guide the user through creating all documents from scratch
+- **Partial documents found** → **Review mode**: analyze gaps, fill them interactively
+- **Complete documents found** → **Validate mode**: run completeness checks, suggest improvements
+
+Print:
 
 ```
 === Initiative Review — Discovery ===
@@ -135,80 +159,158 @@ Documents found:
   - Initiative: <filename or "NOT FOUND">
   - Blackbox Requirements: <filename or "NOT FOUND">
   - Whitebox Reference: <filename or "NOT FOUND (optional)">
+  - Other docs: <list of any other markdown files>
 
 Project context:
-  - Languages detected: <from manifest files, or "empty project">
+  - Languages detected: <from manifest files, or "empty project / greenfield">
   - Existing structure: <directory overview, or "no codebase yet">
+  - Reference projects: <ask user if any>
+
+Mode: <CREATE / REVIEW / VALIDATE>
 ```
 
 ---
 
-## Stage 1: Analyze Completeness
+## Stage 1: Interview (Create Mode) or Analyze (Review Mode)
 
-Read whatever documents exist and analyze them against what the pipeline needs.
+### For CREATE mode — Interactive Interview
 
-### 1.1 Feature Summary Table Analysis
+Guide the user through a structured interview. Ask questions in logical groups to minimize back-and-forth.
+
+**Group 1: Vision and Context**
+
+```
+Let's build your initiative documents. I'll ask questions in groups.
+
+1. CONTEXT:
+   - What is this project? (1-2 sentence description)
+   - Why is it being built? (motivation / business need)
+   - Is this a greenfield project or a rebuild/refactoring of something existing?
+   - If rebuild: where is the existing system? (path or URL — I can analyze it)
+   - If greenfield: are there any reference projects to draw patterns from?
+
+2. USERS AND SCALE:
+   - Who uses this? (roles: admin, user, customer, etc.)
+   - How many simultaneous users? (helps determine infrastructure needs)
+   - Is this internal tooling or customer-facing?
+```
+
+**Group 2: Scope**
+
+```
+3. WHAT'S IN:
+   - What are the main areas/domains of this project?
+   - For each domain, what are the key features?
+   - What's the MVP — the minimum that must work for the first usable version?
+
+4. WHAT'S OUT (just as important):
+   - What is explicitly NOT in scope for this initiative?
+   - Are there features you know you'll need later but are deferring?
+   - Any integrations you're deliberately postponing?
+```
+
+**Group 3: Tech Stack and Deployment**
+
+```
+5. TECH STACK:
+   - Backend language/framework: <Python+FastAPI / Node+Express / Go / etc.>
+   - Frontend: <React / Next.js / Vue / mobile / none>
+   - Database: <PostgreSQL / MySQL / SQLite / MongoDB / etc.>
+   - Cache/queue: <Redis / RabbitMQ / none>
+   - File storage: <local disk / S3 / none>
+
+6. DEPLOYMENT:
+   - Where will this run? (Docker + Fly.io / AWS / Vercel / Kubernetes / etc.)
+   - Should `docker compose up` produce the complete local environment?
+     (recommended — this enables container parity for E2E testing)
+   - Is this a server project (web app, API) or a library/CLI/package?
+```
+
+**Group 4: Non-Functional Requirements**
+
+```
+7. QUALITY REQUIREMENTS:
+   - Authentication model: <JWT / OAuth / session / none>
+   - Authorization: <role-based / resource-based / none>
+   - Security requirements: <any specific — HTTPS, input validation, etc.>
+   - Performance: <response time targets, concurrent users>
+   - Testing strategy: <pytest + Playwright / Jest + Cypress / etc.>
+
+8. SUCCESS CRITERIA:
+   - What does "done" look like for the minimum version?
+   - What does "done" look like for the complete initiative?
+```
+
+After each group, confirm understanding with the user before moving on.
+
+### For REVIEW mode — Completeness Analysis
+
+Read existing documents and analyze against pipeline requirements.
+
+#### 1.1 Feature Summary Table Analysis
 
 If an initiative document exists, search for a Feature Summary Table:
 
-- **Table found**: parse it and validate:
-  - Does every feature have an ID? (unique, short prefix like IP-1, SD-2)
-  - Does every feature have a Name?
-  - Does every feature have a Domain?
-  - Does every feature have a Priority (P1, P2, Deferrable)?
-  - Does every feature have Dependencies listed (or explicit "—" for none)?
-  - Are there enough features? (warn if < 10 — may not be initiative-scale)
-  - Are there too many? (warn if > 200 — may need pre-splitting)
+- **Table found**: parse and validate:
+  - Every feature has: ID, Name, Domain, Priority, Dependencies?
+  - IDs are unique with domain-prefix convention?
+  - Priorities are P1/P2/Deferrable?
+  - Dependencies reference valid feature IDs?
+  - Enough features? (warn if < 5 — may not need the pipeline)
+  - Too many? (warn if > 200 — may need pre-splitting)
 
-- **Table not found**: this is the biggest gap. The command will help create one.
+- **Table not found**: this is the biggest gap — will help create one.
 
-### 1.2 Dependency Analysis
+#### 1.2 Dependency Analysis
 
 If dependencies are present:
 - Build the DAG and check for cycles
-- Identify roots (no dependencies) and leaves (nothing depends on them)
+- Identify roots (no dependencies) and leaves
 - Identify bottlenecks (high fan-in + fan-out)
-- Check for orphan features (no dependencies AND nothing depends on them — suspicious)
+- Check for orphan features (no deps AND nothing depends on them)
 
-If dependencies are missing or incomplete:
-- Flag this as a critical gap
-- Prepare to ask the user about dependencies
-
-### 1.3 Blackbox Requirements Analysis
+#### 1.3 Blackbox Requirements Analysis
 
 If a blackbox document exists:
-- For each feature ID in the Feature Summary Table, check if a corresponding spec exists
-- Check each spec has: Inputs, Outputs, Behavior, Acceptance Criteria sections
+- For each feature ID, check if a corresponding spec exists
+- Check each spec has: Inputs, Outputs, Behavior, Acceptance Criteria
 - Flag: features with no spec, specs with missing sections, specs that are too vague
 
-If no blackbox document:
-- Flag as critical — the pipeline needs this
+#### 1.4 Tech Stack Analysis
 
-### 1.4 Tech Stack Analysis
+Check if the initiative specifies:
+- Languages, frameworks, databases, infrastructure, deployment target
+- If not specified but codebase exists, infer from manifest files
+- If neither, flag as gap
 
-Check if the initiative document specifies the tech stack:
-- Languages (backend, frontend, mobile)
-- Frameworks
-- Databases / infrastructure needs
-- Deployment targets (web, mobile app, CLI, library)
+#### 1.5 Scope Analysis
 
-If not specified but the project has a codebase, infer from manifest files.
-If neither, flag as a gap to ask the user.
+Check if the initiative has:
+- Clear inclusions section
+- Clear exclusions section
+- Non-functional requirements
+- Success criteria
 
-### 1.5 Domain and Cluster Analysis
+#### 1.6 Container Parity Check
 
-Check if features are organized into clear domains:
-- Are domain names consistent? (same feature group always uses the same domain name)
-- Are there natural clusters? (features that share bidirectional dependencies or form tightly connected subgraphs)
-- Would pre-computed clusters help `time_split`?
+Check if the initiative mentions deployment. If it's a server project:
+- Is Docker/docker-compose mentioned?
+- Is there a containerization feature in the Feature Summary Table?
+- Recommend adding one if missing — bootstrap creates Docker artifacts for server projects and needs a containerization feature in Phase 1
+
+#### 1.7 Reference System Analysis
+
+If the user mentions a reference system or existing codebase:
+- Ask for its path
+- Scan it for: DB schema, API routes, page structure, data models, auth patterns
+- Propose whitebox content based on what's found
+- Identify patterns to replicate AND anti-patterns to avoid
 
 ---
 
-## Stage 2: Report Findings and Ask Questions
+## Stage 2: Report Findings
 
 ### 2.1 Pipeline Readiness Report
-
-Print a structured report:
 
 ```
 === Pipeline Readiness Report ===
@@ -224,190 +326,231 @@ Dependency DAG:            <VALID / HAS CYCLES / INCOMPLETE / MISSING>
   Roots:                   <N>
   Leaves:                  <N>
   Bottlenecks:             <N>
-  Orphans:                 <N>
 
 Blackbox Specifications:   <PRESENT / MISSING / INCOMPLETE>
   Features with specs:     <N/M>
   Complete specs:          <N/M>
 
 Tech Stack:                <SPECIFIED / DETECTED / MISSING>
-  Languages:               <list or "unknown">
-  Frameworks:              <list or "unknown">
+  Type:                    <server project / library / CLI>
+  Container parity:        <yes — containerization feature present / no — recommend adding>
+
+Scope:                     <DEFINED / MISSING>
+  Inclusions:              <present / missing>
+  Exclusions:              <present / missing>
+  NFRs:                    <present / missing>
+  Success criteria:        <present / missing>
 
 Whitebox Reference:        <PRESENT / NOT PROVIDED (optional)>
 
-Overall Readiness:         <READY / NEEDS WORK — N gaps to fill>
+Overall:                   <READY / NEEDS WORK — N gaps to fill>
 ```
 
 ### 2.2 Interactive Gap Filling
 
-For each gap found, ask the user targeted questions. Group related questions to minimize back-and-forth.
+For each gap, ask targeted questions. Group related questions.
 
-**If Feature Summary Table is missing or incomplete:**
+**If Feature Summary Table is missing:**
+Walk the user through building it domain by domain. For each domain:
+1. What features belong here?
+2. Which are P1 (MVP), P2 (important), Deferrable?
+3. What depends on what?
 
+**If Scope is missing:**
 ```
-I need to build a Feature Summary Table for the pipeline. Let me help you.
+The pipeline works best with clear boundaries. Let's define them:
 
-1. What are the main domains/areas of this initiative?
-   (e.g., "Ingestion Pipeline", "Search", "Alerting", "User Management")
+INCLUSIONS — what IS this initiative building?
+(list the top-level capabilities)
 
-2. For each domain, what are the key features?
-   (I'll help you assign IDs, priorities, and dependencies)
+EXCLUSIONS — what is deliberately NOT in scope?
+(features you'll build later, integrations you're postponing, etc.)
 
-3. What are the critical dependencies between features?
-   (which features must be built before others?)
+This prevents time_split from over-scoping phases and keeps the pipeline focused.
 ```
-
-Walk the user through building the table iteratively — one domain at a time.
 
 **If Tech Stack is missing:**
+Ask the Group 3 questions from Create mode.
 
+**If Container Parity is missing for a server project:**
 ```
-The pipeline needs to know the tech stack for bootstrap and tooling decisions.
+This is a server project. I recommend adding a containerization feature
+(Dockerfile + docker-compose.yml) to the Feature Summary Table as P1.
 
-1. What language(s) will the project use?
-   - Backend: <Python / Go / TypeScript / Kotlin / Rust / C# / other>
-   - Frontend: <React / Next.js / Vue / React Native / Flutter / none>
-   - Mobile: <Kotlin/Android / Swift/iOS / React Native / Flutter / none>
+Bootstrap will create minimal Docker artifacts, and E2E tests will run
+against the full containerized stack. This ensures "works locally" =
+"works in production."
 
-2. What frameworks?
-   - Backend: <FastAPI / Django / Express / Spring / etc.>
-   - Frontend: <Vite / Next.js / etc.>
-
-3. What infrastructure is needed?
-   - Database: <PostgreSQL / MySQL / MongoDB / none>
-   - Cache: <Redis / Memcached / none>
-   - Message broker: <RabbitMQ / Kafka / SQS / none>
-   - Object storage: <S3/MinIO / none>
+Add INFRA-X: Containerization (Dockerfile + docker-compose.yml)?
 ```
 
-**If Dependencies are incomplete:**
-
-For features without dependencies, ask:
-
+**If Success Criteria are missing:**
 ```
-These features have no dependencies listed — do they truly have no prerequisites,
-or is the dependency info missing?
+What does "done" look like?
 
-<list features without dependencies>
+MINIMUM (MVP): describe the simplest useful version
+  e.g., "A user can create an account, log in, and perform the core action"
 
-For each, tell me which other features it depends on (or confirm "none"):
-```
+COMPLETE: describe the full initiative
+  e.g., "All roles operational, admin panel, historical archive, responsive design"
 
-**If Blackbox specs are missing or incomplete:**
-
-For features without specs:
-
-```
-These features need blackbox specifications for the pipeline to work well.
-For each, I need:
-- Inputs: what data/triggers does it receive?
-- Outputs: what does it produce?
-- Behavior: what does it DO?
-- Acceptance Criteria: how do we know it works?
-
-Let's go through them:
-
-Feature <ID>: <Name>
-  What are the inputs?
-  What are the outputs?
-  ...
+These guide time_split's phase boundaries — Phase 1 should deliver the minimum,
+later phases build toward complete.
 ```
 
 ---
 
 ## Stage 3: Generate/Improve Documents
 
-Based on the analysis and user answers, generate or update the initiative documents.
+Based on analysis and user answers, generate or update the documents.
 
-### 3.1 Generate or Update Feature Summary Table
+### 3.1 Initiative Document Structure
 
-If creating from scratch:
-- Build the table from user's answers
-- Assign IDs using domain-prefix convention (e.g., IP-1, SD-1, AL-1)
-- Validate the DAG (no cycles)
-- Suggest clusters based on dependency analysis
-
-If updating:
-- Add missing columns
-- Fill in missing dependencies
-- Fix cycle issues
-- Add domain assignments
-
-### 3.2 Add Tech Stack Section
-
-Add a `## Tech Stack` section to the initiative document:
+Generate or update with these sections (in order):
 
 ```markdown
-## Tech Stack
+# Initiative: <Name>
 
-### Languages
-- **Backend**: Python 3.12
-- **Frontend**: TypeScript + React (Vite)
+**Version**: 1.0
+**Date**: <today>
+**Scope**: <one-sentence summary>
+**Documents**: Blackbox_Feature_Requirements.md<, Whitebox_Reference_Guide.md>
+<**Starting point**: Greenfield / Rebuild from <reference> / Existing codebase>
 
-### Frameworks
-- **Backend**: FastAPI + SQLAlchemy + Alembic
-- **Frontend**: React 18 + Vite 5
+---
 
-### Infrastructure
-- **Database**: PostgreSQL 16
-- **Cache**: Redis 7
-- **CI**: GitHub Actions
+## 1. Context
+<Why this project exists, motivation, current state>
 
-### Deployment
-- **Type**: Web application (API + SPA)
-- **Target**: Docker containers on AWS ECS
-```
+## 2. Scope
 
-This section will be used by `bootstrap` for tooling decisions and by `time_split` to include in phase manifests.
+### 2.1 Inclusions
+<Bulleted list of what's IN>
 
-### 3.3 Generate or Update Blackbox Requirements
+### 2.2 Exclusions
+<Bulleted list of what's deliberately OUT>
 
-For features where the user provided spec information, write or update the blackbox document with proper structure:
+### 2.3 Non-Functional Requirements
+<Auth model, security, performance, testing strategy, container parity>
 
-```markdown
-## <Feature ID>: <Feature Name>
+### 2.4 Success Criteria
+**Minimum (MVP)**: <what Phase 1 should deliver>
+**Complete**: <what the full initiative delivers>
 
-### Inputs
-<what the feature receives>
+---
 
-### Outputs
-<what the feature produces>
+## 3. Tech Stack
 
-### Behavior
-<what the feature does>
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Backend | <language + framework> | |
+| Frontend | <language + framework> | |
+| Database | <type> | |
+| ... | ... | |
 
-### Acceptance Criteria
-- [ ] <measurable criterion 1>
-- [ ] <measurable criterion 2>
-```
+### Architectural Decisions
+<Key decisions: monorepo, single-origin deployment, ORM-only DB access, etc.>
 
-### 3.4 Generate Dependency Analysis Section (optional enrichment)
+<### Container Parity (for server projects)>
+<docker compose up = local = CI = production. Describe the deployment model.>
 
-If the user provided enough dependency info, add a DAG analysis section to the initiative document:
+---
 
-```markdown
-## Dependency Analysis
+## 4. Domains
 
-### Roots (no upstream dependencies)
-<list>
+| Code | Domain | Description |
+|------|--------|-------------|
+| <PREFIX> | <name> | <what this domain covers> |
 
-### Leaves (nothing depends on them)
-<list>
+---
 
-### Bottlenecks (high fan-in + fan-out)
-<list>
+## 5. Priorities
+- **P1**: Required for MVP
+- **P2**: Important but not MVP-blocking
+- **Deferrable**: Nice-to-have, can be postponed
 
+---
+
+## 6. Feature Summary Table
+
+| ID | Name | Domain | Priority | Dependencies |
+|----|------|--------|----------|--------------|
+| ... | ... | ... | ... | ... |
+
+---
+
+## 7. Dependency Analysis
+
+### Roots (no dependencies)
+### Leaves (no dependents)
+### Bottlenecks (high fan-in/fan-out)
 ### Critical Paths
-<longest dependency chains>
+### Clusters
 
-### Natural Clusters
-| Cluster | Features | Domain | Rationale |
-|---------|----------|--------|-----------|
-| A | IP-1, IP-2, IP-3 | Ingestion | Share data pipeline |
+---
+
+## 8. Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total features | N |
+| P1 / P2 / Deferrable | X / Y / Z |
+| Domains | N |
+| ... | ... |
 ```
 
-This enrichment is optional — `time_split` can compute all of this from the Feature Summary Table. But having it pre-computed helps `time_split` produce better results on the first iteration.
+### 3.2 Blackbox Requirements Structure
+
+For each feature, generate:
+
+```markdown
+### <ID>: <Name>
+
+**Priority:** <P1/P2/Deferrable>
+
+**Inputs:**
+- <what triggers or feeds this feature>
+
+**Outputs:**
+- <what this feature produces or changes>
+
+**Behavior:**
+1. <step-by-step behavior>
+
+**Acceptance Criteria:**
+- [ ] <measurable criterion>
+```
+
+Group features by domain with domain headings.
+
+### 3.3 Whitebox Reference Guide (optional)
+
+If the user provided a reference system or existing codebase, generate:
+
+```markdown
+# Whitebox Reference Guide
+
+## 1. Implementation Patterns
+<Correct patterns from the reference system to replicate>
+
+## 2. Domain Knowledge
+<Business rules, state machines, workflow logic>
+
+## 3. Database Schema
+<Table definitions, relationships, constraints — from actual schema files>
+
+## 4. Anti-Patterns to Avoid
+<What NOT to replicate from the reference system>
+```
+
+The whitebox is the **most authoritative schema source** for bootstrap (above blackbox specs). If field names/types differ between whitebox and blackbox, bootstrap trusts the whitebox.
+
+### 3.4 Dependency Analysis Section
+
+Compute and add to the initiative:
+- Roots, leaves, bottlenecks
+- Critical paths (longest dependency chains)
+- Natural clusters (tightly connected feature groups)
 
 ---
 
@@ -415,16 +558,16 @@ This enrichment is optional — `time_split` can compute all of this from the Fe
 
 ### 4.1 Re-validate Pipeline Readiness
 
-After all updates, re-run the completeness analysis from Stage 1.
+After all updates, re-run the completeness analysis.
 
-### 4.2 Print Final Report
+### 4.2 Final Report
 
 ```
 === Initiative Review Complete ===
 
 Documents in $EIGEN_ROOT/eigen_initiative/:
-  - Initiative: <filename> — <READY / updated>
-  - Blackbox Requirements: <filename> — <READY / created / updated>
+  - Initiative: <filename> — READY
+  - Blackbox Requirements: <filename> — READY
   - Whitebox Reference: <filename or "not provided (optional)">
 
 Pipeline Readiness:
@@ -432,63 +575,59 @@ Pipeline Readiness:
   Dependencies:            READY (valid DAG, <N> roots, <M> leaves)
   Blackbox Specifications: READY (<N/M> features have specs)
   Tech Stack:              READY (<languages>)
+  Scope:                   READY (inclusions + exclusions defined)
+  Success Criteria:        READY
 
-Files modified:
-  <list of files created or updated>
+Files created/modified:
+  <list>
 
 Next step:
-  Run /time_split to begin the pipeline.
-  It will read these documents and split the initiative into phases.
+  Run /eigen_start to launch the pipeline.
+  It will register the pipeline hook, then /time_split runs automatically.
 ```
 
 ---
 
 ## Stage 5: Research-Assisted Improvement (optional)
 
-If the initiative documents exist but could be improved, spawn research agents to suggest enhancements:
+If documents exist but could be improved, spawn research agents:
 
 ### 5.1 Feature Decomposition Research
 
-If any feature seems too large (vague description, multiple concerns), spawn a research agent:
-
-```
-Analyze this feature for decomposition opportunities:
-- Feature: <id> — <name>
-- Description: <description>
-- Domain: <domain>
-
-Should this be split into smaller features? If so, suggest a breakdown with:
-- New feature IDs, names, and dependencies
-- Why the split improves parallel execution
-```
+If any feature seems too large (vague description, multiple concerns), suggest splitting.
 
 ### 5.2 Risk Analysis Research
 
-Spawn a research agent to identify risks:
-
-```
-Analyze this initiative for technical risks:
-- Features: <feature summary table>
-- Tech stack: <tech stack>
-- Dependencies: <DAG summary>
-
 Identify:
 - High-risk features (complex, many dependencies, novel technology)
-- Missing features (common in this type of initiative but not listed)
+- Missing features common in this type of initiative
 - Priority mismatches (P2 feature that blocks many P1 features)
-```
 
-### 5.3 Domain Expert Research
+### 5.3 Reference System Analysis
 
-If the project is in a specific domain (fintech, healthtech, etc.), spawn research for domain-specific best practices that should be reflected in the initiative.
+If a reference project path was provided, spawn agents to extract:
+- Database schema → whitebox §3
+- API routes/endpoints → helps define features and blackbox specs
+- Page/component structure → helps define frontend features
+- Auth patterns → helps define NFRs
+- Anti-patterns → whitebox §4
+
+### 5.4 Domain Expert Research
+
+If the project is in a specific domain (fintech, healthtech, emergency management, etc.), research domain-specific requirements that should be reflected in the initiative.
 
 ---
 
 ## Important Rules
 
-- **This is the ONLY command that modifies initiative documents** — all other commands treat them as read-only input.
+- **This is the ONLY command that creates/modifies initiative documents** — all other commands treat them as read-only input.
 - **Ask questions** — this is interactive by design. Don't guess when you can ask.
-- **Be pipeline-aware** — every question and suggestion should be informed by what `time_split`, `bootstrap`, and `space_split` need.
-- **Don't over-engineer** — the goal is pipeline-ready documents, not perfect documents. Good enough to start iterating is better than endlessly polishing.
-- **Preserve user's intent** — when improving documents, keep the user's original vision and language. Add structure, don't rewrite the initiative.
-- **Tech stack goes in the initiative** — this is the canonical place for language/framework decisions, consumed by all downstream commands.
+- **Be pipeline-aware** — every question and suggestion should be informed by what `time_split`, `bootstrap`, and `space_split` need downstream.
+- **Don't over-engineer** — pipeline-ready is the goal, not perfect. Good enough to start iterating is better than endlessly polishing.
+- **Preserve user's intent** — when improving documents, keep the user's original vision and language. Add structure, don't rewrite.
+- **Tech stack and deployment go in the initiative** — this is the canonical place, consumed by all downstream commands.
+- **Scope boundaries matter** — clear exclusions prevent scope creep in time_split and plan_phase_epic.
+- **Success criteria guide phases** — the minimum success criterion should be achievable in Phase 1. Complete criteria span all phases.
+- **Container parity for server projects** — recommend a containerization feature in the Feature Summary Table. Bootstrap creates Docker artifacts, E2E tests run against the containerized stack.
+- **Epics are sequential** — when explaining the pipeline to the user, note that epics within a phase run one after another (not in parallel). This simplifies their mental model — no need to think about which features can be parallelized.
+- **Whitebox is optional but valuable** — if the user has a reference system, extracting patterns into a whitebox guide significantly improves bootstrap's entity stubs and plan quality.
