@@ -195,6 +195,20 @@ Each agent receives the scope context and scoped diff. Each returns findings wit
 
 **Testing philosophy for agents:** Flag tests that use mocks where real dependencies could be used. Real dependencies preferred, minimal mocks always.
 
+### Agent-Specific Review Checklists
+
+In addition to scope-aware code review, each agent type has specific checks:
+
+**Test quality checks** (for agents reviewing test files):
+- Every test file EXECUTES code under test. Flag any "test" that parses/reads source files with regex or string matching instead of importing and calling the code. Static analysis masquerading as tests provides zero coverage. [R1]
+- Verify test framework assertion counts match actual assertions (e.g., `expect.assertions(5)` must have exactly 5 `expect()` calls). Wrong counts either block the suite or silently under-test. [R2]
+- Verify test framework API usage: parameter order, method signatures, and assertion semantics must match the framework's documented API. Wrong parameter order means tests pass while asserting nothing. [R3]
+- Mocks MUST throw/fail on calls beyond expected count. Flag mocks that silently reuse the last response or return undefined on unexpected calls — this directly masks bugs. [R6]
+
+**CI and configuration checks** (for agents reviewing CI/config changes):
+- Every file referenced by CI workflows must be tracked in version control. Run `git ls-files --error-unmatch <file>` mentally for each CI-referenced config. Untracked CI deps break builds in CI but work locally. [R4]
+- Test runner include/exclude patterns must not cause overlap or gaps across CI steps. If CI has separate "unit" and "integration" steps, verify their test patterns are disjoint. [R9]
+
 Wait for ALL agents.
 
 ---
