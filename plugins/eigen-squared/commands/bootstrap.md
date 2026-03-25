@@ -93,8 +93,7 @@ Print: `Auto-detected Phase <N> for bootstrap.`
 ### Sync with Remote
 
 ```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
+eigen-squared sync
 ```
 
 ### Fixed Paths
@@ -131,29 +130,27 @@ The phase manifest (`phase_N_manifest.md`) must exist and contain features, doma
 
 ## Pipeline Awareness
 
-Bootstrap operates at per-phase scope. The phase number N was auto-detected during environment validation. Load the `pipeline-state-schema` skill for the full schema, field definitions, and feedback lifecycle.
+The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
 
 ### On Entry
 
-The pipeline state was already read during Phase Auto-Detection. Now check the bootstrap-specific state for phase N:
+```bash
+eigen-squared get-context bootstrap --json
+```
 
-- `state.phases[N].bootstrap`:
-  - `convergence.converged == true` → **STOP.** Print: "Bootstrap for Phase `<N>` has already converged (decided at `<decided_at>`). No re-run needed."
-  - `iteration >= 1` AND feedback file exists AND `feedback_consumed == false` → proceed to **Iteration Protocol** below.
-  - `iteration >= 1` AND feedback file exists AND `feedback_consumed == true` → **STOP.** Print: "Feedback already processed. Run `/deepen_bootstrap` again for fresh review before re-running."
-  - `iteration >= 1` AND no feedback file exists → **STOP.** Print: "Bootstrap for Phase `<N>` has already run. Run `/deepen_bootstrap` first to generate feedback before re-running."
-  - `iteration == 0` (or phase entry doesn't exist) → first run, proceed normally.
+If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON:
+- `phase`: which phase to bootstrap
+- `is_first_run: true` → first run
+- `should_process_feedback: true` → iteration, use `feedback_path` from context
+- `recommendations`: advisory observations from upstream deepen commands
 
 ### On Exit
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-- Set `state.phases[N].bootstrap.status` to `"completed"`
-- Increment `state.phases[N].bootstrap.iteration`
-- Set `state.phases[N].bootstrap.last_run_at` to current ISO 8601 timestamp
-- Set `state.phases[N].bootstrap.feedback_consumed` to `true` (feedback was processed)
-- Set `state.phases[N].deepen_bootstrap.feedback_consumed` to `true` (outputs changed, deepen should re-analyze)
-- Update `state.phases[N].bootstrap.output_paths.bootstrap_report` to `"phases/phase_N/bootstrap-report.json"`
-- Set `updated_at` to current timestamp
+```bash
+eigen-squared complete bootstrap --phase <N> --output-path phases/phase_<N>/bootstrap-report.json
+```
+
+The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart).
 
 ---
 
@@ -620,16 +617,11 @@ Next steps:
 Commit bootstrap artifacts and pipeline state to `$EIGEN_BRANCH`:
 
 ```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/phase_N/
-git commit -m "pipeline: bootstrap phase <N> — foundation created"
-git push origin $EIGEN_BRANCH
+eigen-squared commit-state --message "pipeline: bootstrap phase <N> — foundation created" --additional-paths eigen_initiative/phases/phase_<N>/
 ```
 
 ---
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

@@ -58,7 +58,7 @@ This command MUST run on the same integration branch used by `/orchestrate_swarm
 
 2. Sync with remote:
    ```bash
-   git pull origin feat/P<N>.E<M>
+   eigen-squared sync --branch feat/P<N>.E<M>
    ```
 
 3. Extract phase N and epic M from the branch name `feat/P<N>.E<M>`.
@@ -102,8 +102,14 @@ You will:
 
 ### Detect Iteration Context
 
-1. Read `eigen_initiative/phases/pipeline_state.json` from the integration branch.
-2. Check `state.phases[N].plans[M].swarm_execution`:
+Context for the current review iteration is provided by the CLI:
+```bash
+eigen-squared get-context review_swarm_pr --phase <N> --epic <M> --json
+```
+The returned JSON includes `swarm_status`, `review_iteration`, `pr_number`, `pr_url`, `manifest_path`, and `branch`.
+
+1. Read the context from the CLI output.
+2. Check `swarm_status`:
    - `status == "converged"` → **STOP.** Print: "Review for P<N>.E<M> has already converged. PR is ready to merge."
    - `review_iteration` field → current iteration number (0 = first review)
 3. If a previous review report exists (`review_report_iteration_<N-1>.md`), read it for cross-iteration comparison.
@@ -409,41 +415,21 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`.
 
 ### 7.1 Update Pipeline State
 
-Update `eigen_initiative/phases/pipeline_state.json` on the integration branch:
+Use the CLI to update pipeline state:
 
-**If converged:**
-```json
-"swarm_execution": {
-  "status": "converged",
-  "review_iteration": <N>,
-  "convergence": {
-    "converged": true,
-    "decided_by": "review_swarm_pr",
-    "decided_at": "<ISO 8601>",
-    "reason": "<rationale>"
-  },
-  "review_reports": ["..._iteration_1.md", "..._iteration_2.md"],
-  ...existing fields preserved...
-}
-```
-
-**If continuing:**
-```json
-"swarm_execution": {
-  "status": "iterating",
-  "review_iteration": <N>,
-  "convergence": { "converged": false },
-  "findings_summary": { "p1": <x>, "p2": <y>, "p3": <z> },
-  "review_reports": ["..._iteration_1.md", ...],
-  ...existing fields preserved...
-}
-```
-
-Commit and push:
+**If continuing (findings remain):**
 ```bash
-git add eigen_initiative/phases/pipeline_state.json
-git commit -m "chore: update pipeline state — review iteration <N> for P<N>.E<M>"
-git push origin feat/P<N>.E<M>
+eigen-squared complete review_swarm_pr --phase <N> --epic <M> --report-path <report_path> --findings-summary '{"p1": <N>, "p2": <N>, "p3": <N>}'
+```
+
+**If converged (no findings):**
+```bash
+eigen-squared mark-converged swarm_execution --phase <N> --epic <M> --reason "<convergence rationale>"
+```
+
+Commit and push via the CLI:
+```bash
+eigen-squared commit-state --message "chore: review iteration <N> for P<N>.E<M>" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/
 ```
 
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
@@ -523,6 +509,4 @@ Next steps:
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

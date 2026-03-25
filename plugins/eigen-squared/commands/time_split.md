@@ -74,11 +74,8 @@ This command requires two environment variables:
 
 ### Sync with Remote
 
-Before reading any pipeline artifacts, ensure the local branch is up to date:
-
 ```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
+eigen-squared sync
 ```
 
 ### Fixed Paths
@@ -138,83 +135,35 @@ You will:
 
 ## Pipeline Awareness
 
-`pipeline_state.json` is the single source of truth for iteration tracking across all eigen-squared commands. Load the `pipeline-state-schema` skill for the full schema, field definitions, status values, and feedback lifecycle.
+The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
 
 ### On Entry
 
-1. Check for `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-   - **Not found** → this is the first run. Proceed normally. You will create `pipeline_state.json` on exit.
-   - **Found** → read it and check `state.time_split`:
-     - `convergence.converged == true` → **STOP.** Print: "time_split has already converged (iteration `<iteration>`, decided by `<decided_by>` at `<decided_at>`). No re-run needed. To force a re-run, delete `phases/pipeline_state.json`." and STOP.
-     - `iteration >= 1` AND feedback file exists AND `feedback_consumed == false` → proceed to **Iteration Protocol** below.
-     - `iteration >= 1` AND feedback file exists AND `feedback_consumed == true` → **STOP.** Print: "Feedback already processed. Run `/deepen_time_split` again for fresh review before re-running." and STOP.
-     - `iteration >= 1` AND no feedback file exists → **STOP.** Print: "time_split has already run (iteration `<iteration>`). Run `/deepen_time_split` first to generate feedback before re-running." and STOP.
+```bash
+eigen-squared get-context time_split --json
+```
+
+If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON:
+- `is_first_run: true` → first run, proceed to Stage 1
+- `should_process_feedback: true` → iteration run, proceed to **Iteration Protocol** with `feedback_path` from the context
+- Otherwise the CLI will have already stopped you with an error
 
 ### On Exit
 
-After successfully generating outputs (Stage 2), create or update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` (see the `pipeline-state-schema` skill for the full schema):
+After successfully generating outputs (Stage 2):
 
-- If creating for the first time: initialize the full schema with `state.time_split` set to `status: "completed"`, `iteration: 1`, current timestamp, output paths, and phase count. Initialize `state.deepen_time_split` with `status: "not_started"`, `feedback_consumed: false`. Initialize `recommendations` with empty arrays for all 4 target keys. Initialize `state.phases` entries for each phase produced — each phase MUST contain ALL of these keys:
-  ```json
-  "state": {
-    "phases": {
-      "1": {
-        "bootstrap": {
-          "status": "not_started",
-          "iteration": 0,
-          "last_run_at": null,
-          "output_paths": { "bootstrap_report": null, "target_repo": null },
-          "feedback_consumed": false,
-          "convergence": { "converged": false, "decided_by": null, "decided_at": null, "reason": null }
-        },
-        "deepen_bootstrap": {
-          "status": "not_started",
-          "iteration": 0,
-          "last_run_at": null,
-          "feedback_path": null,
-          "feedback_consumed": false,
-          "findings_summary": { "high": 0, "medium": 0, "low": 0 }
-        },
-        "space_split": {
-          "status": "not_started",
-          "iteration": 0,
-          "last_run_at": null,
-          "feedback_consumed": false,
-          "convergence": { "converged": false, "decided_by": null, "decided_at": null, "reason": null }
-        },
-        "deepen_space_split": {
-          "status": "not_started",
-          "iteration": 0,
-          "last_run_at": null,
-          "feedback_path": null,
-          "feedback_consumed": false,
-          "findings_summary": { "high": 0, "medium": 0, "low": 0 }
-        },
-        "phase_review": { "status": "not_started", "summary_presented_at": null, "approved_at": null, "testing_recipe": null },
-        "plans": {}
-      }
-    }
-  }
-  ```
-  Repeat this structure for every phase (1, 2, ..., N). Do NOT put bootstrap at the root `state` level — it belongs INSIDE each phase.
+**First run** (creates pipeline_state.json):
+```bash
+eigen-squared init --initiative "<initiative name>" --phase-count <N>
+eigen-squared complete time_split --phase-count <N> --output-path phases/initiative_summary.json
+```
 
-  ```json
-  "recommendations": {
-    "bootstrap": [],
-    "space_split": [],
-    "plan_phase_epic": [],
-    "create_issues_from_plan_swarm": []
-  }
-  ```
-- If updating (iteration):
-  - Increment `state.time_split.iteration`
-  - Set `state.time_split.status` to `"completed"`
-  - Set `state.time_split.last_run_at` to current ISO 8601 timestamp
-  - Set `state.time_split.feedback_consumed` to `true` (feedback was processed)
-  - Set `state.deepen_time_split.feedback_consumed` to `true` (outputs changed, deepen should re-analyze)
-  - Update `state.time_split.output_paths` and `state.time_split.phase_count`
-  - Set `updated_at` to current timestamp
-  - Initialize `state.phases` entries for any new phases produced (each phase MUST include `bootstrap`, `deepen_bootstrap`, `space_split`, `deepen_space_split`, `phase_review`, and `plans` — use the same structure as first-time creation above)
+**Iteration run** (updates existing state):
+```bash
+eigen-squared complete time_split --phase-count <N> --output-path phases/initiative_summary.json
+```
+
+The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), phase initialization with all required keys.
 
 ---
 
@@ -583,19 +532,12 @@ Next steps:
 
 ### 2.5 Commit Pipeline Artifacts
 
-Commit all pipeline artifacts to `$EIGEN_BRANCH`:
-
 ```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/
-git commit -m "pipeline: time_split — <phase_count> phases generated"
-git push origin $EIGEN_BRANCH
+eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
 ```
 
 ---
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

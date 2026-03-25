@@ -56,32 +56,32 @@ This command uses the same environment variables as all eigen-squared commands:
    ```
 3. Verify `$EIGEN_ROOT` exists and is a directory.
 
-### Epic Auto-Detection
+## Pipeline Awareness
 
-No arguments are required. The target phase and epic are auto-detected from the pipeline state:
+The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
-   ```
-   ERROR: No pipeline_state.json found at $EIGEN_ROOT/eigen_initiative/phases/
-   Run the pipeline commands first.
-   ```
-2. Scan `state.phases` to find the first phase N where `space_split` has converged. Within that phase, scan `state.phases[N].plans` to find the first epic M (in wave order) where:
-   - `plan_phase_epic.convergence.converged == true` (plan is done)
-   - AND no `swarm-manifest.json` exists at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
-3. If no such phase+epic is found → **STOP.** Print:
-   ```
-   No epic is ready for task generation.
-   Either all epics have manifests, or plan_phase_epic has not converged yet.
-   Check pipeline_state.json for current status.
-   ```
-4. The detected phase N and epic M determine:
-   - **Plan file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`
-   - **Epic file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`
-   - **Epic ID**: `P<N>.E<M>`
-   - **Task directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/tasks/`
-   - **Manifest file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
+### On Entry
 
-Print: `Auto-detected Phase <N>, Epic <M> (P<N>.E<M>) for task generation.`
+```bash
+eigen-squared get-context create_issues_from_plan_swarm --json
+```
+
+If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON for `phase`, `epic`, `branch`, `manifest_path`, and `recommendations`.
+
+### On Exit
+
+After creating tasks, manifest, and integration branch:
+
+```bash
+eigen-squared complete create_issues_from_plan_swarm --phase <N> --epic <M> --manifest-path <manifest_path> --integration-branch feat/P<N>.E<M>
+```
+
+To create the integration branch:
+```bash
+eigen-squared checkout-branch --phase <N> --epic <M> --create
+```
+
+The CLI handles all state updates atomically.
 
 ### Fixed Paths
 
@@ -154,10 +154,9 @@ Task IDs use the triplet convention:
 
 ### 0.5 Read Recommendations (if present)
 
-1. Read `recommendations.create_issues_from_plan_swarm` from `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
-2. Filter by `phase` and `epic` matching the current scope.
-3. Use as advisory context for task boundary analysis and dependency graph construction.
-4. Do NOT embed recommendations in task bodies or the manifest.
+1. Parse `recommendations` from the JSON returned by `eigen-squared get-context` (see **On Entry** above).
+2. Use as advisory context for task boundary analysis and dependency graph construction.
+3. Do NOT embed recommendations in task bodies or the manifest.
 
 ---
 
@@ -452,26 +451,9 @@ Write the validated manifest to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epi
 
 ---
 
-### 4.4 Initialize Swarm Execution in Pipeline State
+### 4.4 Finalize Pipeline State
 
-Before creating the integration branch, initialize `swarm_execution` in pipeline_state.json so downstream commands can track the lifecycle:
-
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`, adding to `state.phases[N].plans[M]`:
-
-```json
-"swarm_execution": {
-  "status": "not_started",
-  "integration_branch": "feat/P<N>.E<M>",
-  "pr_url": null,
-  "pr_number": null,
-  "manifest_path": "eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json",
-  "completed_at": null,
-  "review_iteration": 0,
-  "convergence": { "converged": false, "decided_by": null, "decided_at": null, "reason": null },
-  "findings_summary": { "p1": 0, "p2": 0, "p3": 0 },
-  "review_reports": []
-}
-```
+Pipeline state updates are handled by the CLI on exit (see **On Exit** above). You do not modify `pipeline_state.json` directly.
 
 ---
 
@@ -479,27 +461,24 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`, adding to `sta
 
 After all tasks and the manifest are created, create the integration branch and commit the artifacts. The orchestrator and workers will operate on this branch from `$EIGEN_ROOT`.
 
-### 5.1 Create the Integration Branch from $EIGEN_BRANCH
-
-**CRITICAL: The branch MUST be created from the latest `$EIGEN_BRANCH`.** Pull first to ensure we have all merged changes (especially from previous epics).
+### Sync with Remote
 
 ```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
-git checkout -b feat/P<N>.E<M>
+eigen-squared sync
 ```
 
-If `feat/P<N>.E<M>` already exists locally (from a previous run): **Manual mode** (`$CLAUDE_TASKS_API` not set): warn the user and ask whether to reuse or recreate it. **Autonomous mode** (`$CLAUDE_TASKS_API` is set): checkout the existing branch (`git checkout feat/P<N>.E<M>`).
+### 5.1 Create the Integration Branch from $EIGEN_BRANCH
+
+```bash
+eigen-squared checkout-branch --phase <N> --epic <M> --create
+```
 
 ### 5.2 Commit Manifest and Tasks on the Integration Branch
 
 The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`. Since we checked out `feat/P<N>.E<M>` (which was created from `origin/$EIGEN_BRANCH`), these files are already present in the working directory — no copying needed.
 
 ```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/phase_N/epic_M/
-git commit -m "chore: add swarm manifest, tasks, and plan for P<N>.E<M>"
-git push --set-upstream origin feat/P<N>.E<M>
+eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<N>.E<M>" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/
 ```
 
 ### 5.3 Branch state
@@ -579,6 +558,4 @@ Before finalizing, verify:
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

@@ -87,8 +87,7 @@ Print: `Auto-detected Phase <N>, Epic <M> (P<N>.E<M>) for plan_phase_epic.`
 ### Sync with Remote
 
 ```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
+eigen-squared sync
 ```
 
 ### Fixed Paths
@@ -129,30 +128,30 @@ You will transform the epic file into a well-structured development plan with an
 
 ## Pipeline Awareness
 
-Plan phase epic operates at per-epic scope within a phase. Load the `pipeline-state-schema` skill for the full schema, field definitions, and feedback lifecycle.
+The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
 
 ### On Entry
 
-The pipeline state was already read during Epic Auto-Detection. Now check the plan-specific state for phase N, epic M:
+```bash
+eigen-squared get-context plan_phase_epic --json
+```
 
-- `state.phases[N].plans[M].plan_phase_epic`:
-  - **Not found** (or `plans` doesn't exist) → first run, proceed normally.
-  - `convergence.converged == true` → **STOP.** Print: "Plan for P<N>.E<M> has already converged. No re-run needed."
-  - `iteration >= 1` AND feedback file exists AND `feedback_consumed == false` → proceed to **Iteration Protocol** below.
-  - `iteration >= 1` AND feedback file exists AND `feedback_consumed == true` → **STOP.** Print: "Feedback already processed. Run `/deepen_plan_phase_epic` for fresh review."
-  - `iteration >= 1` AND no feedback file exists → **STOP.** Print: "Plan for P<N>.E<M> has already run. Run `/deepen_plan_phase_epic` first."
+If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON:
+- `phase` and `epic`: which epic to plan
+- `is_first_run: true` → first run, initialize plan entry first:
+  ```bash
+  eigen-squared init-plan --phase <N> --epic <M>
+  ```
+- `should_process_feedback: true` → iteration, use `feedback_path` from context
+- `recommendations`: advisory observations from upstream deepen commands
 
 ### On Exit
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-- Initialize `state.phases[N].plans[M]` if it doesn't exist
-- Set `state.phases[N].plans[M].plan_phase_epic.status` to `"completed"`
-- Increment `state.phases[N].plans[M].plan_phase_epic.iteration`
-- Set `state.phases[N].plans[M].plan_phase_epic.last_run_at` to current ISO 8601 timestamp
-- Set `state.phases[N].plans[M].plan_phase_epic.output_paths.plan_file` to the plan file path
-- Set `state.phases[N].plans[M].plan_phase_epic.feedback_consumed` to `true`
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.feedback_consumed` to `true`
-- Set `updated_at` to current timestamp
+```bash
+eigen-squared complete plan_phase_epic --phase <N> --epic <M> --plan-file phases/phase_<N>/epic_<M>/plan.md
+```
+
+The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags, plan entry initialization if needed.
 
 ---
 
@@ -448,10 +447,7 @@ Next steps:
 ### Commit Pipeline Artifacts
 
 ```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/phase_N/epic_M/ eigen_initiative/phases/pipeline_state.json
-git commit -m "pipeline: plan P<N>.E<M> — plan created"
-git push origin $EIGEN_BRANCH
+eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — plan created" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/
 ```
 
 ---
@@ -475,6 +471,4 @@ git push origin $EIGEN_BRANCH
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

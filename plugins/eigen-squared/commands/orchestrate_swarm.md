@@ -142,7 +142,7 @@ ERROR: No active integration branch found. Run /create_issues_from_plan_swarm fi
 **Step 1.5: Sync with remote:**
 
 ```bash
-git pull origin feat/P<N>.E<M>
+eigen-squared sync --branch feat/P<N>.E<M>
 ```
 
 **Step 2: Extract phase and epic from the branch name:**
@@ -964,29 +964,15 @@ Capture the PR URL and number from the `gh pr create` output.
 
 ### 5.4 Store PR in Pipeline State
 
-Update `eigen_initiative/phases/pipeline_state.json` to record the PR and swarm execution status. This enables `/review_swarm_pr` to auto-detect the PR without arguments.
+Record the PR and swarm execution status in the pipeline state. This enables `/review_swarm_pr` to auto-detect the PR without arguments.
 
-Add to `state.phases[N].plans[M]`:
-
-```json
-"swarm_execution": {
-  "status": "pr_created",
-  "integration_branch": "feat/P<N>.E<M>",
-  "pr_url": "<pr_url from gh pr create>",
-  "pr_number": <pr_number>,
-  "manifest_path": "eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json",
-  "completed_at": null,
-  "review_iteration": 0,
-  "convergence": { "converged": false, "decided_by": null, "decided_at": null, "reason": null },
-  "findings_summary": { "p1": 0, "p2": 0, "p3": 0 },
-  "review_reports": []
-}
+```bash
+eigen-squared complete orchestrate_swarm --phase <N> --epic <M> --pr-url <PR_URL> --pr-number <PR_NUMBER>
 ```
 
 Commit and push:
 ```bash
-git add eigen_initiative/phases/pipeline_state.json
-git commit -m "chore: record PR for P<N>.E<M> in pipeline state"
+eigen-squared commit-state --message "chore: record PR for P<N>.E<M> in pipeline state"
 git push origin feat/P<N>.E<M>
 ```
 
@@ -1094,6 +1080,4 @@ Before reporting completion:
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

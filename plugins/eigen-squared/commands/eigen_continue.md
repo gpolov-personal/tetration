@@ -31,33 +31,34 @@ This command has **two modes** based on the current `phase_review` state:
 
 2. Read `$EIGEN_BRANCH`. If not set → **STOP** with same pattern.
 
-3. Verify `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` exists. If not → **STOP.** Print:
+3. Verify the pipeline state is accessible via CLI:
+   ```bash
+   eigen-squared status --json
    ```
-   ERROR: No pipeline_state.json found.
+   If it fails or returns no state → **STOP.** Print:
+   ```
+   ERROR: No pipeline state found.
    The pipeline hasn't started yet. Run /eigen_start first.
    ```
-
-4. Load the `pipeline-state-schema` skill to understand the pipeline state format.
 
 ---
 
 ## Phase Detection
 
-Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
+Use the CLI to detect the next actionable phase:
+```bash
+eigen-squared next --json
+```
 
 ### Find the Completed Phase
 
-Scan `state.phases` in numeric order (phase "1", "2", etc.). For each phase N:
+Parse the CLI output to determine the phase and its review status:
 
-1. Check if `phase_review` exists for this phase:
-   - If `phase_review.status == "testing"` → this phase is awaiting user confirmation → **go to Mode 2**
-   - If `phase_review.status == "approved"` → this phase is done, continue scanning
+1. If the output indicates a phase N with `phase_review.status == "testing"` → **go to Mode 2**
 
-2. If no `phase_review` or `phase_review.status == "not_started"`:
-   - Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`
-   - Check ALL epics in `epics[]` — for each epic M, check `state.phases[N].plans[M].swarm_execution.status`
-   - If ALL epics have `swarm_execution.status == "converged"` (including the E2E Testing epic) → this phase just completed → **go to Mode 1**
-   - If NOT all converged → skip this phase (still in progress)
+2. If the output indicates a phase N that is completed (all epics converged) with `phase_review.status == "not_started"` or no `phase_review`:
+   - Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json` to confirm all epics are converged
+   - **go to Mode 1**
 
 3. If no phase is found → **STOP.** Print:
    ```
@@ -166,19 +167,15 @@ When testing is complete, run /eigen_continue again to confirm and start Phase <
 
 ### 1.5 Update Pipeline State
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-
-Add to `state.phases[N]`:
-```json
-"phase_review": {
-  "status": "testing",
-  "summary_presented_at": "<ISO 8601>",
-  "approved_at": null,
-  "testing_recipe": "<generated recipe text>"
-}
+Set the phase review status to `testing` with the generated recipe:
+```bash
+eigen-squared set-phase-review --phase <N> --status testing --testing-recipe "<generated recipe text or path>"
 ```
 
-Set `updated_at` to current timestamp.
+Then commit the state change:
+```bash
+eigen-squared commit-state --message "pipeline: phase <N> review — testing"
+```
 
 ---
 
@@ -211,14 +208,14 @@ Do NOT update pipeline state. Exit.
 
 **If "Yes"** →
 
-1. Update pipeline state:
-   ```json
-   "phase_review": {
-     "status": "approved",
-     "summary_presented_at": "<existing>",
-     "approved_at": "<ISO 8601>",
-     "testing_recipe": "<existing>"
-   }
+1. Update pipeline state via CLI:
+   ```bash
+   eigen-squared set-phase-review --phase <N> --status approved
+   ```
+
+   Then commit the state change:
+   ```bash
+   eigen-squared commit-state --message "pipeline: phase <N> review — approved"
    ```
 
 2. Determine next phase:
@@ -232,9 +229,9 @@ Do NOT update pipeline state. Exit.
 
    Phase <N>: approved at <timestamp>
 
-   The pipeline controller hook will schedule the next phase automatically
-   when this session ends. The autonomous pipeline will resume and run
-   Phase <N+1> to completion.
+   The `eigen-squared schedule-next` hook will schedule the next phase
+   automatically when this session ends. The autonomous pipeline will
+   resume and run Phase <N+1> to completion.
 
    When Phase <N+1> finishes, run /eigen_continue again.
    ```
@@ -261,4 +258,4 @@ Do NOT update pipeline state. Exit.
 - **Never skips user confirmation** — the pipeline MUST NOT cross phase boundaries without human approval.
 - **Merge order matters** — PRs should be merged in epic wave order (Wave 1 first, E2E Testing last).
 - **Testing recipe is generated, not hardcoded** — it reads from `phase_e2e_config.json` and the `language-profiles` skill.
-- **Pipeline controller hook** — after this session ends, the Stop hook reads `pipeline_state.json` and schedules the next phase's bootstrap automatically. No manual task scheduling needed.
+- **Pipeline continuation** — the `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

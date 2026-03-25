@@ -42,8 +42,7 @@ This command uses the same environment variables as all eigen-squared commands:
 ### Sync with Remote
 
 ```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
+eigen-squared sync
 ```
 
 ### Fixed Paths
@@ -57,38 +56,35 @@ git pull origin $EIGEN_BRANCH
 
 ## Pipeline Awareness
 
-Load the `pipeline-state-schema` skill for the full schema, field definitions, and feedback lifecycle.
+The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
 
 ### On Entry
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
-   - **Not found** → **STOP.** Print: "No pipeline_state.json found. Run `/time_split` first to generate the phase split."
-   - **Found** → check `state.time_split`:
-     - `state.time_split.status == "not_started"` → **STOP.** Print: "time_split has not run yet. Run `/time_split` first."
-     - `state.time_split.convergence.converged == true` → **STOP.** Print: "time_split has already converged (decided at `<decided_at>`: `<reason>`). No further review needed."
-   - Check `state.deepen_time_split.feedback_consumed`:
-     - `feedback_consumed == false` AND feedback file exists → warn: "Existing feedback has not been consumed by time_split yet. Re-analyzing will overwrite it." Proceed anyway.
-   - Read current `state.deepen_time_split.iteration` to determine iteration context.
+```bash
+eigen-squared get-context deepen_time_split --json
+```
+
+If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON for `iteration`, `previous_feedback_path`, `previous_feedback_exists`, `main_command_outputs`, and `lessons_dir`.
 
 ### On Exit
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-- Set `state.deepen_time_split.status` to `"completed"`
-- Increment `state.deepen_time_split.iteration`
-- Set `state.deepen_time_split.last_run_at` to current ISO 8601 timestamp
-- Set `state.deepen_time_split.feedback_path` to the feedback file path
-- Set `state.deepen_time_split.feedback_consumed` to `false` (fresh feedback, not yet processed)
-- Set `state.time_split.feedback_consumed` to `false` (signal to time_split that fresh feedback is available)
-- Update `state.deepen_time_split.findings_summary` with counts from the feedback file
-- If convergence was decided:
-  - Set `state.time_split.convergence.converged` to `true`
-  - Set `state.time_split.convergence.decided_by` to `"deepen_time_split"`
-  - Set `state.time_split.convergence.decided_at` to current ISO 8601 timestamp
-  - Set `state.time_split.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Stage 5.5 — Generate Convergence Recommendations)
-- If continuing iteration:
-  - Set `state.time_split.status` to `"iterating"`
-- Set `updated_at` to current timestamp
+After completing the review and writing the feedback file:
+
+```bash
+eigen-squared complete deepen_time_split --feedback-path <feedback_file_path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+```
+
+If converging (zero high and medium findings):
+```bash
+eigen-squared mark-converged time_split --reason "<convergence rationale>"
+```
+
+If adding downstream recommendations at convergence:
+```bash
+eigen-squared add-recommendation --from-cmd deepen_time_split --target <target_cmd> --text "<observation>"
+```
+
+The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (sets own to false, sets time_split's to false to signal fresh feedback).
 
 ---
 
@@ -596,16 +592,11 @@ Next steps:
 ### Commit Pipeline Artifacts
 
 ```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/feedback/ eigen_initiative/phases/pipeline_state.json
-git commit -m "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>"
-git push origin $EIGEN_BRANCH
+eigen-squared commit-state --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/feedback/
 ```
 
 ---
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

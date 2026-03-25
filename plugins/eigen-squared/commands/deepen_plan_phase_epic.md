@@ -43,8 +43,7 @@ No arguments are required. The target phase and epic are auto-detected from the 
 ### Sync with Remote
 
 ```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
+eigen-squared sync
 ```
 
 ### Auto-Detection
@@ -76,36 +75,33 @@ Print: `Auto-detected Phase <N>, Epic <M> (P<N>.E<M>) for deepen_plan_phase_epic
 
 ## Pipeline Awareness
 
-Deepen plan phase epic operates at per-epic scope within a phase. Load the `pipeline-state-schema` skill for the full schema, field definitions, and feedback lifecycle.
+The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
 
 ### On Entry
 
-The pipeline state was already read during Epic Auto-Detection. Now check deepen-specific state:
+```bash
+eigen-squared get-context deepen_plan_phase_epic --json
+```
 
-- Check `state.phases[N].plans[M].deepen_plan_phase_epic.feedback_consumed`:
-  - `feedback_consumed == false` AND feedback file exists → warn: "Existing feedback has not been consumed by plan_phase_epic yet. Re-analyzing will overwrite it." Proceed anyway.
-- Read current iteration to determine iteration context.
+If the CLI exits with an error, STOP and display it. Otherwise parse the returned JSON for `phase`, `epic`, `iteration`, `previous_feedback_path`, `previous_feedback_exists`, `main_command_outputs`, and `lessons_dir`.
 
 ### On Exit
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-- Initialize `state.phases[N].plans[M].deepen_plan_phase_epic` if it doesn't exist
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.status` to `"completed"`
-- Increment `state.phases[N].plans[M].deepen_plan_phase_epic.iteration`
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.last_run_at` to current ISO 8601 timestamp
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.feedback_path` to the feedback file path
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.feedback_consumed` to `false` (fresh feedback)
-- Set `state.phases[N].plans[M].plan_phase_epic.feedback_consumed` to `false` (signal to plan_phase_epic)
-- Update `state.phases[N].plans[M].deepen_plan_phase_epic.findings_summary` with counts
-- If convergence was decided:
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.converged` to `true`
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.decided_by` to `"deepen_plan_phase_epic"`
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.decided_at` to current ISO 8601 timestamp
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Stage 4.5)
-- If continuing iteration:
-  - Set `state.phases[N].plans[M].plan_phase_epic.status` to `"iterating"`
-- Set `updated_at` to current timestamp
+```bash
+eigen-squared complete deepen_plan_phase_epic --phase <N> --epic <M> --feedback-path <feedback_file_path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+```
+
+If converging:
+```bash
+eigen-squared mark-converged plan_phase_epic --phase <N> --epic <M> --reason "<convergence rationale>"
+```
+
+If adding downstream recommendations at convergence:
+```bash
+eigen-squared add-recommendation --from-cmd deepen_plan_phase_epic --target create_issues_from_plan_swarm --text "<observation>"
+```
+
+The CLI handles all field updates atomically.
 
 ---
 
@@ -469,10 +465,7 @@ Next steps:
 ### Commit Pipeline Artifacts
 
 ```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/phase_N/epic_M/feedback/ eigen_initiative/phases/pipeline_state.json
-git commit -m "pipeline: deepen plan P<N>.E<M> — iteration <N>, <CONVERGED|CONTINUE>"
-git push origin $EIGEN_BRANCH
+eigen-squared commit-state --message "pipeline: deepen plan P<N>.E<M> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/feedback/
 ```
 
 ---
@@ -489,6 +482,4 @@ git push origin $EIGEN_BRANCH
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
