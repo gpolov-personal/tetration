@@ -141,9 +141,7 @@ ERROR: No active integration branch found. Run /create_issues_from_plan_swarm fi
 
 **Step 1.5: Sync with remote:**
 
-```bash
-eigen-squared sync --branch feat/P<N>.E<M>
-```
+Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 **Step 2: Extract phase and epic from the branch name:**
 

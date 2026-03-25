@@ -74,9 +74,7 @@ This command requires two environment variables:
 
 ### Sync with Remote
 
-```bash
-eigen-squared sync
-```
+Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 ### Fixed Paths
 

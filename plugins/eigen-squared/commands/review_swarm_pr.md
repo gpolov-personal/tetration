@@ -57,9 +57,8 @@ This command MUST run on the same integration branch used by `/orchestrate_swarm
    If no active integration branch found → **STOP.**
 
 2. Sync with remote:
-   ```bash
-   eigen-squared sync --branch feat/P<N>.E<M>
-   ```
+
+   Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 3. Extract phase N and epic M from the branch name `feat/P<N>.E<M>`.
 

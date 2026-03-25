@@ -463,9 +463,7 @@ After all tasks and the manifest are created, create the integration branch and 
 
 ### Sync with Remote
 
-```bash
-eigen-squared sync
-```
+Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 ### 5.1 Create the Integration Branch from $EIGEN_BRANCH
 

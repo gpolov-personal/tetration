@@ -86,9 +86,7 @@ Print: `Auto-detected Phase <N>, Epic <M> (P<N>.E<M>) for plan_phase_epic.`
 
 ### Sync with Remote
 
-```bash
-eigen-squared sync
-```
+Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 ### Fixed Paths
 

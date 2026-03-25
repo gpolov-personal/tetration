@@ -41,9 +41,7 @@ This command uses the same environment variables as all eigen-squared commands:
 
 ### Sync with Remote
 
-```bash
-eigen-squared sync
-```
+Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 ### Fixed Paths
 

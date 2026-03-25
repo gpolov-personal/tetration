@@ -209,25 +209,50 @@ def cmd_next(args: Namespace) -> int:
 
 
 def cmd_get_context(args: Namespace) -> int:
+    root = _eigen_root()
+
+    # Step 1: Auto-sync — pull from the correct branch before reading state.
+    # Resolves the branch first (integration branch for swarm commands,
+    # EIGEN_BRANCH for everything else), then pulls.
+    sf = _state_file(args)
+    if sf.exists():
+        pre_state = load_state(sf)
+        if pre_state:
+            raw = pre_state.to_dict()
+            branch = resolve_branch(raw, eigen_branch=_eigen_branch(), eigen_root=root)
+            if branch and root:
+                git_ops.sync(branch, root)
+
+    # Step 2: Reload state after sync (may have changed from pull)
     state, _ = _load_or_die(args)
     cmd = args.target_command
     phase = args.phase
     epic = args.epic
 
-    # Auto-detect phase/epic from next if not provided
+    # Step 3: Auto-detect phase/epic from determine_next if not provided
     if phase is None:
         raw = state.to_dict()
-        result = determine_next(raw, eigen_root=_eigen_root())
+        result = determine_next(raw, eigen_root=root)
         if result and result[0] == cmd:
             ctx = result[1]
             phase = ctx.get("phase")
             epic = epic or ctx.get("epic")
+        elif result and result[0] != cmd:
+            print(f"ERROR: Next command is {result[0]}, not {cmd}. "
+                  f"Run `eigen-squared next` to see what should run.", file=sys.stderr)
+            return 1
 
     if phase is None and cmd not in ("time_split", "deepen_time_split"):
         print(f"ERROR: --phase required for {cmd}", file=sys.stderr)
         return 1
 
-    context: dict = {"command": cmd, "phase": phase, "epic": epic}
+    # Step 4: Resolve branch for this command's context
+    branch = _eigen_branch()
+    if cmd in ("orchestrate_swarm", "review_swarm_pr", "create_issues_from_plan_swarm"):
+        if phase is not None and epic is not None:
+            branch = git_ops.integration_branch_name(phase, epic)
+
+    context: dict = {"command": cmd, "phase": phase, "epic": epic, "branch": branch}
 
     # Build command-specific context
     if cmd in ("time_split", "deepen_time_split"):

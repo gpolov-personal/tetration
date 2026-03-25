@@ -42,9 +42,7 @@ No arguments are required. The target phase and epic are auto-detected from the 
 
 ### Sync with Remote
 
-```bash
-eigen-squared sync
-```
+Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 ### Auto-Detection
 

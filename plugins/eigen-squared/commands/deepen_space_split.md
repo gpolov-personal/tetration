@@ -42,9 +42,7 @@ No arguments are required. The target phase is auto-detected from the pipeline s
 
 ### Sync with Remote
 
-```bash
-eigen-squared sync
-```
+Handled automatically by `eigen-squared get-context` — no manual sync needed.
 
 ### Auto-Detection
 
