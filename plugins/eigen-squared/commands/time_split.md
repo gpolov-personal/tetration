@@ -154,7 +154,50 @@ You will:
 
 After successfully generating outputs (Stage 2), create or update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` (see the `pipeline-state-schema` skill for the full schema):
 
-- If creating for the first time: initialize the full schema with `state.time_split` set to `status: "completed"`, `iteration: 1`, current timestamp, output paths, and phase count. Initialize empty `state.phases` entries for each phase produced. Initialize `recommendations` with empty arrays for all 4 target keys:
+- If creating for the first time: initialize the full schema with `state.time_split` set to `status: "completed"`, `iteration: 1`, current timestamp, output paths, and phase count. Initialize `state.deepen_time_split` with `status: "not_started"`, `feedback_consumed: false`. Initialize `recommendations` with empty arrays for all 4 target keys. Initialize `state.phases` entries for each phase produced — each phase MUST contain ALL of these keys:
+  ```json
+  "state": {
+    "phases": {
+      "1": {
+        "bootstrap": {
+          "status": "not_started",
+          "iteration": 0,
+          "last_run_at": null,
+          "output_paths": { "bootstrap_report": null, "target_repo": null },
+          "feedback_consumed": false,
+          "convergence": { "converged": false, "decided_by": null, "decided_at": null, "reason": null }
+        },
+        "deepen_bootstrap": {
+          "status": "not_started",
+          "iteration": 0,
+          "last_run_at": null,
+          "feedback_path": null,
+          "feedback_consumed": false,
+          "findings_summary": { "high": 0, "medium": 0, "low": 0 }
+        },
+        "space_split": {
+          "status": "not_started",
+          "iteration": 0,
+          "last_run_at": null,
+          "feedback_consumed": false,
+          "convergence": { "converged": false, "decided_by": null, "decided_at": null, "reason": null }
+        },
+        "deepen_space_split": {
+          "status": "not_started",
+          "iteration": 0,
+          "last_run_at": null,
+          "feedback_path": null,
+          "feedback_consumed": false,
+          "findings_summary": { "high": 0, "medium": 0, "low": 0 }
+        },
+        "phase_review": { "status": "not_started", "summary_presented_at": null, "approved_at": null, "testing_recipe": null },
+        "plans": {}
+      }
+    }
+  }
+  ```
+  Repeat this structure for every phase (1, 2, ..., N). Do NOT put bootstrap at the root `state` level — it belongs INSIDE each phase.
+
   ```json
   "recommendations": {
     "bootstrap": [],
@@ -171,7 +214,7 @@ After successfully generating outputs (Stage 2), create or update `$EIGEN_ROOT/e
   - Set `state.deepen_time_split.feedback_consumed` to `true` (outputs changed, deepen should re-analyze)
   - Update `state.time_split.output_paths` and `state.time_split.phase_count`
   - Set `updated_at` to current timestamp
-  - Initialize `state.phases` entries for any new phases produced
+  - Initialize `state.phases` entries for any new phases produced (each phase MUST include `bootstrap`, `deepen_bootstrap`, `space_split`, `deepen_space_split`, `phase_review`, and `plans` — use the same structure as first-time creation above)
 
 ---
 
