@@ -928,6 +928,7 @@ Record the PR and advance pipeline state via the CLI:
 ```bash
 eigen-squared complete orchestrate_swarm --phase <phase> --epic <epic> --pr-url <pr_url> --pr-number <pr_number>
 eigen-squared commit-state --message "chore: record PR for P<phase>.E<epic> in pipeline state"
+eigen-squared schedule-next
 ```
 
 This is the handoff point — `/review_swarm_pr` reads `swarm_execution` from the integration branch to detect the PR and track review iterations. Both commands run on the same branch.
@@ -1034,4 +1035,4 @@ Before reporting completion:
 
 ## Pipeline Continuation
 
-When this session ends, the pipeline hook runs `eigen-squared schedule-next`, which schedules `review_swarm_pr` automatically.
+The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API. No hook or external trigger is needed — the command schedules its own successor before the session ends.

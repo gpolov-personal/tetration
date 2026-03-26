@@ -627,10 +627,11 @@ Next steps:
 eigen-squared commit-state \
   --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
   --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
+eigen-squared schedule-next
 ```
 
 ---
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI calls above) and schedules the next command automatically. You do not need to schedule anything — your only responsibility is to make the CLI calls in the On Exit section accurately before the session ends.
+The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API. No hook or external trigger is needed — the command schedules its own successor before the session ends.
