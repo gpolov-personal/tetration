@@ -400,11 +400,52 @@ Each command runs ~3 minutes after the previous finishes.
 
 ---
 
-## Step 7: Initialize Pipeline Controller
+## Step 7: Install CLI and Initialize Pipeline
 
-The `eigen-squared` CLI handles pipeline state initialization and command scheduling.
+### 7.1 Install the `eigen-squared` CLI globally
 
-### 7.1 Create `.eigen/` directory
+The eigen-squared CLI is a Python module inside this plugin. It needs to be accessible from any directory (commands run from `$EIGEN_ROOT`, not the plugin directory). Create a global wrapper script.
+
+**Step 1: Discover the plugin path.** Use the Glob tool to find the `cli/__main__.py` file near this command file. The plugin cache path will look like `~/.claude/plugins/cache/tetration/eigen-squared/<version>/`. Store this as `PLUGIN_PATH`.
+
+**Step 2: Read the version.** Read `$PLUGIN_PATH/.claude-plugin/plugin.json` and extract the `version` field (e.g., `2.1.0`).
+
+**Step 3: Create the wrapper script** at `~/.local/bin/eigen-squared`:
+
+```bash
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/eigen-squared << 'WRAPPER_EOF'
+#!/bin/bash
+# eigen-squared CLI v<VERSION> — created by /eigen_start
+PLUGIN_PATH="<RESOLVED_PLUGIN_PATH>"
+if [ ! -d "$PLUGIN_PATH/cli" ]; then
+    echo "ERROR: eigen-squared plugin not found at $PLUGIN_PATH"
+    echo "The plugin may have been updated. Run /eigen_start again to fix."
+    exit 1
+fi
+export PYTHONPATH="$PLUGIN_PATH"
+exec python3 -m cli "$@"
+WRAPPER_EOF
+chmod +x ~/.local/bin/eigen-squared
+```
+
+Replace `<RESOLVED_PLUGIN_PATH>` with the actual absolute path discovered in Step 1, and `<VERSION>` with the version from Step 2.
+
+**Step 4: Verify it works:**
+
+```bash
+eigen-squared --version
+```
+
+If this fails with "command not found", `~/.local/bin` may not be on PATH. Print:
+```
+WARNING: ~/.local/bin is not on your PATH.
+Add this to your shell profile (~/.bashrc or ~/.zshrc):
+  export PATH="$HOME/.local/bin:$PATH"
+Then restart your terminal or run: source ~/.bashrc
+```
+
+### 7.2 Create `.eigen/` directory
 
 ```bash
 mkdir -p $EIGEN_ROOT/.eigen
@@ -425,7 +466,7 @@ Add `.eigen/` to `.gitignore` if not already present:
 grep -qxF '.eigen/' $EIGEN_ROOT/.gitignore 2>/dev/null || echo '.eigen/' >> $EIGEN_ROOT/.gitignore
 ```
 
-### 7.2 Initialize pipeline state
+### 7.3 Initialize pipeline state
 
 ```bash
 eigen-squared init --initiative "<initiative name from Step 3>" --phase-count 0
@@ -433,22 +474,20 @@ eigen-squared init --initiative "<initiative name from Step 3>" --phase-count 0
 
 Phase count is 0 because time_split hasn't run yet. The CLI creates `pipeline_state.json` with `time_split.status = "not_started"`.
 
-### 7.3 Verify installation
+### 7.4 Verify installation
 
 ```bash
 eigen-squared validate
 eigen-squared status
 ```
 
-### 7.4 Schedule first command
+### 7.5 Schedule first command
 
 ```bash
 eigen-squared schedule-next
 ```
 
 This reads pipeline state, sees `time_split.status = "not_started"`, and schedules `/time_split` via claude-tasks.
-
-**Do NOT schedule tasks via curl.** Use `eigen-squared schedule-next`.
 
 Print:
 ```
