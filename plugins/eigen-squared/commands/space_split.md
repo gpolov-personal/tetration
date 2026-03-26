@@ -1,90 +1,79 @@
 ---
 name: space_split
-description: Decompose a phase manifest into parallel epics with DAG ordering, each ready for orchestrate_swarm. Creates epic definition files for each epic in the phases directory.
+description: Decompose a phase manifest into sequentially ordered epics, each ready for orchestrate_swarm. Creates epic definition files for each epic in the phases directory.
 ---
 
 # Epic Architect — Space Split
 
-## Language Adaptation
+## Pipeline Context
 
-These instructions are **language-agnostic** at the splitting level — they operate on phase manifests and produce epic definitions, a DAG, and epic definition files. Downstream commands (`/plan_phase_epic`, `/create_issues_from_plan_swarm`, `/orchestrate_swarm`) handle language-specific planning and execution.
+```
+  time_split ↔ deepen → bootstrap ↔ deepen → [ space_split ↔ deepen_space_split ] → plan_phase_epic → ...
+                                                ^^^^^^^^^^^^^
+                                                YOU ARE HERE
+```
+
+**Role — Epic Architect.** You operate at **per-phase scope**. You decompose a single phase (produced by `/time_split`) into sequentially ordered epics that can each be planned and executed by their own swarm. Epics are numbered E1, E2, ..., EN with E2E Testing always last. Each epic completes fully before the next one starts. You build the epic ordering, define what each epic outputs for downstream epics, and create one epic definition file per epic with sufficient context for downstream `/plan_phase_epic`.
+
+**Convergence partner:** `/deepen_space_split` reviews your output and produces structured feedback. You iterate space_split <-> deepen_space_split until converged.
+
+**Language note:** These instructions are **language-agnostic** at the splitting level — they operate on phase manifests and produce epic definitions, an epic manifest, and epic definition files. Downstream commands (`/plan_phase_epic`, `/create_issues_from_plan_swarm`, `/orchestrate_swarm`) handle language-specific planning and execution.
+
+You do NOT generate plans or swarm manifests — that is the job of `/plan_phase_epic` and `/create_issues_from_plan_swarm` respectively. Your output is the epic decomposition, the manifest, and the epic definition files.
 
 ---
 
-## Your Role
+## Environment
 
-You are an **Epic Architect** responsible for decomposing a single phase (produced by `/time_split`) into epics that can each be planned and executed by their own swarm, respecting the dependency ordering defined by the epic DAG. Epics may depend on each other — the DAG determines execution waves so dependent epics run after their blockers complete. You build the epic-level DAG, define inter-epic interfaces, and create one epic definition file per epic with sufficient context for downstream `/plan_phase_epic`.
+Before proceeding, verify:
 
-You do NOT generate plans or swarm manifests — that is the job of `/plan_phase_epic` and `/create_issues_from_plan_swarm` respectively. Your output is the epic decomposition, the DAG, and the epic definition files.
+- [ ] `$EIGEN_ROOT` is set and points to an existing directory
+- [ ] `$EIGEN_BRANCH` is set (the default branch from which all work starts)
 
-## Environment Variables
+If either is missing, **STOP** and print the appropriate error:
 
-This command uses the same environment variables as all eigen-squared commands:
-
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
-
-### On Entry: Validate Environment
-
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-
-### Phase Auto-Detection
-
-No arguments are required. The target phase is auto-detected from the pipeline state:
-
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
-   ```
-   ERROR: No pipeline_state.json found at $EIGEN_ROOT/eigen_initiative/phases/
-   Run /time_split first to generate the phase split.
-   ```
-2. Scan `state.phases` to find the first phase N (in numeric order) where:
-   - `bootstrap.convergence.converged == true` (bootstrap is done)
-   - AND `space_split.status == "not_started"` OR `space_split.status == "iterating"` (space_split still needs work)
-3. If no such phase is found → **STOP.** Print:
-   ```
-   No phase is ready for space_split.
-   Either all phases have been split already, or bootstrap has not converged yet.
-   Run /bootstrap if needed, or check pipeline_state.json for current status.
-   ```
-4. The detected phase number N determines:
-   - **Phase manifest**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`
-   - **Phase directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`
-
-Print: `Auto-detected Phase <N> for space_split.`
-
-### Fixed Paths
-
-All paths are derived from `$EIGEN_ROOT` and the detected phase number N:
-
-- **Phases directory**: `$EIGEN_ROOT/eigen_initiative/phases`
-- **Phase manifest**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`
-- **Phase directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`
-- **Pipeline state**: `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`
-
-## Input
-
-No arguments are required. The phase is auto-detected from the pipeline state.
-
-### Sync with Remote
-
-```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
+```
+ERROR: $EIGEN_ROOT is not set.
+Set it to the root folder of your target project:
+  export EIGEN_ROOT=/path/to/your/project
 ```
 
-The phase manifest (`phase_N_manifest.md`) must exist and contain the features, dependencies, clusters, blackbox specs, and optionally whitebox sections produced by `/time_split`. The phase directory (`phase_N/`) must contain `bootstrap-report.json` from `/bootstrap`.
+```
+ERROR: $EIGEN_BRANCH is not set.
+Set it to the default branch from which all work starts:
+  export EIGEN_BRANCH=main
+```
+
+**Key paths** (all relative to `$EIGEN_ROOT/eigen_initiative/`):
+
+| Path | Description |
+|------|-------------|
+| `phases/phase_N_manifest.md` | Phase manifest (input) |
+| `phases/phase_N/` | Phase output directory |
+| `phases/phase_N/bootstrap-report.json` | Bootstrap report (input) |
+| `phases/phase_N/epic_M/epic.md` | Epic definition file (output) |
+| `phases/phase_N/epic_manifest.json` | Epic manifest (output) |
+| `phases/phase_N/phase_e2e_config.json` | Phase E2E config (output) |
+| `phases/phase_N/feedback/` | Feedback directory (owned by deepen — never touch) |
+
+## Output
+
+All outputs are written to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`:
+
+- `phase_N/epic_M/epic.md` — one epic definition file per epic (scope, features, specs, validation criteria)
+- `phase_N/epic_manifest.json` — epic manifest with execution order, cross-phase inputs, inter-epic interfaces
+- `phase_N/phase_e2e_config.json` — phase-level E2E test scenarios and per-epic validation scenarios
+
+## Overview
+
+You will:
+1. Ingest the phase manifest and bootstrap report
+2. Build a local dependency DAG and form epics from clusters + domain groupings
+3. Order epics sequentially so dependencies point forward; define what each epic outputs for later epics
+4. Create epic definition files (one `epic.md` per epic) defining the scope — which features belong, their specs, interfaces, and validation criteria. These are NOT plans; `/plan_phase_epic` generates the implementation strategy later.
+5. Generate phase-level artifacts (epic manifest, phase E2E config)
+
+---
 
 ## ID Convention
 
@@ -96,84 +85,119 @@ All IDs in the eigen-squared pipeline use a deterministic triplet derived from d
 
 Epic numbers (M) are sequential within the phase, starting at 1. The last epic is always the E2E Testing epic.
 
-## Output
-
-All outputs are written to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`:
-
-- `phase_N/epic_M/epic.md` — one epic definition file per epic (scope, features, specs, validation criteria)
-- `phase_N/epic_dag.json` — epic DAG with execution waves, cross-phase inputs, inter-epic interfaces
-- `phase_N/phase_e2e_config.json` — phase-level E2E test scenarios and per-epic validation scenarios
-
-## Overview
-
-You will:
-1. Ingest the phase manifest and bootstrap report
-2. Build a local dependency DAG and form epics from clusters + domain groupings
-3. Define inter-epic interfaces using bootstrap entity stubs as concrete contracts
-4. Create epic definition files (one `epic.md` per epic) defining the scope — which features belong, their specs, interfaces, and validation criteria. These are NOT plans; `/plan_phase_epic` generates the implementation strategy later.
-5. Generate phase-level artifacts (epic DAG, phase E2E config)
-
 ---
 
-## Critical Constraints
+## Constraints
 
 - You are a **single agent** orchestrating sub-agents only for heavy research. Epic formation and epic file creation are done by you directly.
-- **Cluster integrity**: strongly prefer keeping all features in a cluster within the same epic. Only split a cluster across sequential epics (where one blocks the other) if there is a compelling reason.
+- **Cluster integrity**: strongly prefer keeping all features in a cluster within the same epic. Only split a cluster across sequential epics if there is a compelling reason.
 - **Epic sizing**: each epic should be a meaningful unit of work — not so small that planning overhead dominates, not so large that a single swarm can't handle it. The right size depends on the phase's feature count and complexity.
 - Every epic must have clear **validation criteria** — what can be verified after the epic's swarm completes. This is not a full E2E test (that happens at phase level), but a description of what components work and what tests pass.
 - Cross-phase dependencies are treated as **already available** — they are inputs from completed prior phases.
 - **Bootstrap must be converged** before running this command. The bootstrap report provides concrete entity paths and project structure.
-- You NEVER write application code, plans, or swarm manifests. You produce epic decompositions (scope and feature assignments), DAGs, epic definition files, and phase-level E2E configs only. The epic.md files define *what* belongs to each epic; `/plan_phase_epic` later defines *how* to implement it.
-- **Feedback files are owned by deepen commands.** You NEVER delete, overwrite, or recreate files under `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/`. On iteration, you only update your own outputs (epic_dag.json, phase_e2e_config.json, epic files).
+- You NEVER write application code, plans, or swarm manifests. You produce epic decompositions (scope and feature assignments), the epic manifest, epic definition files, and phase-level E2E configs only. The epic.md files define *what* belongs to each epic; `/plan_phase_epic` later defines *how* to implement it.
+- **Feedback files are owned by deepen commands.** You NEVER delete, overwrite, or recreate files under `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/`. On iteration, you only update your own outputs (epic_manifest.json, phase_e2e_config.json, epic files).
 
 ---
 
-## Pipeline Awareness
+## On Entry
 
-Space split operates at per-phase scope. The phase number N was auto-detected during environment validation. Load the `pipeline-state-schema` skill for the full schema, field definitions, and feedback lifecycle.
+Run the CLI to get pipeline context:
 
-### On Entry
+```bash
+eigen-squared get-context space_split --json
+```
 
-The pipeline state was already read during Phase Auto-Detection. Now check the space_split-specific state for phase N:
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON:
 
-- `state.phases[N].space_split`:
-  - `convergence.converged == true` → **STOP.** Print: "Space split for Phase `<N>` has already converged (decided at `<decided_at>`). No re-run needed."
-  - `iteration >= 1` AND feedback file exists AND `feedback_consumed == false` → proceed to **Iteration Protocol** below.
-  - `iteration >= 1` AND feedback file exists AND `feedback_consumed == true` → **STOP.** Print: "Feedback already processed. Run `/deepen_space_split` again for fresh review before re-running."
-  - `iteration >= 1` AND no feedback file exists → **STOP.** Print: "Space split for Phase `<N>` has already run. Run `/deepen_space_split` first to generate feedback before re-running."
-  - `iteration == 0` (or phase entry doesn't exist) → first run, proceed normally.
+```json
+{
+  "command": "space_split",
+  "branch": "main",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "iteration": 2,
+  "current_iteration": 1,
+  "is_first_run": false,
+  "should_process_feedback": true,
+  "feedback_path": "phases/phase_1/feedback/deepen_space_split_feedback.json",
+  "output_paths": {"epic_dag": "phases/phase_1/epic_manifest.json", "phase_e2e_config": "phases/phase_1/phase_e2e_config.json"},
+  "phase_manifest": "phases/phase_1_manifest.md",
+  "recommendations": [...]
+}
+```
 
-### On Exit
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Always `"space_split"` |
+| `branch` | string | The branch to work on (from `$EIGEN_BRANCH`) |
+| `paths_relative_to` | string | Base path — all relative paths in this context are relative to this |
+| `phase` | int | Which phase to split |
+| `iteration` | int | The iteration you are about to produce (1 = first run, 2+ = iteration) |
+| `current_iteration` | int | The iteration whose outputs currently exist on disk (0 = none yet) |
+| `is_first_run` | bool | `true` when no prior run exists |
+| `should_process_feedback` | bool | `true` when unprocessed deepen feedback is waiting |
+| `feedback_path` | string | Relative path to the feedback JSON (only when `should_process_feedback` is true) |
+| `output_paths` | object | Paths to current outputs (null fields on first run) |
+| `phase_manifest` | string | Relative path to the phase manifest |
+| `recommendations` | array | Downstream recommendations from deepen commands to incorporate |
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-- Set `state.phases[N].space_split.status` to `"completed"`
-- Increment `state.phases[N].space_split.iteration`
-- Set `state.phases[N].space_split.last_run_at` to current ISO 8601 timestamp
-- Set `state.phases[N].space_split.feedback_consumed` to `true` (feedback was processed)
-- Set `state.phases[N].deepen_space_split.feedback_consumed` to `true` (outputs changed, deepen should re-analyze)
-- Update `state.phases[N].space_split.output_paths`:
-  - `epic_dag` → `"phases/phase_N/epic_dag.json"`
-  - `phase_e2e_config` → `"phases/phase_N/phase_e2e_config.json"`
-  - `epic_ids` → list of epic IDs (e.g., `["P1.E1", "P1.E2", "P1.E3"]`)
-  - `epic_directories` → list of created epic directory paths (e.g., `["phases/phase_1/epic_1/", "phases/phase_1/epic_2/"]`)
-- Initialize `state.phases[N].plans` as an empty object `{}` (downstream `plan_phase_epic` will populate per-epic entries)
-- Set `updated_at` to current timestamp
+**Routing:**
+
+- `is_first_run == true` → proceed to **Stage 0**
+- `should_process_feedback == true` → proceed to **Iteration Protocol**
+
+---
+
+## On Exit
+
+After successfully generating outputs (Stage 4), signal completion to the CLI:
+
+```bash
+eigen-squared complete space_split --phase <phase> --epic-manifest phases/phase_<phase>/epic_manifest.json --e2e-config phases/phase_<phase>/phase_e2e_config.json --epic-ids '["P<phase>.E1", "P<phase>.E2", "P<phase>.E3"]'
+```
+
+The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), output paths.
+
+Then commit pipeline artifacts:
+
+```bash
+eigen-squared commit-state --message "pipeline: space_split phase <phase> — <epic_count> epics created" --additional-paths eigen_initiative/phases/phase_<phase>/
+```
 
 ---
 
 ## Iteration Protocol
 
-This section applies when `pipeline_state.json` exists, `state.phases[N].space_split.iteration >= 1`, and `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_space_split_feedback.json` is present.
+This section applies when the CLI context returns `should_process_feedback: true`.
 
 ### Read Feedback
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_space_split_feedback.json`.
+1. Read the feedback file at `feedback_path` (resolved against `paths_relative_to` from CLI context).
 2. Extract: `findings[]`, `convergence`, `previous_feedback_comparison`, and `epic_updates`.
-3. Validate that `analyzed_iteration` matches the current `state.phases[N].space_split.iteration`.
+3. Validate that `analyzed_iteration` matches `current_iteration` from the CLI context.
 
 ### Honest Self-Assessment
 
-For each finding in `findings[]`, print an assessment to the user (same ACCEPT/PARTIAL/REJECT pattern).
+For each finding in `findings[]`, print an assessment to the user:
+
+```
+=== Iteration <iteration>: Addressing Deepen Feedback ===
+
+Finding <id>: <title> [<severity>]
+  Category: <category>
+  Description: <description>
+  Recommendation: <recommendation>
+  Assessment: ACCEPT | PARTIAL | REJECT
+  Rationale: <why you accept/partially accept/reject this finding>
+```
+
+Use the `iteration` field from CLI context for the display header.
+
+Classification rules:
+- **ACCEPT**: the finding is valid and actionable — the recommendation will be incorporated as a constraint in regeneration.
+- **PARTIAL**: the finding is valid but the recommendation is too broad or conflicts with another constraint — a narrower fix will be applied.
+- **REJECT**: the finding is a false positive, contradicts a Critical Constraint, or would cause a worse outcome — explain why.
 
 ### Epic File Handling on Iteration
 
@@ -186,21 +210,20 @@ For each finding in `findings[]`, print an assessment to the user (same ACCEPT/P
 
 ### Apply Accepted Changes
 
-When applying feedback, ensure **cascading updates** and **cross-source consistency** between `epic.md` files and `epic_dag.json`:
+When applying feedback, ensure **cascading updates** and **cross-source consistency** between `epic.md` files and `epic_manifest.json`:
 
 - **Cascading updates are MANDATORY**: when applying a change, apply ALL structural consequences:
-  - `move_feature_to_epic` → remove feature from source epic.md (frontmatter + body) AND add to destination epic.md. Update `epic_dag.json` waves and `blocked_by[]`. Check if moved feature was an interface provider — if so, update `interfaces_provided[]`/`interfaces_consumed[]` in the DAG AND the "Inter-Epic Interfaces" sections in both epic.md files. Update `phase_e2e_config.json` epic entries.
-  - `add_interface` / `modify_interface` → edit BOTH: the "Inter-Epic Interfaces" narrative section in the provider AND consumer epic.md files, AND the `interfaces_provided[]`/`interfaces_consumed[]` entries in `epic_dag.json` including `concrete_files[]` (paths must exist in bootstrap-report.json).
-  - `modify_wave` / `fix_blocked_by` → edit `epic_dag.json` DAG entries AND verify epic.md narratives are consistent with new ordering.
-  - `split_epic` / `merge_epics` → regenerate all affected epic.md files AND rebuild `epic_dag.json` entries AND update `phase_e2e_config.json`.
-- **Cross-source consistency rule**: after EVERY change, verify that every interface that appears in an epic.md "Inter-Epic Interfaces" section has its corresponding entry in `epic_dag.json` `interfaces_provided[]`/`interfaces_consumed[]`, and vice versa. Fix any discrepancy immediately.
-- **Edit the STRUCTURAL sections directly** (epic_dag.json entries, epic.md YAML frontmatter, "Inter-Epic Interfaces" sections, phase_e2e_config.json). Do NOT address structural findings by adding narrative paragraphs to the epic body — deepen validates the structural sections and JSON, not narrative commentary.
+  - `move_feature_to_epic` → remove feature from source epic.md (frontmatter + body) AND add to destination epic.md. Update `epic_manifest.json` execution order if needed. Check if moved feature was an interface provider — if so, update `interfaces_provided[]` in the manifest AND the "Epic Outputs" section in the provider epic.md file. Update `phase_e2e_config.json` epic entries.
+  - `add_interface` / `modify_interface` → edit the "Epic Outputs" narrative section in the provider epic.md file AND the `interfaces_provided[]` entry in `epic_manifest.json` including `concrete_files[]` (paths must exist in bootstrap-report.json).
+  - `split_epic` / `merge_epics` → regenerate all affected epic.md files AND rebuild `epic_manifest.json` entries AND update `phase_e2e_config.json`.
+- **Cross-source consistency rule**: after EVERY change, verify that every interface that appears in an epic.md "Epic Outputs" section has its corresponding entry in `epic_manifest.json` `interfaces_provided[]`, and vice versa. Fix any discrepancy immediately.
+- **Edit the STRUCTURAL sections directly** (epic_manifest.json entries, epic.md YAML frontmatter, "Epic Outputs" sections, phase_e2e_config.json). Do NOT address structural findings by adding narrative paragraphs to the epic body — deepen validates the structural sections and JSON, not narrative commentary.
 
 ### Regeneration Scope
 
 Determine how much of the pipeline to re-run based on finding categories:
 
-- **`epic_formation_error` | `dag_error` | `feature_coverage_error`** → re-run from **Stage 1** (rebuild DAG, reform epics, recreate/update all epic files).
+- **`epic_formation_error` | `feature_coverage_error`** → re-run from **Stage 1** (rebuild ordering, reform epics, recreate/update all epic files).
 - **`interface_error` | `issue_completeness_error` | `spec_fidelity_error`** → re-run from **Stage 2** only (update epic file bodies, fix interface definitions).
 - **`e2e_coverage_gap`** → re-run from **Stage 3** only (regenerate E2E config, update phase artifacts).
 
@@ -210,28 +233,25 @@ If findings span multiple categories, use the broadest scope needed.
 
 After applying all accepted changes and regeneration, verify structural consistency before writing outputs:
 - Every feature from the phase manifest appears in exactly ONE epic's frontmatter `features[]` (no duplicates, no missing)
-- Every interface in any epic.md "Inter-Epic Interfaces" section has a corresponding entry in `epic_dag.json` `interfaces_provided[]` or `interfaces_consumed[]` (and vice versa)
-- Every `concrete_files[]` in the DAG references files that exist in bootstrap-report.json entity/contract paths
-- `blocked_by[]` in the DAG is consistent with interfaces (if E2 consumes from E1, E2 must have E1 in `blocked_by`)
-- `phase_e2e_config.json` has an entry for every epic in the DAG
+- Every interface in any epic.md "Epic Outputs" section has a corresponding entry in `epic_manifest.json` `interfaces_provided[]` (and vice versa)
+- Every `concrete_files[]` in the manifest references files that exist in bootstrap-report.json entity/contract paths
+- `phase_e2e_config.json` has an entry for every epic in the manifest
 - YAML frontmatter `feature_count` in each epic.md matches the actual `features[]` array length
 
 If any check fails, fix it NOW before writing the outputs. Do not defer cross-source inconsistencies to the next deepen iteration.
 
 ### Post-Regeneration
 
-1. Update `epic_dag.json` with new iteration number.
+1. Update `epic_manifest.json` with new iteration number.
 2. **NEVER delete, overwrite, or recreate `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/` or any file inside it.** The feedback file (`deepen_space_split_feedback.json`) is owned by `deepen_space_split` and must stay untouched for comparison on the next deepen run.
-3. Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` on exit: set `feedback_consumed = true`, set `deepen_space_split.feedback_consumed = true`.
 
 ### Read Recommendations (if present)
 
-1. Read `recommendations.space_split` from `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
-2. Filter entries by `phase` matching the current phase number N.
-3. Use as advisory context during epic formation:
-   - Inform epic boundary decisions, interface definitions, and DAG structure.
-   - Do NOT treat as requirements. If your analysis contradicts a recommendation, follow your analysis.
-4. On iteration: re-read recommendations (deepen commands may have updated them since last run).
+Recommendations come from the `recommendations` field in the CLI context. Use as advisory context during epic formation:
+
+- Inform epic boundary decisions, interface definitions, and ordering.
+- Do NOT treat as requirements. If your analysis contradicts a recommendation, follow your analysis.
+- On iteration: the CLI always provides current recommendations (deepen commands may have updated them since last run).
 
 ---
 
@@ -239,7 +259,7 @@ If any check fails, fix it NOW before writing the outputs. Do not defer cross-so
 
 ### 0.1 Read Phase Manifest
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md` (where N is the auto-detected phase number).
+1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md` (where N is the phase from CLI context).
 2. Parse the YAML frontmatter to extract: `phase`, `initiative`, `feature_count`, `clusters_included`, `priority_distribution`, `e2e_summary`, `depends_on_phases`.
 
 ### 0.2 Parse Phase Body
@@ -298,40 +318,41 @@ Build epic groupings using this priority order:
 
 Each epic candidate has: `{epic_id, name, features[], clusters[], domain}`.
 
-### 1.3 Build Epic DAG
+### 1.3 Order Epics Sequentially
 
-1. For each pair of epics (E_a, E_b): E_b is `blocked_by` E_a if **any feature in E_b depends on a feature in E_a** (via `local_deps`).
-2. Topological sort epics into execution waves:
-   - Wave 1: epics with no `blocked_by`
-   - Wave 2: epics whose blockers are all in Wave 1
-   - Wave N: epics whose blockers are all in waves 1..N-1
-3. These are the epic DAG and execution waves.
+Order epics so that dependencies point forward in the sequence:
 
-### 1.4 Define Inter-Epic Interfaces
+1. For each pair of epics (E_a, E_b): if any feature in E_b depends on a feature in E_a, then E_a must come before E_b.
+2. Number epics E1, E2, ..., EN such that all dependency edges point from lower-numbered to higher-numbered epics.
+3. The E2E Testing epic is always last (see Stage 2.1).
+
+These are the epic execution order.
+
+### 1.4 Define Epic Outputs
+
+For each epic, define what it produces that later epics will use.
 
 #### Interface Classification
 
-Before defining inter-epic interfaces, classify each cross-epic dependency:
+Before defining epic outputs, classify each cross-epic dependency:
 
-1. **Shared Infrastructure** (types, utils, constants, entity stubs) — any epic can import these directly from bootstrap-created files. These are NOT inter-epic interfaces. Do not add them to `interfaces_provided`/`interfaces_consumed`. They may appear as supporting context but do not create blocking dependencies.
-2. **API Contracts** (service functions, middleware, client modules, route handlers) — requires the provider epic to implement before the consumer can integrate. These ARE inter-epic interfaces and define `blocked_by` relationships.
+1. **Shared Infrastructure** (types, utils, constants, entity stubs) — any epic can import these directly from bootstrap-created files. These are NOT epic outputs. Do not add them to `interfaces_provided`. They may appear as supporting context but do not create ordering dependencies.
+2. **API Contracts** (service functions, middleware, client modules, route handlers) — requires the provider epic to implement before later epics can integrate. These ARE epic outputs and inform the sequential ordering.
 
-Only define interfaces (steps below) for API Contract dependencies. Shared Infrastructure imports do not need coordination between epics.
+Only define outputs (steps below) for API Contract dependencies. Shared Infrastructure imports do not need coordination between epics.
 
-For each cross-epic dependency (feature in E_b depends on feature in E_a):
+For each cross-epic dependency (feature in a later epic depends on a feature in an earlier epic):
 
-1. Identify the **interface** — what does E_b need from E_a?
+1. Identify the **output** — what does the later epic need from the earlier one?
 2. Look up the entity stubs and file paths in the entity file map (from the bootstrap report) to define concrete contracts (e.g., "User model at `libs/janus_core/janus_core/models/auth.py`" instead of "user entity").
 3. Define:
    - `interface_name`: descriptive name (e.g., "RBAC Role + Rights Resolution")
-   - `provider_epic`: E_a's epic ID (e.g., `P1.E1`)
-   - `consumer_epic`: E_b's epic ID (e.g., `P1.E2`)
-   - `provider_features`: features in E_a that produce this interface
-   - `consumer_features`: features in E_b that consume it
+   - `provider_epic`: the earlier epic's ID (e.g., `P1.E1`)
+   - `provider_features`: features in the earlier epic that produce this output
    - `contract`: brief description of the data/API contract
    - `concrete_files`: list of file paths from the entity file map that define this interface
 
-These are the inter-epic interfaces.
+These are the epic outputs (documented as `interfaces_provided` per epic).
 
 ### 1.5 Present Epic Split to User
 
@@ -340,33 +361,13 @@ Build a summary table and present:
 ```
 Phase <N>: <feature_count> features → <epic_count> epics
 
-| ID | Name | Features | Clusters | Wave | Blocked By |
-|------|------|----------|----------|------|------------|
-| P<N>.E1 | ...  | N        | ...      | 1    | —          |
-| P<N>.E2 | ...  | N        | ...      | 2    | P<N>.E1    |
+| # | ID | Name | Features | Clusters |
+|---|------|------|----------|----------|
+| 1 | P<N>.E1 | ...  | N        | ...      |
+| 2 | P<N>.E2 | ...  | N        | ...      |
 ```
 
-Proceed to Stage 2.
-
-### 1.6 Detect File Overlap in Parallel Epics
-
-For each execution wave with more than one epic:
-
-1. Collect each epic's expected files: `concrete_files` from interfaces + entity stubs referenced by the epic's features (from the bootstrap entity file map)
-2. For each pair of same-wave epics, compute the intersection of their file sets
-3. If any pair has overlapping files, add a `shared_files_warning` to the wave in `epic_dag.json`:
-
-```json
-"shared_files_warning": [
-  {
-    "epics": ["P<N>.E1", "P<N>.E3"],
-    "overlapping_files": ["src/models/user.py", "src/lib/auth.ts"],
-    "recommendation": "Coordinate merge order or consider sequential execution"
-  }
-]
-```
-
-If no overlap exists for a wave, set `shared_files_warning` to `[]`.
+Order by epic number. Proceed to Stage 2.
 
 ---
 
@@ -374,10 +375,10 @@ If no overlap exists for a wave, set `shared_files_warning` to `[]`.
 
 ### 2.1 Add the E2E Testing Epic
 
-Before creating files, add a mandatory **E2E Testing** epic as the last epic in the DAG:
+Before creating files, add a mandatory **E2E Testing** epic as the last epic in the sequence:
 
 - This epic has no features from the phase manifest — its scope is to define and implement the full E2E test suite for the phase
-- It is blocked by ALL other epics (always in the final wave)
+- It is always the last epic in the execution order
 - Its epic number M is the last sequential number (e.g., if there are 3 feature epics, the E2E epic is epic 4)
 - Its ID follows the triplet convention: `P<N>.E<M>`
 
@@ -398,11 +399,9 @@ state: open
 labels: ["Phase <N>"]
 phase: <N>
 epic_number: <M>
-wave: <wave_number>
 features: [<feature IDs>]
 feature_count: <count>
 clusters_included: [<cluster IDs>]
-blocked_by_epics: ["P<N>.E<X>", "P<N>.E<Y>"]
 task_ids: []
 created_at: "<ISO 8601>"
 updated_at: "<ISO 8601>"
@@ -414,8 +413,6 @@ updated_at: "<ISO 8601>"
 **Phase:** <N> — <phase_e2e_summary>
 **Features:** <feature_count> (<feature IDs joined by comma>)
 **Clusters:** <cluster IDs or "none">
-**Execution Wave:** <wave number>
-**Blocked by:** <list of epic references like "P<N>.E<X>" or "none — Wave 1 (no blockers)">
 
 ---
 
@@ -429,21 +426,14 @@ updated_at: "<ISO 8601>"
 
 <What can be verified after this epic's swarm completes. Describe which components work, which tests pass, and what integration points are functional. This is NOT a full E2E test — phase-level E2E testing is handled by the E2E Testing epic.>
 
-### Inter-Epic Interfaces
+### Epic Outputs
 
 **This epic provides to downstream epics:**
 <for each interface_provided>
-- **<interface_name>** → consumed by P<N>.E<M>: <contract description>
+- **<interface_name>** → used by P<N>.E<M>: <contract description>
   - Files: <concrete_files from entity file map>
 </for each>
 <or "None — this is a leaf epic.">
-
-**This epic consumes from upstream epics:**
-<for each interface_consumed>
-- **<interface_name>** ← provided by P<N>.E<M>: <contract description>
-  - Files: <concrete_files from entity file map>
-</for each>
-<or "None — this is a root epic (Wave 1).">
 
 ### Blackbox Feature Specifications
 
@@ -471,7 +461,6 @@ updated_at: "<ISO 8601>"
 **Repository structure:** <relevant directory paths from bootstrap>
 
 ## Comments
-
 ```
 
 **For the E2E Testing epic**, the format is the same but with these differences:
@@ -479,7 +468,6 @@ updated_at: "<ISO 8601>"
 - The **Features** table is empty
 - The **Validation Criteria** section describes the full phase-level E2E tests: data flows end-to-end, all epics integrated, user-facing flows testable
 - The **Blackbox Feature Specifications** section references the acceptance criteria from ALL epics in this phase (summarized, not verbatim)
-- `blocked_by_epics` lists ALL other epics in this phase
 - Add an **Infrastructure Requirements** section listing what the E2E tests need to run, derived from the `test_type` classifications:
   - `api` → running application server, any backend services (databases, caches, queues) via Docker containers
   - `browser` → running frontend dev server + browser automation (Playwright)
@@ -504,13 +492,7 @@ updated_at: "<ISO 8601>"
 
 After ALL epic files are created:
 
-1. For epics that have `blocked_by` relationships, append to the `## Comments` section of the consumer epic's file:
-
-```markdown
-Blocked by P<N>.E<X>: <provider_epic_name>. Wait for that epic to complete before running /plan_phase_epic.
-```
-
-2. For epics that provide interfaces to downstream epics, append to the `## Comments` section of the provider epic's file:
+1. For epics that provide interfaces to downstream epics, append to the `## Comments` section of the provider epic's file:
 
 ```markdown
 Provides interfaces to P<N>.E<M>: <consumer_epic_name>.
@@ -525,11 +507,11 @@ After all epics are created, regenerate `$EIGEN_ROOT/eigen_initiative/_index.md`
 
 ## Phase <N>: <e2e_summary>
 
-| Epic | ID | Name | Features | Wave | State |
-|------|----|------|----------|------|-------|
-| 1    | P<N>.E1 | <epic_name> | <feature_count> | 1 | open |
-| 2    | P<N>.E2 | <epic_name> | <feature_count> | 2 | open |
-| 3    | P<N>.E3 | E2E Testing | 0 | 3 | open |
+| Epic | ID | Name | Features | State |
+|------|----|------|----------|-------|
+| 1    | P<N>.E1 | <epic_name> | <feature_count> | open |
+| 2    | P<N>.E2 | <epic_name> | <feature_count> | open |
+| 3    | P<N>.E3 | E2E Testing | 0 | open |
 ...
 ```
 
@@ -539,11 +521,11 @@ If `_index.md` already exists with content from other phases, merge the new phas
 
 ## Stage 3: Generate Phase-Level Artifacts
 
-### 3.1 Generate Epic DAG
+### 3.1 Generate Epic Manifest
 
 Ensure feedback directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/`
 
-Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`:
+Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_manifest.json`:
 
 ```json
 {
@@ -551,6 +533,7 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`:
   "iteration": 1,
   "initiative": "<initiative name>",
   "epic_count": <count>,
+  "execution_order": ["P<N>.E1", "P<N>.E2", "P<N>.E3", "P<N>.E<last>"],
   "cross_phase_inputs": [
     {
       "feature_id": "<ID>",
@@ -567,8 +550,6 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`:
       "description": "<brief description>",
       "features": ["<feature IDs>"],
       "clusters_included": ["<cluster IDs>"],
-      "blocked_by": [],
-      "provides_to": ["P<N>.E2"],
       "interfaces_provided": [
         {
           "interface_name": "<name>",
@@ -577,7 +558,6 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`:
           "concrete_files": ["<file paths>"]
         }
       ],
-      "interfaces_consumed": [],
       "validation_summary": "<what can be verified after this epic completes>"
     },
     {
@@ -588,29 +568,8 @@ Write `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`:
       "description": "Full phase-level E2E test suite",
       "features": [],
       "clusters_included": [],
-      "blocked_by": ["P<N>.E1", "P<N>.E2", "...all other epics"],
-      "provides_to": [],
       "interfaces_provided": [],
-      "interfaces_consumed": [],
       "validation_summary": "Phase-level E2E tests pass: full data flow from input to output"
-    }
-  ],
-  "execution_waves": [
-    {
-      "wave": 1,
-      "epics": ["P<N>.E1", "P<N>.E3"],
-      "rationale": "No upstream epic dependencies"
-    },
-    {
-      "wave": 2,
-      "epics": ["P<N>.E2"],
-      "rationale": "Depends on P<N>.E1 interfaces"
-    },
-    {
-      "wave": 3,
-      "epics": ["P<N>.E<last>"],
-      "rationale": "E2E Testing — blocked by all other epics",
-      "type": "e2e"
     }
   ],
   "phase_e2e_test": "<phase-level E2E test description>",
@@ -705,24 +664,20 @@ After generating all files and creating epic files, print:
 Phase: <N> — <e2e_summary>
 Total features: <count>
 Epics: <count> (including E2E Testing epic)
+Execution order: P<N>.E1 → P<N>.E2 → ... → P<N>.E<last> (E2E Testing)
 EIGEN_ROOT: $EIGEN_ROOT
 
 Epics Created (Phase <N>):
-  P<N>.E1: <name> (<feature_count> features) — Wave 1
-  P<N>.E2: <name> (<feature_count> features) — Wave 2 ← blocked by P<N>.E1
-  P<N>.E3: E2E Testing (0 features) — Wave 3 ← blocked by all
+  P<N>.E1: <name> (<feature_count> features)
+  P<N>.E2: <name> (<feature_count> features)
+  P<N>.E<last>: E2E Testing (0 features)
 
-Epic DAG:
-  Wave 1: P<N>.E1 (<name>)
-  Wave 2: P<N>.E2 (<name>) ← blocked by P<N>.E1
-  Wave 3: P<N>.E3 (E2E Testing) ← blocked by P<N>.E1, P<N>.E2
-
-Inter-Epic Interfaces:
+Epic Outputs (interfaces):
   P<N>.E1 → P<N>.E2: <interface_name> (<contract>)
   ...
 
 Files generated:
-  $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json
+  $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_manifest.json
   $EIGEN_ROOT/eigen_initiative/phases/phase_N/phase_e2e_config.json
   $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_1/epic.md
   $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_2/epic.md
@@ -739,16 +694,7 @@ Next steps:
   3. Then /create_issues_from_plan_swarm → /orchestrate_swarm → /review_swarm_pr
 ```
 
-### Commit Pipeline Artifacts
-
-Commit all epic artifacts and pipeline state to `$EIGEN_BRANCH`:
-
-```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/phase_N/
-git commit -m "pipeline: space_split phase <N> — <epic_count> epics created"
-git push origin $EIGEN_BRANCH
-```
+Then run the **On Exit** CLI commands.
 
 ---
 
@@ -756,4 +702,4 @@ git push origin $EIGEN_BRANCH
 
 After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
 
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+**Your only responsibility**: run the On Exit CLI commands accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.

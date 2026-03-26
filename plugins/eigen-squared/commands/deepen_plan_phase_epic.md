@@ -5,107 +5,72 @@ description: Review plan_phase_epic output with parallel research agents, produc
 
 # Deepen Plan Phase Epic — Plan Review & Convergence
 
-## Introduction
+## Pipeline Context
 
-This command takes the output of `/plan_phase_epic` (a `plan.md` file) and subjects it to comprehensive review by parallel research, skill, and review agents. Every structural, strategic, and parallelization issue is diagnosed.
-
-**This command never modifies the plan file.** All findings, research insights, and recommendations go into a structured feedback JSON file. This follows the same separation principle as all other deepen commands.
-
-Diagnosed errors are written as structured lesson JSONs to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/`. These lessons are later consumed by `/compound_improve` to permanently improve the `plan_phase_epic` command itself.
-
-## Environment Variables
-
-This command uses the same environment variables as all eigen-squared commands:
-
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
-
-### On Entry: Validate Environment
-
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-
-### Epic Auto-Detection
-
-No arguments are required. The target phase and epic are auto-detected from the pipeline state.
-
-### Sync with Remote
-
-```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
+```
+plan_phase_epic ──► deepen_plan_phase_epic ──► plan_phase_epic (iterate) ──► ... ──► converged ──► create_issues_from_plan_swarm
 ```
 
-### Auto-Detection
+You are the **review partner** for `plan_phase_epic`. Your job:
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
-   ```
-   ERROR: No pipeline_state.json found at $EIGEN_ROOT/eigen_initiative/phases/
-   Run /time_split, /bootstrap, /space_split, and /plan_phase_epic first.
-   ```
-2. Scan `state.phases` to find the first phase N (in numeric order) where `space_split` has converged. Within that phase, scan `state.phases[N].plans` to find the first epic M (in wave order) where:
-   - `plan_phase_epic.status == "completed"` OR `plan_phase_epic.status == "iterating"` (plan has run)
-   - AND `plan_phase_epic.convergence.converged == false` (not yet converged)
-3. If no such phase+epic is found → **STOP.** Print:
-   ```
-   No epic is ready for deepen_plan_phase_epic.
-   Either all plans have converged, or plan_phase_epic has not run yet.
-   Run /plan_phase_epic if needed, or check pipeline_state.json.
-   ```
-4. The detected phase N and epic M determine:
-   - **Plan file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`
-   - **Epic file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`
-   - **Feedback file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/deepen_plan_phase_epic_feedback.json`
-   - **Lessons directory**: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/`
-   - **Epic ID**: `P<N>.E<M>`
-
-Print: `Auto-detected Phase <N>, Epic <M> (P<N>.E<M>) for deepen_plan_phase_epic.`
+1. Take the output of `/plan_phase_epic` (a `plan.md` file) and subject it to comprehensive review by parallel research, skill, and review agents. Every structural, strategic, and parallelization issue is diagnosed.
+2. **Never modify the plan file.** All findings, research insights, and recommendations go into a structured feedback JSON file. This follows the same separation principle as all other deepen commands.
+3. **You are the convergence authority.** Only this command decides when a plan is good enough to proceed to `create_issues_from_plan_swarm`.
+4. Diagnosed errors are written as structured lesson JSONs to the lessons directory. These lessons are later consumed by `/compound_improve` to permanently improve the `plan_phase_epic` command itself.
+5. You operate at **per-epic scope** within a phase.
 
 ---
 
-## Pipeline Awareness
+## On Entry
 
-Deepen plan phase epic operates at per-epic scope within a phase. Load the `pipeline-state-schema` skill for the full schema, field definitions, and feedback lifecycle.
+The `eigen-squared` CLI provides all context as a JSON payload. Parse it on entry:
 
-### On Entry
+```json
+{
+  "command": "deepen_plan_phase_epic",
+  "branch": "main",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "epic": 2,
+  "iteration": 2,
+  "main_command_iteration": 3,
+  "main_command_outputs": {
+    "plan_file": "phases/phase_1/epic_2/plan.md",
+    "phase_manifest": "phases/phase_1_manifest.md"
+  },
+  "lessons_dir": "eigen_lessons/plan_phase_epic/",
+  "recommendations": [],
+  "previous_feedback_path": "phases/phase_1/epic_2/feedback/deepen_plan_phase_epic_feedback.json",
+  "previous_feedback_exists": true
+}
+```
 
-The pipeline state was already read during Epic Auto-Detection. Now check deepen-specific state:
+All paths are relative to `$EIGEN_ROOT/eigen_initiative/` unless otherwise noted. If any required field is missing or the CLI exits with an error, **STOP** and display the error.
 
-- Check `state.phases[N].plans[M].deepen_plan_phase_epic.feedback_consumed`:
-  - `feedback_consumed == false` AND feedback file exists → warn: "Existing feedback has not been consumed by plan_phase_epic yet. Re-analyzing will overwrite it." Proceed anyway.
-- Read current iteration to determine iteration context.
+---
 
-### On Exit
+## On Exit
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-- Initialize `state.phases[N].plans[M].deepen_plan_phase_epic` if it doesn't exist
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.status` to `"completed"`
-- Increment `state.phases[N].plans[M].deepen_plan_phase_epic.iteration`
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.last_run_at` to current ISO 8601 timestamp
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.feedback_path` to the feedback file path
-- Set `state.phases[N].plans[M].deepen_plan_phase_epic.feedback_consumed` to `false` (fresh feedback)
-- Set `state.phases[N].plans[M].plan_phase_epic.feedback_consumed` to `false` (signal to plan_phase_epic)
-- Update `state.phases[N].plans[M].deepen_plan_phase_epic.findings_summary` with counts
-- If convergence was decided:
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.converged` to `true`
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.decided_by` to `"deepen_plan_phase_epic"`
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.decided_at` to current ISO 8601 timestamp
-  - Set `state.phases[N].plans[M].plan_phase_epic.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Stage 4.5)
-- If continuing iteration:
-  - Set `state.phases[N].plans[M].plan_phase_epic.status` to `"iterating"`
-- Set `updated_at` to current timestamp
+Run the following CLI commands to record results:
+
+```bash
+eigen-squared complete deepen_plan_phase_epic --phase <phase> --epic <epic> --feedback-path <path> --findings-summary '{...}'
+```
+
+If converging:
+```bash
+eigen-squared mark-converged plan_phase_epic --phase <phase> --epic <epic> --reason "..."
+```
+
+If converging and there are downstream recommendations:
+```bash
+eigen-squared add-recommendation --from-cmd deepen_plan_phase_epic --target create_issues_from_plan_swarm --iteration <main_command_iteration> --text "..."
+```
+
+Commit all artifacts:
+```bash
+eigen-squared commit-state --message "pipeline: deepen plan P<phase>.E<epic> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/feedback/,eigen_initiative/eigen_lessons/plan_phase_epic/
+```
 
 ---
 
@@ -113,7 +78,7 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
 
 ### Detect Iteration Context
 
-1. Check if the feedback file already exists (previous feedback from an earlier deepen run).
+1. Check if the feedback file already exists (previous feedback from an earlier deepen run). Use `previous_feedback_path` and `previous_feedback_exists` from the CLI context.
 2. If it exists, read it for comparison, oscillation detection, and progress tracking.
 3. If no previous feedback exists, this is the first deepen iteration.
 
@@ -134,12 +99,12 @@ This protocol is deterministic: file paths don't change between reformulations o
 
 ### Convergence Decision Protocol
 
-After collecting all findings (Stage 5), apply these convergence rules **in order**:
+After collecting all findings (Stage 4), apply these convergence rules **in order**:
 
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain AND Parallelization Strategy validates clean.
    - Rationale: "All significant issues resolved."
 
-2. **Converge if**: iteration limit reached (`state.phases[N].plans[M].deepen_plan_phase_epic.iteration >= 8`).
+2. **Converge if**: iteration limit reached (iteration >= 8).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
 3. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by file path, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the findings are cycling without resolution).
@@ -156,26 +121,26 @@ After collecting all findings (Stage 5), apply these convergence rules **in orde
 
 ### 0.1 Read Plan File
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If it doesn't exist → **STOP.** Print: "No plan found. Run `/plan_phase_epic` first."
+1. Read the plan file at `main_command_outputs.plan_file` (resolved against `$EIGEN_ROOT/eigen_initiative/`). If it doesn't exist → **STOP.** Print: "No plan found. Run `/plan_phase_epic` first."
 2. Extract and identify each major section: Strategic Overview, Technical Strategy, Implementation Approach, Success Criteria, Gap Analysis Results, Parallelization Strategy.
 
 ### 0.2 Read Context Files
 
 1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md` — the epic definition (features, blackbox specs, interfaces)
-2. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md` — the parent phase manifest
+2. Read the phase manifest at `main_command_outputs.phase_manifest` (resolved against `$EIGEN_ROOT/eigen_initiative/`)
 3. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json` — bootstrap context (entity paths, tooling decisions)
-4. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json` — inter-epic dependency context
+4. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_manifest.json` — inter-epic dependency context
 
 When reviewing the plan, verify that its claims about the codebase (entity counts, field names, SDK usage, test coverage) match what's actually in `$EIGEN_ROOT`. The plan should have checked the code — flag findings where it relied on docs without verifying.
 
 ### 0.3 Load Existing Lessons
 
-1. Glob `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/*.json`.
+1. Glob `$EIGEN_ROOT/eigen_initiative/<lessons_dir>*.json` (using `lessons_dir` from CLI context).
 2. Read and parse each lesson JSON — used to avoid duplicating known issues.
 
 ### 0.4 Read Upstream Recommendations (Awareness)
 
-Read `recommendations.plan_phase_epic` from `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. Filter by current phase and epic number (include entries where `epic` is null — phase-wide observations).
+Read `recommendations` from the CLI context. Filter by current phase and epic number (include entries where `epic` is null — phase-wide observations).
 
 Use as additional context when reviewing the plan:
 - They inform your analysis but do NOT constitute findings on their own.
@@ -281,7 +246,7 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/e
   "epic": <M>,
   "epic_id": "P<N>.E<M>",
   "iteration": "<current deepen iteration>",
-  "analyzed_iteration": "<plan_phase_epic iteration that was analyzed>",
+  "analyzed_iteration": "<main_command_iteration from CLI context>",
   "created_at": "<ISO 8601>",
   "source_outputs_analyzed": {
     "plan_file": "phases/phase_N/epic_M/plan.md",
@@ -364,14 +329,15 @@ Apply the Convergence Decision Protocol to set `convergence.decision`.
 
 **Skip this section entirely if convergence decision is NOT "converged".**
 
-At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands. See the `pipeline-state-schema` skill for the full recommendations specification.
+At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands.
 
 1. **Filter findings with downstream impact:** Only low-severity findings where `downstream_impact.affects_commands` is non-empty.
 2. **For `create_issues_from_plan_swarm`**, draft a 1-2 sentence observation about the plan's Parallelization Strategy and its implications for task generation.
-3. **Write to pipeline_state.json** — update `recommendations.create_issues_from_plan_swarm`:
-   - Replace all entries where `from` == `"deepen_plan_phase_epic"` (preserve entries from other deepen commands).
-   - Max 5 entries per target command.
-   - Each entry: `{ "from": "deepen_plan_phase_epic", "at_iteration": <current iteration>, "phase": <N>, "epic": <M>, "text": "<observation>" }`
+3. **Write via CLI** — for each recommendation:
+   ```bash
+   eigen-squared add-recommendation --from-cmd deepen_plan_phase_epic --target create_issues_from_plan_swarm --iteration <main_command_iteration> --text "<observation>"
+   ```
+   - Max 5 recommendations per target command.
 4. If no findings have downstream impact, do not write any recommendations.
 
 **Constraints:**
@@ -416,11 +382,11 @@ For each new lesson, check the existing lessons loaded in Stage 0.3:
 
 ### 5.3 Write Lesson Files
 
-1. Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/`
-2. For each new non-duplicate lesson, write to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/<id>.json`
+1. Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/<lessons_dir>`
+2. For each new non-duplicate lesson, write to: `$EIGEN_ROOT/eigen_initiative/<lessons_dir><id>.json`
 3. Print summary:
    ```
-   Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/
+   Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/<lessons_dir>
    Skipped: <M> duplicates of existing lessons
    ```
 
@@ -455,7 +421,7 @@ Plan Change Guidance:
 
 Convergence: <CONVERGED — reason | CONTINUE — N high/medium-severity findings remain>
 Feedback written to: $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/deepen_plan_phase_epic_feedback.json
-Lessons: <N> new lessons written to $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/
+Lessons: <N> new lessons written to $EIGEN_ROOT/eigen_initiative/<lessons_dir>
 
 Next steps:
   If CONTINUE:
@@ -469,10 +435,7 @@ Next steps:
 ### Commit Pipeline Artifacts
 
 ```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/phase_N/epic_M/feedback/ eigen_initiative/phases/pipeline_state.json
-git commit -m "pipeline: deepen plan P<N>.E<M> — iteration <N>, <CONVERGED|CONTINUE>"
-git push origin $EIGEN_BRANCH
+eigen-squared commit-state --message "pipeline: deepen plan P<phase>.E<epic> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/feedback/,eigen_initiative/eigen_lessons/plan_phase_epic/
 ```
 
 ---
@@ -482,13 +445,11 @@ git push origin $EIGEN_BRANCH
 1. **NEVER modify plan.md** — all findings go to the feedback file. Plan modification is owned by `/plan_phase_epic`.
 2. **Research insights flow through the feedback file** — the `plan_change_guidance.research_insights` array is the structured equivalent of research depth.
 3. **Feedback files are owned by this command** — `plan_phase_epic` reads but never deletes them.
-4. **pipeline_state.json is the single source of truth** — per-epic plan state lives at `state.phases[N].plans[M]`.
+4. **The CLI is the single source of truth** — all pipeline state reads and writes go through `eigen-squared` CLI commands, never through direct file manipulation of pipeline state.
 5. **Convergence decided by this command only** — max 8 iterations, requires all high AND medium findings resolved.
 
 ---
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

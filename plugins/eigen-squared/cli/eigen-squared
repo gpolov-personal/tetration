@@ -1,0 +1,5 @@
+#!/bin/bash
+# eigen-squared CLI wrapper
+# Installed by eigen_start into $EIGEN_ROOT/.eigen/
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec python3 -m cli "$@"
