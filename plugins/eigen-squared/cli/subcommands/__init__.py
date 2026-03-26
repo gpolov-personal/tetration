@@ -1108,15 +1108,6 @@ def cmd_install(args: Namespace) -> int:
         env_lines.append(f'export EIGEN_DISCORD_WEBHOOK="{args.discord}"')
     (eigen_dir / "env").write_text("\n".join(env_lines) + "\n")
 
-    # Write minimal hook script
-    hook_content = f"""#!/bin/bash
-source "$(dirname "$0")/env" 2>/dev/null || exit 0
-python3 -m cli schedule-next 2>/dev/null || true
-"""
-    hook_path = eigen_dir / "pipeline_hook.sh"
-    hook_path.write_text(hook_content)
-    hook_path.chmod(0o755)
-
     # Add .eigen/ to .gitignore
     gitignore = root / ".gitignore"
     if gitignore.exists():
@@ -1130,6 +1121,5 @@ python3 -m cli schedule-next 2>/dev/null || true
     print(json.dumps({
         "status": "installed",
         "eigen_dir": str(eigen_dir),
-        "hook": str(hook_path),
     }))
     return 0

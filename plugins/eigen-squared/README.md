@@ -46,7 +46,7 @@ The autonomous pipeline requires [claude-tasks](https://github.com/anthropics/cl
 claude-tasks serve
 ```
 
-The pipeline uses a Stop hook that fires when each Claude Code session ends. The hook reads the pipeline state, determines what to run next, and schedules it via the claude-tasks API. This is how commands chain autonomously.
+Each command calls `eigen-squared schedule-next` at the end of its On Exit to chain the next command.
 
 ### Claude Code with agent teams
 
@@ -82,10 +82,9 @@ claude
 1. Configures environment variables in `.claude/settings.json`
 2. Verifies claude-tasks is running
 3. Checks initiative documents exist
-4. Installs the pipeline controller hook
-5. Initializes pipeline state
+4. Initializes pipeline state
 
-When you exit the session, the Stop hook fires and schedules `time_split` automatically. From there, the pipeline runs autonomously until a phase completes.
+Each command calls `eigen-squared schedule-next` at the end of its On Exit to chain the next command. From `time_split` onward, the pipeline runs autonomously until a phase completes.
 
 ## Pipeline state management
 
@@ -211,9 +210,8 @@ $EIGEN_ROOT/
       plan_phase_epic/
       review_swarm_pr/
   .eigen/
-    pipeline_hook.sh                  # Stop hook (2-line CLI delegator)
     env                               # Pipeline environment variables
-    hook_log.jsonl                    # Hook execution log
+    hook_log.jsonl                    # Scheduler execution log
 ```
 
 ## CLI reference
@@ -252,8 +250,8 @@ $EIGEN_ROOT/
 
 | Command | Purpose |
 |---------|---------|
-| `eigen-squared schedule-next [--delay-minutes <N>]` | Determine + schedule next command via claude-tasks |
-| `eigen-squared install --root <p> --branch <b> --tasks-api <u>` | Install hook + CLI in project |
+| `eigen-squared schedule-next [--delay-minutes <N>]` | Called by every command's On Exit to chain the next command via claude-tasks |
+| `eigen-squared install --root <p> --branch <b> --tasks-api <u>` | Install pipeline environment in project |
 
 ## Notifications
 
@@ -291,6 +289,6 @@ plugins/eigen-squared/
     subcommands/                # All subcommand implementations
     tests/                      # 91 tests
   commands/                     # Pipeline command prompts (13 commands)
-  hooks/                        # Stop hook (pipeline_hook.sh)
+  hooks/                        # (reserved)
   skills/                       # Supporting skills (language-profiles, etc.)
 ```

@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fix", action="store_true", help="Fix missing fields with defaults")
 
     # ── install ──
-    p = sub.add_parser("install", help="Install hook + CLI in project")
+    p = sub.add_parser("install", help="Install pipeline environment in project")
     p.add_argument("--root", required=True, help="Project root path")
     p.add_argument("--branch", required=True, help="Default branch name")
     p.add_argument("--tasks-api", required=True, help="claude-tasks API URL")

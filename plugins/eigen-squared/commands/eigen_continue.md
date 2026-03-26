@@ -155,6 +155,7 @@ Set the phase review status to `testing` with the generated recipe:
 ```bash
 eigen-squared set-phase-review --phase <N> --status testing --testing-recipe "<generated recipe text>"
 eigen-squared commit-state --message "pipeline: phase <N> review — testing"
+eigen-squared schedule-next
 ```
 
 ---
@@ -192,6 +193,7 @@ Do NOT update pipeline state. Exit.
    ```bash
    eigen-squared set-phase-review --phase <N> --status approved
    eigen-squared commit-state --message "pipeline: phase <N> review — approved"
+   eigen-squared schedule-next
    ```
 
 2. Determine next phase:
@@ -205,9 +207,8 @@ Do NOT update pipeline state. Exit.
 
    Phase <N>: approved at <timestamp>
 
-   The `eigen-squared schedule-next` hook will schedule the next phase
-   automatically when this session ends. The autonomous pipeline will
-   resume and run Phase <N+1> to completion.
+   The `eigen-squared schedule-next` call above has scheduled the next phase.
+   The autonomous pipeline will resume and run Phase <N+1> to completion.
 
    When Phase <N+1> finishes, run /eigen_continue again.
    ```
@@ -234,4 +235,4 @@ Do NOT update pipeline state. Exit.
 - **Never skips user confirmation** — the pipeline MUST NOT cross phase boundaries without human approval.
 - **Merge order matters** — PRs should be merged in epic order (E1 first, E2E Testing last).
 - **Testing recipe is generated, not hardcoded** — it reads from `phase_e2e_config.json` and the `language-profiles` skill.
-- **Pipeline continuation** — the `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
+- **Pipeline continuation** — after updating pipeline state, call `eigen-squared schedule-next` to schedule the next command. It reads the pipeline state (updated by the CLI) and schedules the next command automatically.

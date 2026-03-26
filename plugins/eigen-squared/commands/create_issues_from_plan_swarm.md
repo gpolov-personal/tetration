@@ -97,6 +97,7 @@ After creating tasks, manifest, and integration branch:
 eigen-squared checkout-branch --phase <phase> --epic <epic> --create
 eigen-squared complete create_issues_from_plan_swarm --phase <phase> --epic <epic> --manifest-path eigen_initiative/phases/phase_<phase>/epic_<epic>/swarm-manifest.json --integration-branch feat/P<phase>.E<epic>
 eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+eigen-squared schedule-next
 ```
 
 ## Output
@@ -478,11 +479,12 @@ The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/
 
 ```bash
 eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+eigen-squared schedule-next
 ```
 
 ### 5.3 Branch state
 
-After committing and pushing, the working directory remains on the `feat/P<N>.E<M>` integration branch. The `eigen-squared schedule-next` hook handles checking out the correct branch for the next command (orchestrate_swarm on this same branch, or EIGEN_BRANCH for other commands).
+After committing and pushing, the working directory remains on the `feat/P<N>.E<M>` integration branch. The schedule-next call in On Exit handles checking out the correct branch for the next command (orchestrate_swarm on this same branch, or EIGEN_BRANCH for other commands).
 
 ---
 
@@ -557,4 +559,4 @@ Before finalizing, verify:
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
+The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API. No hook or external trigger is needed — the command schedules its own successor before the session ends.

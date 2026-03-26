@@ -120,6 +120,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 ```bash
 eigen-squared complete plan_phase_epic --phase <phase> --epic <epic> --plan-file phases/phase_<phase>/epic_<epic>/plan.md
 eigen-squared commit-state --message "pipeline: plan P<phase>.E<epic> — plan created" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+eigen-squared schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags, plan entry initialization if needed.
@@ -400,6 +401,7 @@ Run the On Exit commands:
 ```bash
 eigen-squared complete plan_phase_epic --phase <phase> --epic <epic> --plan-file phases/phase_<phase>/epic_<epic>/plan.md
 eigen-squared commit-state --message "pipeline: plan P<phase>.E<epic> — plan created" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+eigen-squared schedule-next
 ```
 
 ### 4.3 Print Summary
@@ -441,4 +443,4 @@ Next steps:
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
+The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API. No hook or external trigger is needed — the command schedules its own successor before the session ends.
