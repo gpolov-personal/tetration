@@ -82,7 +82,8 @@ claude
 1. Configures environment variables in `.claude/settings.json`
 2. Verifies claude-tasks is running
 3. Checks initiative documents exist
-4. Initializes pipeline state
+4. Installs the `eigen-squared` CLI globally (`~/.local/bin/eigen-squared`) — a small wrapper that sets PYTHONPATH to the plugin cache and calls `python3 -m cli`
+5. Initializes pipeline state
 
 Each command calls `eigen-squared schedule-next` at the end of its On Exit to chain the next command. From `time_split` onward, the pipeline runs autonomously until a phase completes.
 
