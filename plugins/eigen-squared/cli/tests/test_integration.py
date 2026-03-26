@@ -22,14 +22,16 @@ def pipeline_env(tmp_path):
     phases_dir = eigen_root / "eigen_initiative" / "phases"
     phases_dir.mkdir(parents=True)
 
-    # Create a mock epic_dag.json for phase 1
+    # Create a mock epic_manifest.json for phase 1
     phase_dir = phases_dir / "phase_1"
     phase_dir.mkdir()
-    dag = {
-        "epics": [{"number": 1, "blocked_by": []}],
-        "waves": {"wave_1": [1]},
+    manifest = {
+        "phase": 1,
+        "epic_count": 1,
+        "execution_order": ["P1.E1"],
+        "epics": [{"id": "P1.E1", "epic_number": 1, "name": "Test Epic"}],
     }
-    (phase_dir / "epic_dag.json").write_text(json.dumps(dag))
+    (phase_dir / "epic_manifest.json").write_text(json.dumps(manifest))
 
     old_root = os.environ.get("EIGEN_ROOT")
     old_branch = os.environ.get("EIGEN_BRANCH")
@@ -128,7 +130,7 @@ class TestFullPipelineWalk:
 
         # space_split cycle
         assert run_json(["next", "--json"])["command"] == "space_split"
-        run(["complete", "space_split", "--phase", "1", "--epic-dag", "dag.json", "--e2e-config", "e2e.json"])
+        run(["complete", "space_split", "--phase", "1", "--epic-manifest", "dag.json", "--e2e-config", "e2e.json"])
         assert run_json(["next", "--json"])["command"] == "deepen_space_split"
         run(["complete", "deepen_space_split", "--phase", "1", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "space_split", "--phase", "1", "--reason", "clean"])
@@ -208,3 +210,110 @@ class TestFullPipelineWalk:
         assert "Phase 1:" in captured.out
         assert "Phase 2:" in captured.out
         assert "time_split" in captured.out
+
+    def test_multi_phase_2epic_walk(self, pipeline_env):
+        """Full 2-phase, 2-epic pipeline walk with phase approval transitions."""
+        # Create epic_manifest for phase 2
+        phase2_dir = pipeline_env / "eigen_initiative" / "phases" / "phase_2"
+        phase2_dir.mkdir(parents=True, exist_ok=True)
+        manifest2 = {
+            "phase": 2, "epic_count": 1,
+            "execution_order": ["P2.E1"],
+            "epics": [{"id": "P2.E1", "epic_number": 1}],
+        }
+        (phase2_dir / "epic_manifest.json").write_text(json.dumps(manifest2))
+
+        run(["init", "--initiative", "Test", "--phase-count", "2"])
+
+        # === TIME_SPLIT (initiative-level, once) ===
+        run(["complete", "time_split", "--phase-count", "2", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+
+        # === PHASE 1 ===
+        assert run_json(["next", "--json"])["command"] == "bootstrap"
+        assert run_json(["next", "--json"])["context"]["phase"] == 1
+
+        # Bootstrap P1
+        run(["complete", "bootstrap", "--phase", "1", "--output-path", "r.json"])
+        run(["complete", "deepen_bootstrap", "--phase", "1", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "bootstrap", "--phase", "1", "--reason", "clean"])
+
+        # Space_split P1
+        run(["complete", "space_split", "--phase", "1", "--epic-manifest", "m.json", "--e2e-config", "e.json"])
+        run(["complete", "deepen_space_split", "--phase", "1", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split", "--phase", "1", "--reason", "clean"])
+
+        # Epic P1.E1
+        result = run_json(["next", "--json"])
+        assert result["command"] == "plan_phase_epic"
+        assert result["context"]["epic"] == 1
+
+        run(["init-plan", "--phase", "1", "--epic", "1"])
+        run(["complete", "plan_phase_epic", "--phase", "1", "--epic", "1", "--plan-file", "p.md"])
+        run(["complete", "deepen_plan_phase_epic", "--phase", "1", "--epic", "1",
+             "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "plan_phase_epic", "--phase", "1", "--epic", "1", "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
+             "--pr-url", "http://pr/1", "--pr-number", "1"])
+        run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+             "--report-path", "r.md", "--findings-summary", '{"p1":0,"p2":0,"p3":0}'])
+        run(["mark-converged", "swarm_execution", "--phase", "1", "--epic", "1",
+             "--reason", "clean"])
+
+        # All epics P1 converged → human checkpoint
+        result = run_json(["next", "--json"])
+        assert result["command"] is None, "Should be human checkpoint after all epics converge"
+
+        # Phase review: testing → still None
+        run(["set-phase-review", "--phase", "1", "--status", "testing"])
+        result = run_json(["next", "--json"])
+        assert result["command"] is None, "Should still be None during testing"
+
+        # Phase review: approved → Phase 2 bootstrap
+        run(["set-phase-review", "--phase", "1", "--status", "approved"])
+        result = run_json(["next", "--json"])
+        assert result["command"] == "bootstrap", "Phase 2 should start with bootstrap"
+        assert result["context"]["phase"] == 2, "Should be phase 2, not phase 1"
+
+        # === PHASE 2 ===
+        # Bootstrap P2
+        run(["complete", "bootstrap", "--phase", "2", "--output-path", "r.json"])
+        run(["complete", "deepen_bootstrap", "--phase", "2", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "bootstrap", "--phase", "2", "--reason", "clean"])
+
+        # Space_split P2
+        run(["complete", "space_split", "--phase", "2", "--epic-manifest", "m.json", "--e2e-config", "e.json"])
+        run(["complete", "deepen_space_split", "--phase", "2", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split", "--phase", "2", "--reason", "clean"])
+
+        # Epic P2.E1
+        run(["init-plan", "--phase", "2", "--epic", "1"])
+        run(["complete", "plan_phase_epic", "--phase", "2", "--epic", "1", "--plan-file", "p.md"])
+        run(["complete", "deepen_plan_phase_epic", "--phase", "2", "--epic", "1",
+             "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "plan_phase_epic", "--phase", "2", "--epic", "1", "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "2", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P2.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "2", "--epic", "1",
+             "--pr-url", "http://pr/2", "--pr-number", "2"])
+        run(["complete", "review_swarm_pr", "--phase", "2", "--epic", "1",
+             "--report-path", "r.md", "--findings-summary", '{"p1":0,"p2":0,"p3":0}'])
+        run(["mark-converged", "swarm_execution", "--phase", "2", "--epic", "1",
+             "--reason", "clean"])
+
+        # Phase 2 complete → human checkpoint
+        result = run_json(["next", "--json"])
+        assert result["command"] is None
+
+        # Approve phase 2 → pipeline complete
+        run(["set-phase-review", "--phase", "2", "--status", "approved"])
+        result = run_json(["next", "--json"])
+        assert result["command"] is None, "All phases approved — pipeline complete"

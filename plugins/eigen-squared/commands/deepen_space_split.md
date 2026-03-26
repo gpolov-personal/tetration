@@ -5,99 +5,117 @@ description: Review space_split output with parallel research agents, diagnose e
 
 # Deepen Space Split — Epic Decomposition Review
 
-## Introduction
+## Pipeline Context
 
-This command takes the output of `/space_split` (epic definition files, `epic_dag.json`, and `phase_e2e_config.json`) and subjects it to comprehensive review by parallel research and review agents. Every structural, interface, epic formation, and cross-epic consistency issue is diagnosed.
+```
+space_split ──► DEEPEN_SPACE_SPLIT ──► space_split (if CONTINUE)
+                       │                      │
+                       └── (if CONVERGED) ──► plan_phase_epic
+```
 
-`/space_split` produces epic definitions, a DAG, and epic files — it does NOT produce per-epic plans or swarm manifests. Those are created later by `/plan_phase_epic` and `/create_issues_from_plan_swarm` when each epic is ready for execution. This review command therefore validates the epic decomposition and epic file quality, not plans or manifests.
+**Role.** Review partner for `space_split`. This command takes the output of `/space_split` (epic definition files, `epic_manifest.json`, and `phase_e2e_config.json`) and subjects it to comprehensive review by parallel research and review agents. Every structural, interface, epic formation, and cross-epic consistency issue is diagnosed.
 
-Diagnosed errors are written as structured lesson JSONs to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/space_split/`. These lessons are later consumed by `/compound_improve` to permanently improve the `space_split` command itself.
+`/space_split` produces epic definitions, a manifest, and epic files — it does NOT produce per-epic plans or swarm manifests. Those are created later by `/plan_phase_epic` and `/create_issues_from_plan_swarm` when each epic is ready for execution. This review command therefore validates the epic decomposition and epic file quality, not plans or manifests.
 
-## Environment Variables
+**Convergence authority.** This command decides when `space_split` output is good enough. It sets convergence on the `space_split` stage and writes the rationale.
 
-This command uses the same environment variables as all eigen-squared commands:
+**Lesson writing.** Diagnosed errors are written as structured lesson JSONs to the initiative's lessons directory (`space_split/`). These lessons are later consumed by `/compound_improve` to permanently improve the `space_split` command itself.
 
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
+**Language.** All feedback, lessons, and summaries are written in the same language as the initiative files.
 
-### On Entry: Validate Environment
+## Environment
 
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
+Before anything else, verify:
 
-### Phase Auto-Detection
+- [ ] `$EIGEN_ROOT` is set and points to an existing directory
+- [ ] `$EIGEN_BRANCH` is set
 
-No arguments are required. The target phase is auto-detected from the pipeline state.
-
-### Sync with Remote
-
-Handled automatically by `eigen-squared get-context` — no manual sync needed.
-
-### Auto-Detection
-
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
-   ```
-   ERROR: No pipeline_state.json found at $EIGEN_ROOT/eigen_initiative/phases/
-   Run /time_split, /bootstrap, and /space_split first.
-   ```
-2. Scan `state.phases` to find the first phase N (in numeric order) where:
-   - `space_split.status == "completed"` OR `space_split.status == "iterating"` (space_split has run)
-   - AND `space_split.convergence.converged == false` (not yet converged)
-3. If no such phase is found → **STOP.** Print:
-   ```
-   No phase is ready for deepen_space_split.
-   Either all phases have converged, or space_split has not run yet.
-   Run /space_split if needed, or check pipeline_state.json for current status.
-   ```
-4. The detected phase number N determines:
-   - **Phase directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`
-   - **Feedback file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_space_split_feedback.json`
-   - **Lessons directory**: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/space_split/`
-
-Print: `Auto-detected Phase <N> for deepen_space_split.`
+If either is missing, **STOP** and tell the user which variable to set.
 
 ---
 
-## Pipeline Awareness
-
-The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
-
-### On Entry
+## On Entry
 
 ```bash
 eigen-squared get-context deepen_space_split --json
 ```
 
-If the CLI exits with an error, STOP and display it. Otherwise parse the returned JSON for `phase`, `iteration`, `previous_feedback_path`, `previous_feedback_exists`, `main_command_outputs`, and `lessons_dir`.
+If the CLI exits with an error (non-zero), **STOP** and display the error message. The CLI handles all pre-flight checks (pipeline_state existence, space_split status, convergence guard, overwrite warnings, git sync).
 
-### On Exit
+Otherwise parse the returned JSON:
 
-```bash
-eigen-squared complete deepen_space_split --phase <N> --feedback-path <feedback_file_path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+```json
+{
+  "command": "deepen_space_split",
+  "branch": "main",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "iteration": 2,
+  "main_command_iteration": 3,
+  "main_command_outputs": {
+    "epic_manifest": "phases/phase_1/epic_manifest.json",
+    "phase_e2e_config": "phases/phase_1/phase_e2e_config.json",
+    "phase_manifest": "phases/phase_1_manifest.md"
+  },
+  "lessons_dir": "eigen_lessons/space_split/",
+  "recommendations": [],
+  "previous_feedback_path": "phases/phase_1/feedback/deepen_space_split_feedback.json",
+  "previous_feedback_exists": true,
+  "overwrite_warning": "Existing feedback has not been consumed by space_split yet. Re-analyzing will overwrite it."
+}
 ```
 
-If converging:
+| Field | Use |
+|---|---|
+| `phase` | The target phase number N for this run. |
+| `iteration` | Current deepen_space_split iteration (for convergence limit checks). |
+| `main_command_iteration` | The space_split iteration whose output is being reviewed. Written into feedback as `analyzed_iteration`. |
+| `main_command_outputs.epic_manifest` | Relative path to epic_manifest.json (resolve against `paths_relative_to`). |
+| `main_command_outputs.phase_e2e_config` | Relative path to phase_e2e_config.json (resolve against `paths_relative_to`). |
+| `main_command_outputs.phase_manifest` | Relative path to the phase manifest (resolve against `paths_relative_to`). |
+| `lessons_dir` | Relative path to the lessons directory (resolve against `paths_relative_to`). |
+| `recommendations` | Upstream recommendations for space_split — use as awareness context. |
+| `previous_feedback_path` | Relative path to previous feedback file (resolve against `paths_relative_to`). |
+| `previous_feedback_exists` | Whether previous feedback exists — gates the Iteration Protocol. |
+| `overwrite_warning` | If set, display this warning to the user and proceed. |
+
+If `overwrite_warning` is present, print the warning and continue.
+
+## On Exit
+
+After completing the review, writing the feedback file, and writing lessons:
+
 ```bash
-eigen-squared mark-converged space_split --phase <N> --reason "<convergence rationale>"
+# Always — mark this deepen run complete
+eigen-squared complete deepen_space_split \
+  --phase <phase> \
+  --feedback-path <feedback_file_path> \
+  --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
 ```
 
-If adding downstream recommendations at convergence:
 ```bash
-eigen-squared add-recommendation --from-cmd deepen_space_split --target <target_cmd> --text "<observation>"
+# Conditional — only if convergence decision is "converged"
+eigen-squared mark-converged space_split --phase <phase> --reason "<convergence rationale>"
 ```
 
-The CLI handles all field updates atomically.
+```bash
+# Conditional — only at convergence, one call per recommendation
+eigen-squared add-recommendation \
+  --from-cmd deepen_space_split \
+  --target <target_cmd> \
+  --iteration <main_command_iteration> \
+  --text "<observation>"
+```
+
+Commit all artifacts:
+
+```bash
+eigen-squared commit-state \
+  --message "pipeline: deepen_space_split phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" \
+  --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/space_split/
+```
+
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
 
 ---
 
@@ -105,8 +123,8 @@ The CLI handles all field updates atomically.
 
 ### Detect Iteration Context
 
-1. Check if `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_space_split_feedback.json` already exists (previous feedback).
-2. If it exists, read it for comparison, oscillation detection, and progress tracking.
+1. Check if `previous_feedback_exists` is true in the CLI context (previous feedback).
+2. If it exists, read the file at `previous_feedback_path` (resolved against `paths_relative_to`) for comparison, oscillation detection, and progress tracking.
 3. If no previous feedback exists, this is the first deepen iteration.
 
 ### Finding Matching Protocol (iteration 2+)
@@ -131,7 +149,7 @@ After collecting all findings, apply these convergence rules **in order**:
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain.
    - Rationale: "All significant issues resolved."
 
-2. **Converge if**: iteration limit reached (`state.phases[N].deepen_space_split.iteration >= 8`).
+2. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
 3. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
@@ -160,87 +178,79 @@ For each finding that requires changes to epic files, produce explicit instructi
 
 ## Stage 0: Ingest
 
-### 0.1 Read Epic DAG
+### 0.1 Read Epic Manifest
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`.
-2. Extract: `phase` number, `initiative`, `epic_count`, `cross_phase_inputs`, `epics[]`, `execution_waves[]`, `phase_e2e_test`.
+1. Read the epic manifest at `main_command_outputs.epic_manifest` (resolved against `paths_relative_to`).
+2. Extract: `phase` number, `initiative`, `epic_count`, `cross_phase_inputs`, `epics[]`, `execution_order`, `phase_e2e_test`.
 
 ### 0.2 Read Phase E2E Config
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/phase_e2e_config.json`.
+1. Read the phase E2E config at `main_command_outputs.phase_e2e_config` (resolved against `paths_relative_to`).
 2. Extract: `phase_e2e_test`, `epic_validation_scenarios`, `phase_e2e_scenarios`.
 
 ### 0.3 Read Bootstrap Report
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`.
+1. Read the bootstrap report at `phases/phase_<N>/bootstrap-report.json` (resolved against `paths_relative_to`).
 2. If the file does not exist → **STOP.** Print:
    ```
-   ERROR: No bootstrap-report.json found at $EIGEN_ROOT/eigen_initiative/phases/phase_N/
+   ERROR: No bootstrap-report.json found for phase <N>.
    Bootstrap must be converged before running deepen_space_split.
    ```
 3. Extract: `entities_created`, `tooling_decisions`, `language`, `verification`, `delta_applied`.
 
 ### 0.4 Read Epic Files
 
-For each epic in the epic DAG's `epics[]`:
+For each epic in the epic manifest's `epics[]`:
 
-1. Read the epic file at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`. Parse the YAML frontmatter for title and labels, and the markdown body for content.
+1. Read the epic file at `phases/phase_<N>/epic_<M>/epic.md` (resolved against `paths_relative_to`). Parse the YAML frontmatter for title and labels, and the markdown body for content.
 2. If an epic file doesn't exist, warn: "Cannot read epic file — epic file body quality checks will be skipped for this epic."
 
 ### 0.5 Read Phase Manifest (parent)
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`.
+1. Read the phase manifest at `main_command_outputs.phase_manifest` (resolved against `paths_relative_to`).
 2. If found, parse YAML frontmatter and body.
 3. If not found, warn but proceed — some validations will be limited.
 
 ### 0.6 Load Existing Lessons
 
-1. Glob `$EIGEN_ROOT/eigen_initiative/eigen_lessons/space_split/*.json`.
+1. Glob `<lessons_dir>/*.json` (resolved against `paths_relative_to`).
 2. Read and parse each lesson JSON — used to avoid duplicating known issues in the lesson extraction phase.
 
 ### 0.7 Read Upstream Recommendations (Awareness)
 
-Read `recommendations.space_split` from `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
+The `recommendations` array from the CLI context contains upstream recommendations for `space_split`.
 
 Use these as additional context when reviewing space_split's output:
 - They inform your analysis but do NOT constitute findings on their own.
 - Do NOT create findings solely because a recommendation was not addressed.
 - You MAY reference a recommendation in a finding's rationale if you independently identify a related issue.
-- Pass relevant recommendations to review agents as background context alongside the epic_dag and phase manifest.
+- Pass relevant recommendations to review agents as background context alongside the epic manifest and phase manifest.
 
 ---
 
-## Stage 1: Epic DAG Validation
+## Stage 1: Epic Manifest Validation
 
-Spawn **all DAG validation agents in parallel:**
+Spawn **all manifest validation agents in parallel:**
 
-### 1.1 DAG Correctness Agent
+### 1.1 Epic Ordering Check
 
-```
-Prompt: "Validate the epic DAG structure.
+Verify the epic ordering is valid:
 
-Check:
-1. The epic DAG is acyclic — no epic transitively blocks itself
-2. Execution waves are consistent with blocked_by: if epic_b is blocked_by epic_a, epic_b must be in a LATER wave than epic_a
-3. Every epic_id in blocked_by references an epic that actually exists in the epics[] array
-4. Wave 1 contains at least one epic (some epics must have no blockers)
-5. Every epic appears in exactly one execution wave
+1. The `execution_order` array contains all epic IDs from `epics[]` exactly once.
+2. Epics are sequential (E1, E2, E3, ...).
+3. The E2E Testing epic is last in `execution_order`.
 
-Epic DAG:
-<epic_dag JSON>
-
-Report every violation: {epic_id, violation_type, details}"
-```
+If any check fails, record as an `epic_formation_error` finding with high severity.
 
 ### 1.2 Cluster Integrity Agent
 
 ```
 Prompt: "Check cluster integrity within epics.
 
-Rule: All features in a cluster should strongly be kept within the same epic. A cluster split across epics is a concern — only acceptable if there is a compelling reason (e.g., sequential epics where one blocks the other).
+Rule: All features in a cluster should strongly be kept within the same epic. A cluster split across epics is a concern — only acceptable if there is a compelling reason (e.g., sequential epics where an earlier epic provides interfaces consumed by a later one).
 
 Epic definitions (features per epic):
-<epics[] from epic_dag with their features lists>
+<epics[] from epic_manifest with their features lists>
 
 Phase manifest clusters:
 <clusters from phase_manifest>
@@ -253,20 +263,19 @@ Report every cluster that has features in more than one epic: {cluster_id, featu
 ```
 Prompt: "Validate that inter-epic interfaces are complete and consistent.
 
-For every dependency between epics (epic_b depends on epic_a):
-1. Does epic_a's interfaces_provided list include an interface consumed by epic_b?
-2. Does epic_b's interfaces_consumed list reference epic_a as provider?
-3. Is the contract description precise enough for implementation? (must specify data shape or API contract, not just a name)
-4. Do interfaces include concrete_files from the bootstrap? (file paths to entity stubs that define the contract)
-5. Are there any ORPHAN interfaces? (provided but never consumed, or consumed but never provided)
+For every epic that provides interfaces to later epics:
+1. Does the epic's interfaces_provided list include the interfaces that later epics need?
+2. Is the contract description precise enough for implementation? (must specify data shape or API contract, not just a name)
+3. Do interfaces include concrete_files from the bootstrap? (file paths to entity stubs that define the contract)
+4. Are there any ORPHAN interfaces? (provided but never consumed by any later epic)
 
-Epic DAG:
-<epic_dag JSON>
+Epic manifest:
+<epic_manifest JSON>
 
 Bootstrap entity map:
 <bootstrap_report.entities_created>
 
-Report: missing interfaces, orphan interfaces, vague contracts, missing concrete_files, mismatched provider/consumer pairs."
+Report: missing interfaces, orphan interfaces, vague contracts, missing concrete_files."
 ```
 
 ### 1.4 Epic Size Agent
@@ -280,7 +289,7 @@ Each epic should be a meaningful unit of work — not so small that planning ove
 - Is the sizing balanced relative to other epics in this phase?
 
 Epics:
-<epics[] from epic_dag with feature counts>
+<epics[] from epic_manifest with feature counts>
 
 Report: epics that seem disproportionately large or small, with recommendation to merge or split."
 ```
@@ -372,7 +381,7 @@ Spawn agents to check consistency **across** all epics:
 Prompt: "Check that every feature in the phase manifest is assigned to exactly one epic.
 
 1. Extract all feature IDs from the phase manifest
-2. Extract all feature IDs from each epic in the epic DAG
+2. Extract all feature IDs from each epic in the epic manifest
 3. Flag: features in the manifest but NOT in any epic (dropped features)
 4. Flag: features in an epic but NOT in the manifest (phantom features)
 5. Flag: features appearing in more than one epic (duplicate assignment)
@@ -391,14 +400,14 @@ Report: {feature_id, issue_type (dropped|phantom|duplicate), epics_involved}"
 ```
 Prompt: "Check that inter-epic interface contracts are compatible.
 
-For each interface defined in epic_dag.json:
+For each interface defined in epic_manifest.json:
 1. Read the provider epic file body — how does it describe the output?
 2. Read the consumer epic file body — how does it describe the expected input?
 3. Do the interface's concrete_files point to real bootstrap entity stubs?
 4. Are the contracts compatible? (does the provider's output match what the consumer expects?)
 
-Epic DAG interfaces:
-<interfaces from epic_dag>
+Epic manifest interfaces:
+<interfaces from epic_manifest>
 
 Epic files:
 <for each epic: {epic_id, body}>
@@ -415,9 +424,7 @@ Report: incompatible contracts, missing concrete_files, contracts where provider
 Prompt: "Validate the E2E testing setup for this phase.
 
 1. E2E Testing epic structure:
-   - Does an E2E Testing epic exist as the last epic in the DAG?
-   - Is it blocked by ALL other epics?
-   - Is it in the final execution wave (with type 'e2e')?
+   - Does an E2E Testing epic exist as the last epic in the execution order?
    - Does its epic.md validation criteria describe the full phase-level E2E flows?
 
 2. Phase E2E scenarios (phase_e2e_config.json → phase_e2e_scenarios):
@@ -444,8 +451,8 @@ Prompt: "Validate the E2E testing setup for this phase.
 Phase E2E config:
 <phase_e2e_config JSON>
 
-Epic DAG (for epic list, interfaces, and E2E epic):
-<epic_dag JSON>
+Epic manifest (for epic list, interfaces, and E2E epic):
+<epic_manifest JSON>
 
 E2E Testing epic file:
 <E2E Testing epic.md content>
@@ -467,15 +474,14 @@ Spawn as `Task eigen:architecture-strategist`:
 Prompt: "Review this phase-to-epics decomposition from an architectural perspective.
 
 Check:
-1. Does the epic ordering (execution waves) make architectural sense?
+1. Does the epic ordering make architectural sense?
 2. Are provider epics correctly upstream of consumer epics?
-3. Could any epics be parallelized that are currently sequential?
-4. Are there any hidden dependencies not captured in the DAG?
-5. Is the overall decomposition granularity appropriate?
-6. Do the inter-epic interfaces align with the bootstrap foundation's entity boundaries?
+3. Are there any hidden dependencies not captured in the epic manifest?
+4. Is the overall decomposition granularity appropriate?
+5. Do the inter-epic interfaces align with the bootstrap foundation's entity boundaries?
 
-Epic DAG:
-<epic_dag JSON>
+Epic manifest:
+<epic_manifest JSON>
 
 Bootstrap report:
 <bootstrap_report>
@@ -495,11 +501,10 @@ Check:
 1. Are there too many epics for the feature count? (e.g., 10 epics for 15 features is over-decomposed)
 2. Could simpler epic boundaries achieve the same result?
 3. Are there unnecessary indirections in the interface contracts?
-4. Are any execution waves artificially sequential (epics that could be parallel but are blocked)?
-5. Could any small epics be merged without violating cluster constraints?
+4. Could any small epics be merged without violating cluster constraints?
 
-Epic DAG:
-<epic_dag JSON>
+Epic manifest:
+<epic_manifest JSON>
 
 Phase manifest summary:
 <phase_metadata>"
@@ -523,7 +528,7 @@ Phase manifest summary:
 ### 6.1 Collect All Agent Results
 
 Wait for ALL parallel agents to complete. Collect findings from:
-- DAG validation agents (Stage 1)
+- Manifest validation agents (Stage 1)
 - Epic quality agents (Stage 2)
 - Cross-epic consistency agents (Stage 3)
 - Strategic review agents (Stage 4)
@@ -534,14 +539,13 @@ Wait for ALL parallel agents to complete. Collect findings from:
 For each finding, assign:
 
 - **`category`**: one of:
-  - `epic_formation_error` — cluster split across epics, epic too large/small, poor grouping
-  - `dag_error` — missing blocked_by, cycle in epic DAG, wrong wave assignment
+  - `epic_formation_error` — cluster split across epics, epic too large/small, poor grouping, ordering issues
   - `interface_error` — missing interface, incompatible contract, orphan interface, vague contract, missing concrete_files
   - `issue_completeness_error` — epic file body missing required sections (blackbox specs, whitebox guidance, bootstrap context)
   - `spec_fidelity_error` — blackbox specs in issue body don't match phase manifest (truncated, garbled, missing)
   - `feature_coverage_error` — feature dropped from all epics, duplicated across epics, or phantom feature
   - `e2e_coverage_gap` — epic not covered by phase E2E, missing integration scenario
-  - `strategic_concern` — architectural ordering issue, over-engineering, missed parallelization
+  - `strategic_concern` — architectural ordering issue, over-engineering
   - `false_positive` — agent flagged something that's actually correct
 
 - **`severity`**: `high` (breaks correctness or downstream plan generation), `medium` (suboptimal but functional), `low` (minor improvement)
@@ -557,28 +561,28 @@ For each finding, assign:
 
 ### 6.3.1 Narrative vs Structural Assessment (Dual Source of Truth)
 
-space_split produces both narrative (epic.md) and JSON (epic_dag.json) representations of interfaces and dependencies. For each finding that flags a missing or inconsistent structural entry:
+space_split produces both narrative (epic.md) and JSON (epic_manifest.json) representations of interfaces and dependencies. For each finding that flags a missing or inconsistent structural entry:
 
-1. **Check the OTHER source**: If the finding says "interface X missing from epic_dag.json `interfaces_provided[]`", check if the interface IS described in the provider's epic.md "Inter-Epic Interfaces" section (and vice versa).
+1. **Check the OTHER source**: If the finding says "interface X missing from epic_manifest.json `interfaces_provided[]`", check if the interface IS described in the provider's epic.md "Inter-Epic Interfaces" section (and vice versa).
 2. **If present in one source but absent in the other**: the finding is valid (BOTH sources MUST be consistent), but **downgrade severity to medium** if it was classified as high. The author understands the interface — they just failed to wire it into both representations. Include explicit `structural_edits` in the finding showing exactly which JSON entries or epic.md sections to add or modify.
 3. **If absent from BOTH sources**: keep original severity — the decomposition genuinely missed this interface or dependency.
 4. **Check concrete_files against bootstrap-report.json**: If a finding says "concrete_files missing for interface X", check if the files exist in bootstrap-report.json's entity/contract paths. If they do, downgrade and provide the exact paths as `structural_edits`.
 
 ### 6.4 Write Iteration Feedback File
 
-Write the feedback to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_space_split_feedback.json`. **Do NOT modify epic_dag.json or phase_e2e_config.json** — feedback is always a separate file.
+Write the feedback to `phases/phase_<N>/feedback/deepen_space_split_feedback.json` (resolved against `paths_relative_to`). **Do NOT modify epic_manifest.json or phase_e2e_config.json** — feedback is always a separate file.
 
-Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/`
+Ensure directory exists: `mkdir -p <paths_relative_to>/phases/phase_<N>/feedback/`
 
 ```json
 {
   "schema_version": "1.0.0",
   "command": "deepen_space_split",
-  "iteration": "<current deepen_space_split iteration>",
-  "analyzed_iteration": "<state.phases[N].space_split.iteration that was analyzed>",
+  "iteration": "<current deepen_space_split iteration from CLI context>",
+  "analyzed_iteration": "<main_command_iteration from CLI context>",
   "created_at": "<ISO 8601>",
   "source_outputs_analyzed": {
-    "epic_dag": "phases/phase_N/epic_dag.json",
+    "epic_manifest": "phases/phase_N/epic_manifest.json",
     "phase_e2e_config": "phases/phase_N/phase_e2e_config.json",
     "epic_files": ["phases/phase_N/epic_M/epic.md"]
   },
@@ -602,7 +606,7 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/f
   "findings": [
     {
       "id": "dsf-<sequential_number>",
-      "category": "<epic_formation_error|dag_error|interface_error|issue_completeness_error|spec_fidelity_error|feature_coverage_error|e2e_coverage_gap|strategic_concern>",
+      "category": "<epic_formation_error|interface_error|issue_completeness_error|spec_fidelity_error|feature_coverage_error|e2e_coverage_gap|strategic_concern>",
       "severity": "high|medium|low",
       "title": "<concise>",
       "description": "<detailed>",
@@ -610,9 +614,8 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/f
       "affected_section": "<section within file or issue>",
       "recommendation": "<specific action for space_split to take>",
       "structural_edits": [
-        "<exact edit 1: e.g., 'Add to epic_dag.json epics[1].interfaces_provided[]: { name: \"UserAuth\", consumer_epics: [3], concrete_files: [\"app/lib/auth/session.ts\"] }'>",
-        "<exact edit 2: e.g., 'Add to epic_3/epic.md Inter-Epic Interfaces consumed section: UserAuth from E1'>",
-        "<exact edit 3: e.g., 'Add E1 to epic_dag.json epics[2].blocked_by[]'>"
+        "<exact edit 1: e.g., 'Add to epic_manifest.json epics[1].interfaces_provided[]: { name: \"UserAuth\", consumer_epics: [3], concrete_files: [\"app/lib/auth/session.ts\"] }'>",
+        "<exact edit 2: e.g., 'Add to epic_3/epic.md Inter-Epic Interfaces consumed section: UserAuth from E1'>"
       ],
       "actionable_by": "space_split",
       "downstream_impact": {
@@ -664,12 +667,17 @@ At convergence, scan findings for cross-stage insights worth preserving for down
    - Describe the **observed condition** in space_split's output.
    - State the **implication** for the downstream command.
    - Use `"epic": <M>` for epic-specific observations, `"epic": null` for phase-wide observations.
-   - Example: "Epic 1 (Wave 1) provides 2 critical interfaces (User, Product). Plan should finalize interface contracts before implementing independent components."
-   - Example: "Cross-epic dependency Epic 1 → Epic 2 uses UserService interface. Plan should verify interface is testable in isolation before Wave 2."
-3. **Write to pipeline_state.json** — update `recommendations[<target_command>]`:
-   - Replace all entries where `from` == `"deepen_space_split"` (preserve entries from other deepen commands).
-   - Max 5 entries per target command.
-   - Each entry: `{ "from": "deepen_space_split", "at_iteration": <current iteration>, "phase": <N>, "epic": <M or null>, "text": "<observation>" }`
+   - Example: "Epic 1 provides 2 critical interfaces (User, Product). Plan should finalize interface contracts before implementing independent components."
+   - Example: "Cross-epic dependency Epic 1 → Epic 2 uses UserService interface. Plan should verify interface is testable in isolation before Epic 2 starts."
+3. **Write recommendations via CLI** — one call per recommendation:
+   ```bash
+   eigen-squared add-recommendation \
+     --from-cmd deepen_space_split \
+     --target <target_cmd> \
+     --iteration <main_command_iteration> \
+     --text "<observation>"
+   ```
+   The CLI replaces all entries where `from == "deepen_space_split"` (preserves entries from other deepen commands). Max 5 entries per target command.
 4. If no findings have downstream impact, do not write any recommendations.
 
 **Constraints:**
@@ -717,11 +725,11 @@ For each new lesson, check the existing lessons loaded in Stage 0.6:
 
 ### 7.3 Write Lesson Files
 
-1. Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/space_split/`
-2. For each new non-duplicate lesson, write to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/space_split/<id>.json`
+1. Ensure directory exists: `mkdir -p <paths_relative_to>/<lessons_dir>`
+2. For each new non-duplicate lesson, write to: `<paths_relative_to>/<lessons_dir>/<id>.json`
 3. Print summary:
    ```
-   Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/space_split/
+   Lessons written: <N> new lessons to <lessons_dir>
    Skipped: <M> duplicates of existing lessons
    ```
 
@@ -756,8 +764,8 @@ Per-Epic Summary:
   ...
 
 Convergence: <CONVERGED — reason | CONTINUE — N high/medium-severity findings remain>
-Feedback written to: $EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_space_split_feedback.json
-Lessons: <N> new lessons written to $EIGEN_ROOT/eigen_initiative/eigen_lessons/space_split/
+Feedback written to: phases/phase_N/feedback/deepen_space_split_feedback.json
+Lessons: <N> new lessons written to <lessons_dir>
 
 Next steps:
   If CONTINUE:
@@ -768,15 +776,3 @@ Next steps:
     Run /plan_phase_epic to generate plans for the epics.
     Run /compound_improve to apply accumulated lessons to the space_split command.
 ```
-
-### Commit Pipeline Artifacts
-
-```bash
-eigen-squared commit-state --message "pipeline: deepen_space_split phase <N> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<N>/feedback/
-```
-
----
-
-## Pipeline Continuation
-
-The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.

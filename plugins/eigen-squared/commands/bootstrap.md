@@ -5,19 +5,25 @@ description: Create incremental project foundation (structure, contracts, config
 
 # Project Foundation Architect — Bootstrap
 
-## Language Adaptation
+## Pipeline Context
 
-These instructions are **language-aware** — they create real project files (package manifests, config, directory structures, entity stubs) in `$EIGEN_ROOT`. Language detection and toolchain resolution are **required**.
+```
+  plan → time_split ↔ deepen_time_split → [ bootstrap ↔ deepen_bootstrap ] → space_split → ...
+                                             ^^^^^^^^^^^
+                                             YOU ARE HERE
+```
+
+**Role — Project Foundation Architect.** You operate at **per-phase scope**. You create directory structures, shared entity stubs, API/message contracts, package manifests, quality config, and a basic CI pipeline — so that when `/space_split` generates epics and `/orchestrate_swarm` runs, the project at `$EIGEN_ROOT` has a compiling (but empty of behavior) codebase.
+
+**Convergence partner:** `deepen_bootstrap` reviews your output and generates findings. You iterate bootstrap <-> deepen_bootstrap until converged.
+
+**Language-aware.** These instructions create real project files (package manifests, config, directory structures, entity stubs) in `$EIGEN_ROOT`. Language detection and toolchain resolution are **required**.
 
 1. **Detect the project languages** from `$EIGEN_ROOT` manifest files. Load the `language-profiles` skill for the detection table, toolchain commands, and adaptation notes. A project may have multiple languages (e.g., Python backend + TypeScript frontend).
 2. **Resolve toolchain commands** using the language profiles (test runner, linter, interface mechanism, package index, etc.)
 3. **Adapt structural patterns** using the Language Adaptation Notes (file ownership model, import/dependency rules, stub lifecycle, test categorization)
 
----
-
-## Your Role
-
-You are a **Project Foundation Architect** responsible for creating the structural scaffolding that enables parallel swarm execution on a phase's epics. You create directory structures, shared entity stubs, API/message contracts, package manifests, quality config, and a basic CI pipeline — so that when `/space_split` generates epics and `/orchestrate_swarm` runs, the project at `$EIGEN_ROOT` has a compiling (but empty of behavior) codebase.
+### Constraints
 
 You are NOT a walking skeleton builder. You create structure and contracts only, never business logic. The first wave of epics provides the real implementation.
 
@@ -33,7 +39,7 @@ You are NOT a walking skeleton builder. You create structure and contracts only,
 
 These Docker artifacts are a **minimal starting point** — the app builds, starts, and the health check passes. Nothing else. Feature epics extend the Dockerfile (e.g., adding system dependencies) or add services to docker-compose.yml as their features require. The E2E Testing epic completes and finalizes the Docker setup for end-to-end testing.
 
-### Schema Source Priority
+**Schema Source Priority**
 
 When creating entity stubs, the source of truth for field names, types, and constraints depends on what's available:
 
@@ -43,78 +49,7 @@ When creating entity stubs, the source of truth for field names, types, and cons
 
 Never assume docs are accurate if actual code is available to check.
 
-## Environment Variables
-
-This command uses the same environment variables as all eigen-squared commands:
-
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
-
-### On Entry: Validate Environment
-
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-
-### Phase Auto-Detection
-
-No arguments are required. The target phase is auto-detected from the pipeline state:
-
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
-   ```
-   ERROR: No pipeline_state.json found at $EIGEN_ROOT/eigen_initiative/phases/
-   Run /time_split first to generate the phase split.
-   ```
-2. Scan `state.phases` to find the first phase N (in numeric order) where:
-   - `time_split` has converged (the phase exists in the pipeline state)
-   - AND `bootstrap.status == "not_started"` OR `bootstrap.status == "iterating"` (bootstrap still needs work)
-3. If no such phase is found → **STOP.** Print:
-   ```
-   No phase is ready for bootstrap.
-   Either all phases have been bootstrapped, or time_split has not converged yet.
-   Run /time_split and /deepen_time_split until converged, or check pipeline_state.json.
-   ```
-4. The detected phase number N determines:
-   - **Phase manifest**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`
-   - **Phase directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`
-
-Print: `Auto-detected Phase <N> for bootstrap.`
-
-### Sync with Remote
-
-Handled automatically by `eigen-squared get-context` — no manual sync needed.
-
-### Fixed Paths
-
-- **Target repo**: `$EIGEN_ROOT` (the project root itself)
-- **Phase manifest**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`
-- **Phase directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`
-- **Bootstrap report**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`
-- **Pipeline state**: `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`
-
-## Input
-
-No arguments are required. The phase is auto-detected from the pipeline state.
-
-The phase manifest (`phase_N_manifest.md`) must exist and contain features, domains, blackbox specs, and optionally whitebox sections produced by `/time_split`.
-
-## Output
-
-- **In `$EIGEN_ROOT`**: Git-committed foundational files (directories, package manifests, entity stubs, contracts, quality config, basic CI)
-- **Report**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json` with delta applied, verification status, entities/contracts created, commit hashes
-
-## Critical Constraints
-
+**Operational constraints:**
 - You orchestrate sub-agents for heavy bootstrap (many entities/contracts). For small deltas, you may operate as a single agent.
 - You NEVER write business logic. Entity stubs have empty bodies / `raise NotImplementedError` / language equivalent.
 - You NEVER create a walking skeleton (no passing E2E test, no real data flow).
@@ -126,26 +61,87 @@ The phase manifest (`phase_N_manifest.md`) must exist and contain features, doma
 
 ---
 
-## Pipeline Awareness
+## Environment
 
-The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
+Before proceeding, verify:
 
-### On Entry
+- [ ] `$EIGEN_ROOT` is set and points to an existing directory
+- [ ] `$EIGEN_BRANCH` is set (the default branch from which all work starts)
+
+If either is missing, **STOP** and print the appropriate error:
+
+```
+ERROR: $EIGEN_ROOT is not set.
+Set it to the root folder of your target project:
+  export EIGEN_ROOT=/path/to/your/project
+```
+
+```
+ERROR: $EIGEN_BRANCH is not set.
+Set it to the default branch from which all work starts:
+  export EIGEN_BRANCH=main
+```
+
+**Key paths** (all relative to `$EIGEN_ROOT/eigen_initiative/`):
+
+| Path | Description |
+|------|-------------|
+| `phases/phase_N_manifest.md` | Phase manifest (input) |
+| `phases/phase_N/` | Phase output directory |
+| `phases/phase_N/bootstrap-report.json` | Bootstrap report (output) |
+| `phases/phase_N/feedback/` | Feedback directory (owned by deepen — never touch) |
+
+## Output
+
+- **In `$EIGEN_ROOT`**: Git-committed foundational files (directories, package manifests, entity stubs, contracts, quality config, basic CI)
+- **Report**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json` with delta applied, verification status, entities/contracts created, commit hashes
+
+---
+
+## On Entry
+
+Run the CLI to get pipeline context:
 
 ```bash
 eigen-squared get-context bootstrap --json
 ```
 
-If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON:
-- `phase`: which phase to bootstrap
-- `is_first_run: true` → first run
-- `should_process_feedback: true` → iteration, use `feedback_path` from context
-- `recommendations`: advisory observations from upstream deepen commands
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON:
 
-### On Exit
+```json
+{
+  "command": "bootstrap",
+  "branch": "main",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "iteration": 2,
+  "current_iteration": 1,
+  "is_first_run": false,
+  "should_process_feedback": true,
+  "feedback_path": "phases/phase_1/feedback/deepen_bootstrap_feedback.json",
+  "output_paths": {"bootstrap_report": "phases/phase_1/bootstrap-report.json"},
+  "phase_manifest": "phases/phase_1_manifest.md",
+  "recommendations": [...]
+}
+```
+
+| Field | Usage |
+|-------|-------|
+| `phase` | Which phase to bootstrap |
+| `iteration` | The iteration you are about to produce (display in headers) |
+| `current_iteration` | The iteration that has already been produced |
+| `is_first_run` | `true` → first run, skip feedback processing |
+| `should_process_feedback` | `true` → iteration, read feedback from `feedback_path` |
+| `feedback_path` | Relative path to deepen feedback JSON (resolve against `paths_relative_to`) |
+| `output_paths` | Where to write the bootstrap report |
+| `phase_manifest` | Relative path to the phase manifest |
+| `recommendations` | Advisory observations from upstream deepen commands |
+
+## On Exit
 
 ```bash
-eigen-squared complete bootstrap --phase <N> --output-path phases/phase_<N>/bootstrap-report.json
+eigen-squared complete bootstrap --phase <phase> --output-path phases/phase_<phase>/bootstrap-report.json
+eigen-squared commit-state --message "pipeline: bootstrap phase <phase> — foundation created" --additional-paths eigen_initiative/phases/phase_<phase>/
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart).
@@ -154,20 +150,20 @@ The CLI handles all field updates atomically: status, iteration, timestamps, fee
 
 ## Iteration Protocol
 
-This section applies when `pipeline_state.json` exists, `state.phases[N].bootstrap.iteration >= 1`, and `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_bootstrap_feedback.json` is present.
+This section applies when `should_process_feedback` is `true` in the CLI context.
 
 ### Read Feedback
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_bootstrap_feedback.json`.
+1. Read the feedback file at `feedback_path` (resolved against `paths_relative_to` from CLI context).
 2. Extract: `findings[]`, `convergence`, `previous_feedback_comparison`, and `code_change_guidance`.
-3. Validate that `analyzed_iteration` matches the current `state.phases[N].bootstrap.iteration`.
+3. Validate that `analyzed_iteration` matches `current_iteration` from the CLI context.
 
 ### Honest Self-Assessment
 
 For each finding in `findings[]`, print an assessment to the user:
 
 ```
-=== Iteration <N+1>: Addressing Deepen Feedback ===
+=== Iteration <iteration>: Addressing Deepen Feedback ===
 
 Finding <id>: <title> [<severity>]
   Category: <category>
@@ -176,6 +172,8 @@ Finding <id>: <title> [<severity>]
   Assessment: ACCEPT | PARTIAL | REJECT
   Rationale: <why you accept/partially accept/reject this finding>
 ```
+
+Use the `iteration` field from CLI context for the display header.
 
 Classification rules:
 - **ACCEPT**: the finding is valid and actionable — the recommendation will be incorporated.
@@ -204,16 +202,14 @@ Classification rules:
    - Attempt up to 3 fix-retry cycles.
    - If still failing after 3 cycles: print the errors and proceed with warnings. Write `BOOTSTRAP_WARNINGS.md` to `$EIGEN_ROOT` documenting outstanding issues.
 4. **NEVER delete, overwrite, or recreate `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/` or any file inside it.**
-5. Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` on exit: set `feedback_consumed = true`, set `deepen_bootstrap.feedback_consumed = true`.
 
 ### Read Recommendations (if present)
 
-1. Read `recommendations.bootstrap` from `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
-2. Filter entries by `phase` matching the current phase number N.
-3. Use as advisory context during scaffold planning:
-   - Inform decisions about directory structure, entity granularity, and config complexity.
-   - Do NOT treat as requirements. If your analysis contradicts a recommendation, follow your analysis.
-4. On iteration: re-read recommendations (deepen commands may have updated them since last run).
+Recommendations come from the `recommendations` field in the CLI context. Use as advisory context during scaffold planning:
+
+- Inform decisions about directory structure, entity granularity, and config complexity.
+- Do NOT treat as requirements. If your analysis contradicts a recommendation, follow your analysis.
+- On iteration: the CLI always provides current recommendations (deepen commands may have updated them since last run).
 
 ---
 
@@ -611,8 +607,6 @@ Next steps:
 ```
 
 ### 5.3 Commit Pipeline Artifacts
-
-Commit bootstrap artifacts and pipeline state to `$EIGEN_BRANCH`:
 
 ```bash
 eigen-squared commit-state --message "pipeline: bootstrap phase <N> — foundation created" --additional-paths eigen_initiative/phases/phase_<N>/

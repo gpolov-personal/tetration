@@ -5,81 +5,104 @@ description: Review time_split output with parallel research agents, diagnose er
 
 # Deepen Time Split — Initiative Phase Review
 
-## Introduction
+## Pipeline Context
 
-This command takes the output of `/time_split` and subjects it to comprehensive review by parallel research and review agents. Every structural, content, and strategic issue is diagnosed.
+```
+time_split ──► DEEPEN_TIME_SPLIT ──► time_split (if CONTINUE)
+                      │                     │
+                      └── (if CONVERGED) ──► bootstrap
+```
 
-Diagnosed errors are written as structured lesson JSONs to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/`. These lessons are later consumed by `/compound_improve` to permanently improve the `time_split` command itself.
+**Role.** Review partner for `time_split`. This command takes the output of `/time_split` and subjects it to comprehensive review by parallel research and review agents. Every structural, content, and strategic issue is diagnosed.
 
-## Environment Variables
+**Convergence authority.** This command decides when `time_split` output is good enough. It sets convergence on the `time_split` stage and writes the rationale.
 
-This command uses the same environment variables as all eigen-squared commands:
+**Lesson writing.** Diagnosed errors are written as structured lesson JSONs to the initiative's lessons directory (`time_split/`). These lessons are later consumed by `/compound_improve` to permanently improve the `time_split` command itself.
 
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
+**Language.** All feedback, lessons, and summaries are written in the same language as the initiative files.
 
-### On Entry: Validate Environment
+## Environment
 
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-4. Verify `$EIGEN_ROOT/eigen_initiative/phases` exists and contains `initiative_summary.json` and at least one `phase_*_manifest.md`. If not → **STOP.** Print:
-   ```
-   ERROR: No time_split output found at $EIGEN_ROOT/eigen_initiative/phases
-   Run /time_split first to generate the phase split.
-   ```
+Before anything else, verify:
 
-### Sync with Remote
+- [ ] `$EIGEN_ROOT` is set and points to an existing directory
+- [ ] `$EIGEN_BRANCH` is set
 
-Handled automatically by `eigen-squared get-context` — no manual sync needed.
-
-### Fixed Paths
-
-- **Phases directory**: `$EIGEN_ROOT/eigen_initiative/phases`
-- **Feedback file**: `$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json`
-- **Lessons directory**: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/`
-- **Pipeline state**: `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`
+If either is missing, **STOP** and tell the user which variable to set.
 
 ---
 
-## Pipeline Awareness
-
-The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
-
-### On Entry
+## On Entry
 
 ```bash
 eigen-squared get-context deepen_time_split --json
 ```
 
-If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON for `iteration`, `previous_feedback_path`, `previous_feedback_exists`, `main_command_outputs`, and `lessons_dir`.
+If the CLI exits with an error (non-zero), **STOP** and display the error message. The CLI handles all pre-flight checks (pipeline_state existence, time_split status, convergence guard, overwrite warnings, git sync).
 
-### On Exit
+Otherwise parse the returned JSON:
 
-After completing the review and writing the feedback file:
-
-```bash
-eigen-squared complete deepen_time_split --feedback-path <feedback_file_path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+```json
+{
+  "iteration": 2,
+  "main_command_iteration": 3,
+  "phase_count": 4,
+  "previous_feedback_path": "eigen_initiative/phases/feedback/deepen_time_split_feedback.json",
+  "previous_feedback_exists": true,
+  "overwrite_warning": "Existing feedback has not been consumed by time_split yet. Re-analyzing will overwrite it.",
+  "main_command_outputs": {
+    "initiative_summary": "eigen_initiative/phases/initiative_summary.json",
+    "phase_manifests": [
+      "eigen_initiative/phases/phase_1_manifest.md",
+      "eigen_initiative/phases/phase_2_manifest.md",
+      "eigen_initiative/phases/phase_3_manifest.md",
+      "eigen_initiative/phases/phase_4_manifest.md"
+    ],
+    "source_files": {
+      "initiative": "eigen_initiative/initiative.md",
+      "blackbox": "eigen_initiative/blackbox.md",
+      "whitebox": "eigen_initiative/whitebox.md"
+    }
+  },
+  "lessons_dir": "eigen_initiative/eigen_lessons/time_split",
+  "paths_relative_to": "$EIGEN_ROOT"
+}
 ```
 
-If converging (zero high and medium findings):
+| Field | Use |
+|---|---|
+| `iteration` | Current deepen_time_split iteration number. |
+| `main_command_iteration` | The time_split iteration whose output is being reviewed. Written into feedback as `analyzed_iteration`. |
+| `phase_count` | Number of phases produced by time_split. |
+| `previous_feedback_path` | Path to previous feedback file (relative to `$EIGEN_ROOT`). |
+| `previous_feedback_exists` | Whether a previous feedback file exists — gates the Iteration Protocol. |
+| `overwrite_warning` | If non-null, display this warning to the user before proceeding. |
+| `main_command_outputs` | Paths to time_split artifacts — used in Stage 0 Ingest. |
+| `lessons_dir` | Directory for lesson JSONs — used in Stage 0.4 and Stage 6. |
+| `paths_relative_to` | All paths are relative to this root. |
+
+## On Exit
+
+After completing the review, writing the feedback file, and writing lessons:
+
 ```bash
+# Always — mark this deepen run complete
+eigen-squared complete deepen_time_split \
+  --feedback-path <feedback_file_path> \
+  --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+```
+
+```bash
+# Conditional — only if convergence decision is "converged"
 eigen-squared mark-converged time_split --reason "<convergence rationale>"
 ```
 
-If adding downstream recommendations at convergence:
 ```bash
-eigen-squared add-recommendation --from-cmd deepen_time_split --target <target_cmd> --text "<observation>"
+# Conditional — only at convergence, one call per recommendation
+eigen-squared add-recommendation \
+  --from-cmd deepen_time_split \
+  --target <target_cmd> \
+  --text "<observation>"
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (sets own to false, sets time_split's to false to signal fresh feedback).
@@ -90,7 +113,7 @@ The CLI handles all field updates atomically: status, iteration, timestamps, fee
 
 ### Detect Iteration Context
 
-1. Check if `$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json` already exists (previous feedback from an earlier deepen run).
+1. Check if `previous_feedback_exists` is true in the CLI context (or read the file at `previous_feedback_path`).
 2. If it exists, read it. This enables:
    - Comparison of findings across iterations
    - Oscillation detection
@@ -119,7 +142,7 @@ After collecting all findings (Stage 5), apply these convergence rules **in orde
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain.
    - Rationale: "All significant issues resolved."
 
-2. **Converge if**: iteration limit reached (`state.deepen_time_split.iteration >= 8`).
+2. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
    - Set `convergence.iteration_limit_reached` to `true` in the feedback file.
 
@@ -146,25 +169,31 @@ For each finding, assess its downstream impact on later pipeline commands:
 
 ### 0.1 Read Initiative Summary
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/initiative_summary.json`.
+1. Read the file at `main_command_outputs.initiative_summary` (relative to `$EIGEN_ROOT`).
 2. Extract: initiative name, total features, phase count, DAG stats, source files, per-phase summaries.
 
 ### 0.2 Read All Phase Manifests
 
-1. Glob `$EIGEN_ROOT/eigen_initiative/phases/phase_*_manifest.md`.
+1. Read each file listed in `main_command_outputs.phase_manifests` (relative to `$EIGEN_ROOT`).
 2. For each manifest, parse YAML frontmatter and markdown body:
    - Frontmatter: `phase`, `feature_count`, `clusters_included`, `priority_distribution`, `e2e_summary`, `depends_on_phases`
    - Body: features by domain tables, cross-phase dependencies, clusters, blackbox specs, whitebox sections
 
 ### 0.3 Read Original Initiative Files
 
-1. From the initiative summary's `source_files` field, get the filenames of the original initiative, blackbox, and whitebox files. These files are located in `$EIGEN_ROOT/eigen_initiative/`.
+1. From `main_command_outputs.source_files`, get the paths to the original initiative, blackbox, and whitebox files (relative to `$EIGEN_ROOT`).
 2. Read all available files (whitebox may not exist).
 
 ### 0.4 Load Existing Lessons
 
-1. Glob `$EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/*.json`.
+1. Glob `$EIGEN_ROOT/<lessons_dir>/*.json` (using `lessons_dir` from CLI context).
 2. Read and parse each lesson JSON — used to avoid duplicating known issues in Stage 6.
+
+### 0.5 Load Previous Feedback
+
+1. If `previous_feedback_exists` is true in the CLI context, read the file at `previous_feedback_path` (relative to `$EIGEN_ROOT`).
+2. This is the feedback from the prior deepen iteration — used for the Finding Matching Protocol and oscillation detection.
+3. If `previous_feedback_exists` is false, skip — this is the first deepen iteration.
 
 ---
 
@@ -424,8 +453,8 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/feedback/
 {
   "schema_version": "1.0.0",
   "command": "deepen_time_split",
-  "iteration": "<current deepen_time_split iteration>",
-  "analyzed_iteration": "<state.time_split.iteration that was analyzed>",
+  "iteration": "<current deepen_time_split iteration from CLI context>",
+  "analyzed_iteration": "<main_command_iteration from CLI context>",
   "created_at": "<ISO 8601>",
   "source_outputs_analyzed": {
     "initiative_summary": "phases/initiative_summary.json",
@@ -484,17 +513,22 @@ Apply the Convergence Decision Protocol (from the Iteration Protocol section abo
 
 **Skip this section entirely if convergence decision is NOT "converged".**
 
-At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands. See the `pipeline-state-schema` skill for the full recommendations specification.
+At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands.
 
 1. **Filter findings with downstream impact:** Only low-severity findings where `downstream_impact.affects_commands` is non-empty.
 2. **For each affected downstream command** (bootstrap, space_split, plan_phase_epic, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
    - Describe the **observed condition** in the time_split output.
    - State the **implication** for the downstream command.
-3. **Write to pipeline_state.json** — update `recommendations[<target_command>]`:
-   - Replace all entries where `from` == `"deepen_time_split"` (preserve entries from other deepen commands).
-   - Max 5 entries per target command.
-   - Each entry: `{ "from": "deepen_time_split", "at_iteration": <current iteration>, "phase": <N or null>, "epic": null, "text": "<observation>" }`
-4. If no findings have downstream impact, do not write any recommendations. Leave existing entries from other sources untouched.
+3. **Write recommendations via CLI** — one call per recommendation:
+   ```bash
+   eigen-squared add-recommendation \
+     --from-cmd deepen_time_split \
+     --target <target_command> \
+     --text "<observation>"
+   ```
+   - Max 5 calls per target command.
+   - The CLI replaces all existing entries where `from` == `"deepen_time_split"` on the first call, then appends on subsequent calls. Entries from other deepen commands are preserved.
+4. If no findings have downstream impact, do not write any recommendations.
 
 **Constraints:**
 - Recommendations are OPTIONAL. Only write when you genuinely have cross-stage insight.
@@ -540,11 +574,11 @@ For each new lesson, check the existing lessons loaded in Stage 0.4:
 
 ### 6.3 Write Lesson Files
 
-1. Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/`
-2. For each new non-duplicate lesson, write to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/<id>.json`
+1. Ensure directory exists: `mkdir -p $EIGEN_ROOT/<lessons_dir>/`
+2. For each new non-duplicate lesson, write to: `$EIGEN_ROOT/<lessons_dir>/<id>.json`
 3. Print summary:
    ```
-   Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/
+   Lessons written: <N> new lessons to $EIGEN_ROOT/<lessons_dir>/
    Skipped: <M> duplicates of existing lessons
    ```
 
@@ -575,7 +609,7 @@ Top Issues:
 
 Convergence: <CONVERGED — reason | CONTINUE — N high/medium-severity findings remain>
 Feedback written to: $EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json
-Lessons: <N> new lessons written to $EIGEN_ROOT/eigen_initiative/eigen_lessons/time_split/
+Lessons: <N> new lessons written to $EIGEN_ROOT/<lessons_dir>/
 
 Next steps:
   If CONTINUE:
@@ -590,11 +624,13 @@ Next steps:
 ### Commit Pipeline Artifacts
 
 ```bash
-eigen-squared commit-state --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/feedback/
+eigen-squared commit-state \
+  --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
+  --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
 ```
 
 ---
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI calls above) and schedules the next command automatically. You do not need to schedule anything — your only responsibility is to make the CLI calls in the On Exit section accurately before the session ends.

@@ -47,11 +47,20 @@ def checkout_branch(
     branch: str,
     eigen_root: str,
     create: bool = False,
+    base_branch: str = "",
 ) -> bool:
-    """Checkout a branch, optionally creating it.
+    """Checkout a branch, optionally creating it from base_branch.
+
+    When create=True and base_branch is set, first checks out and pulls
+    the base branch to ensure the new branch includes all prior work.
 
     Returns True if checkout succeeded.
     """
+    if create and base_branch:
+        # Ensure we're on the base branch and up to date
+        run_git(["checkout", base_branch], cwd=eigen_root)
+        run_git(["pull", "origin", base_branch, "--quiet"], cwd=eigen_root)
+
     args = ["checkout"]
     if create:
         args.append("-b")

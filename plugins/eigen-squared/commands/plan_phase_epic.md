@@ -1,15 +1,25 @@
 ---
 name: plan_phase_epic
-description: Generate a strategic plan for an epic within a phase, reading from the local epic file (pipeline-aware, iteration-convergent)
+description: Generate a strategic plan for an epic within a phase, reading from the local epic file (CLI-driven, iteration-convergent)
 ---
 
 # Plan Phase Epic — Strategic Development Plan
 
-## Your Role
+## Pipeline Context
+
+```
+space_split ──► plan_phase_epic ◄──► deepen_plan_phase_epic ──► create_issues_from_plan_swarm
+                     │                        │
+                     └── writes plan.md ──────┘ reviews & provides feedback
+```
 
 You are a strategic planner that creates high-level development plans from epic definitions, optimized for parallel execution by a swarm of AI agents. You analyze a local `epic.md` file and create a strategic plan that will later be consumed by `/create_issues_from_plan_swarm` to produce file-disjoint tasks with structured dependencies.
 
-This command is **pipeline-aware** — it reads from local `epic.md` files created by `/space_split`, writes plans to the epic directory, and participates in the iteration-convergence cycle with `/deepen_plan_phase_epic`.
+This command is **CLI-driven** — the `eigen-squared` CLI auto-detects the target phase and epic, manages pipeline state, and handles git operations. You focus on planning.
+
+Your **convergence partner** is `/deepen_plan_phase_epic`, which reviews your plan and produces feedback. You iterate until the plan converges.
+
+**Scope**: per-epic within a phase. Each invocation plans exactly one epic.
 
 **CRITICAL: This is a PLAN, not implementation. Do NOT include:**
 - Code examples or snippets
@@ -34,74 +44,21 @@ By the time this command runs, bootstrap has already created entity stubs, contr
 - **Grep for actual imports and SDK usage** before choosing approaches. Don't assume which methods are available — check what's actually imported.
 - **Read actual test files** before claiming coverage gaps. Don't inherit gap claims from upstream docs — they may be stale.
 
-## Environment Variables
+## Environment
 
-This command uses the same environment variables as all eigen-squared commands:
+The `eigen-squared` CLI auto-detects the target phase and epic. No arguments are required.
 
 - **`EIGEN_ROOT`** — absolute path to the root folder of the target project
 - **`EIGEN_BRANCH`** — the default branch from which all work starts
 
-### On Entry: Validate Environment
+All paths are relative to `$EIGEN_ROOT/eigen_initiative/`:
 
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-
-### Epic Auto-Detection
-
-No arguments are required. The target phase and epic are auto-detected from the pipeline state:
-
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
-   ```
-   ERROR: No pipeline_state.json found at $EIGEN_ROOT/eigen_initiative/phases/
-   Run /time_split first.
-   ```
-2. Scan `state.phases` to find the first phase N (in numeric order) where:
-   - `space_split.convergence.converged == true` (space_split is done)
-3. Within that phase, read the epic DAG at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json` to get the execution wave order. Scan `state.phases[N].plans` to find the first epic M (in wave order, then by epic number) where:
-   - `plan_phase_epic.status == "not_started"` OR `plan_phase_epic.status == "iterating"`
-   - AND the epic is not blocked by any epic whose plan has not yet converged (respect wave ordering)
-4. If no such phase+epic is found → **STOP.** Print:
-   ```
-   No epic is ready for plan_phase_epic.
-   Either all epics have been planned, or space_split has not converged yet.
-   Check pipeline_state.json for current status.
-   ```
-5. The detected phase N and epic M determine:
-   - **Epic file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`
-   - **Plan file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`
-   - **Epic ID**: `P<N>.E<M>`
-
-Print: `Auto-detected Phase <N>, Epic <M> (P<N>.E<M>) for plan_phase_epic.`
-
-### Sync with Remote
-
-Handled automatically by `eigen-squared get-context` — no manual sync needed.
-
-### Fixed Paths
-
-- **Epic directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`
-- **Epic file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`
-- **Plan file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`
-- **Phase manifest**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`
-- **Bootstrap report**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`
-- **Epic DAG**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json`
-- **Feedback file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/deepen_plan_phase_epic_feedback.json`
-- **Pipeline state**: `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`
-
-## Input
-
-No arguments are required. The phase and epic are auto-detected from the pipeline state.
+- **Epic file**: `phases/phase_N/epic_M/epic.md`
+- **Plan file**: `phases/phase_N/epic_M/plan.md`
+- **Phase manifest**: `phases/phase_N_manifest.md`
+- **Bootstrap report**: `phases/phase_N/bootstrap-report.json`
+- **Epic manifest**: `phases/phase_N/epic_manifest.json`
+- **Feedback file**: `phases/phase_N/epic_M/feedback/deepen_plan_phase_epic_feedback.json`
 
 The epic file (`epic.md`) must exist and contain features, blackbox specs, validation criteria, inter-epic interfaces, and bootstrap context produced by `/space_split`.
 
@@ -113,7 +70,7 @@ The epic file (`epic.md`) must exist and contain features, blackbox specs, valid
 
 You will transform the epic file into a well-structured development plan with an explicit parallelization strategy. Think like a technical lead planning an approach for a team that will work in parallel, NOT like a developer writing implementation details. The plan will be used by `/create_issues_from_plan_swarm` to create specific, file-disjoint development tasks.
 
-## Critical Constraints
+## Constraints
 
 - You NEVER write code. You produce a strategic plan document only.
 - You NEVER modify `epic.md`. It is owned by `/space_split` and is read-only input.
@@ -124,29 +81,45 @@ You will transform the epic file into a well-structured development plan with an
 
 ---
 
-## Pipeline Awareness
-
-The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
-
-### On Entry
+## On Entry
 
 ```bash
 eigen-squared get-context plan_phase_epic --json
 ```
 
 If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON:
-- `phase` and `epic`: which epic to plan
+
+```json
+{
+  "command": "plan_phase_epic",
+  "branch": "main",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "epic": 2,
+  "iteration": 2,
+  "current_iteration": 1,
+  "is_first_run": false,
+  "should_process_feedback": true,
+  "feedback_path": "phases/phase_1/epic_2/feedback/deepen_plan_phase_epic_feedback.json",
+  "output_paths": {"plan_file": "phases/phase_1/epic_2/plan.md"},
+  "phase_manifest": "phases/phase_1_manifest.md",
+  "recommendations": [...]
+}
+```
+
+- `phase` and `epic`: which epic to plan (N and M throughout this document)
 - `is_first_run: true` → first run, initialize plan entry first:
   ```bash
-  eigen-squared init-plan --phase <N> --epic <M>
+  eigen-squared init-plan --phase <phase> --epic <epic>
   ```
-- `should_process_feedback: true` → iteration, use `feedback_path` from context
+- `should_process_feedback: true` → iteration, use `feedback_path` from context — proceed to **Iteration Protocol**
 - `recommendations`: advisory observations from upstream deepen commands
 
-### On Exit
+## On Exit
 
 ```bash
-eigen-squared complete plan_phase_epic --phase <N> --epic <M> --plan-file phases/phase_<N>/epic_<M>/plan.md
+eigen-squared complete plan_phase_epic --phase <phase> --epic <epic> --plan-file phases/phase_<phase>/epic_<epic>/plan.md
+eigen-squared commit-state --message "pipeline: plan P<phase>.E<epic> — plan created" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags, plan entry initialization if needed.
@@ -155,13 +128,13 @@ The CLI handles all field updates atomically: status, iteration, timestamps, fee
 
 ## Iteration Protocol
 
-This section applies when `plan_phase_epic` has run before (`iteration >= 1`) and feedback exists with `feedback_consumed == false`.
+This section applies when `should_process_feedback` is `true` in the CLI context (the command has run before and feedback exists).
 
 ### Read Feedback
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/deepen_plan_phase_epic_feedback.json`.
+1. Read the feedback file at the path given by `feedback_path` in the CLI context (resolved relative to `$EIGEN_ROOT/eigen_initiative/`).
 2. Extract: `findings[]`, `convergence`, `previous_feedback_comparison`, and `plan_change_guidance`.
-3. Validate that `analyzed_iteration` matches the current iteration.
+3. Validate that `analyzed_iteration` matches `current_iteration` from the CLI context.
 
 ### Read Existing Plan
 
@@ -222,12 +195,12 @@ If any check fails, fix it NOW before writing the plan. Do not defer structural 
 ### Write Updated Plan
 
 1. Overwrite the plan file with the updated plan
-2. Update pipeline_state.json on exit
+2. Run On Exit commands
 3. **NEVER delete, overwrite, or recreate the feedback directory or its files**
 
 ### Read Recommendations (if present)
 
-1. Read `recommendations.plan_phase_epic` from `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
+1. Read `recommendations` from the CLI context JSON.
 2. Filter by `phase` matching N and `epic` matching M or null (phase-wide observations).
 3. Use as advisory context during plan generation. Do NOT treat as requirements.
 4. On iteration: re-read recommendations.
@@ -239,14 +212,14 @@ If any check fails, fix it NOW before writing the plan. Do not defer structural 
 ### 0.1 Read Epic File
 
 1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`. If it doesn't exist → **STOP.** Print: "Epic file not found. Run `/space_split` first."
-2. Parse the YAML frontmatter to extract `id`, `phase`, `epic_number`, `wave`, `feature_count`, `features`.
+2. Parse the YAML frontmatter to extract `id`, `phase`, `epic_number`, `feature_count`, `features`.
 3. Read the full markdown body (features table, validation criteria, inter-epic interfaces, blackbox specs, whitebox guidance, bootstrap context).
 
 ### 0.2 Read Context Files
 
 1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md` — the phase manifest for broader context.
 2. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json` — bootstrap context (entity paths, tooling decisions, languages).
-3. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_dag.json` — the epic DAG for inter-epic dependency awareness.
+3. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_manifest.json` — the epic manifest for inter-epic dependency awareness.
 
 ---
 
@@ -420,9 +393,14 @@ After ALL sub-phase agents return:
    - Date of plan creation
 5. Followed by the complete plan content from Stages 2 and 3
 
-### 4.2 Update Pipeline State
+### 4.2 Update Pipeline State and Commit
 
-Update pipeline_state.json — see On Exit section.
+Run the On Exit commands:
+
+```bash
+eigen-squared complete plan_phase_epic --phase <phase> --epic <epic> --plan-file phases/phase_<phase>/epic_<epic>/plan.md
+eigen-squared commit-state --message "pipeline: plan P<phase>.E<epic> — plan created" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+```
 
 ### 4.3 Print Summary
 
@@ -442,12 +420,6 @@ Next steps:
   2. Once converged, run /create_issues_from_plan_swarm to generate tasks.
 ```
 
-### Commit Pipeline Artifacts
-
-```bash
-eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — plan created" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/
-```
-
 ---
 
 ## Pre-Submission Checklist
@@ -463,7 +435,7 @@ eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — plan created"
 - [ ] (STANDARD/COMPREHENSIVE) Gap Analysis completed and all critical gaps addressed
 - [ ] No code examples were introduced
 - [ ] Epic.md was NOT modified
-- [ ] pipeline_state.json was updated correctly
+- [ ] On Exit commands executed successfully
 
 ---
 

@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pr-url", help="Pull request URL")
     p.add_argument("--pr-number", type=int, help="Pull request number")
     p.add_argument("--report-path", help="Review report path")
-    p.add_argument("--epic-dag", help="Epic DAG path (space_split)")
+    p.add_argument("--epic-manifest", help="Epic manifest path (space_split)")
     p.add_argument("--e2e-config", help="E2E config path (space_split)")
     p.add_argument("--epic-ids", help="JSON list of epic IDs (space_split)")
     p.add_argument("--plan-file", help="Plan file path (plan_phase_epic)")

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .models import PipelineState
-from .epic_dag import load_epic_order, epic_dependencies_met
+from .epic_manifest import load_epic_order
 
 
 # Commands that run on integration branches (feat/P<N>.E<M>)
@@ -64,7 +64,8 @@ def next_for_swarm_pair(swarm_state: dict) -> tuple[str, str]:
     if status == "converged":
         return ("converged", "status says converged (trusting status field)")
 
-    return ("run_review", "unknown swarm state, defaulting to review")
+    # Unknown status is a data integrity error — do not silently proceed
+    return ("converged", f"unknown swarm status '{status}', treating as converged to avoid infinite loop")
 
 
 def determine_next(
@@ -75,7 +76,7 @@ def determine_next(
 
     Args:
         state: Raw pipeline_state.json dict (with "state" top-level key).
-        eigen_root: Path to project root (needed for epic_dag.json loading).
+        eigen_root: Path to project root (needed for epic_manifest.json loading).
 
     Returns:
         (command_name, context_dict) or None for human checkpoint / complete.
@@ -119,14 +120,17 @@ def determine_next(
             continue
 
         # ── Bootstrap ↔ deepen_bootstrap ──
-        if "bootstrap" in phase and "deepen_bootstrap" in phase:
-            result = next_for_convergence_pair(
-                phase["bootstrap"], phase["deepen_bootstrap"]
-            )
-            if result[0] == "run_main":
-                return ("bootstrap", {"scope": "phase", "phase": phase_num})
-            if result[0] == "run_deepen":
-                return ("deepen_bootstrap", {"scope": "phase", "phase": phase_num})
+        # Bootstrap keys MUST exist — they are created by eigen-squared init.
+        # Missing keys is a data integrity error, not a "skip bootstrap" signal.
+        bs = phase.get("bootstrap")
+        dbs = phase.get("deepen_bootstrap")
+        if not bs or not dbs:
+            return None  # Data integrity error — cannot proceed without bootstrap state
+        result = next_for_convergence_pair(bs, dbs)
+        if result[0] == "run_main":
+            return ("bootstrap", {"scope": "phase", "phase": phase_num})
+        if result[0] == "run_deepen":
+            return ("deepen_bootstrap", {"scope": "phase", "phase": phase_num})
 
         # ── Space_split ↔ deepen_space_split ──
         ss = phase.get("space_split")
@@ -142,7 +146,7 @@ def determine_next(
         if result[0] == "run_deepen":
             return ("deepen_space_split", {"scope": "phase", "phase": phase_num})
 
-        # ── Per-epic stages ──
+        # ── Per-epic stages (sequential: process in order, no dependency checks) ──
         epic_order = load_epic_order(phase_num, eigen_root)
         if not epic_order:
             return ("space_split", {"scope": "phase", "phase": phase_num})
@@ -153,28 +157,21 @@ def determine_next(
             epic_key = str(epic_num)
             plan = phase.get("plans", {}).get(epic_key)
 
+            # No plan entry → this epic needs planning
             if plan is None:
-                if epic_dependencies_met(phase, epic_num, phase_num, eigen_root):
-                    return (
-                        "plan_phase_epic",
-                        {"scope": "epic", "phase": phase_num, "epic": epic_num},
-                    )
-                else:
-                    all_epics_converged = False
-                    continue
+                return (
+                    "plan_phase_epic",
+                    {"scope": "epic", "phase": phase_num, "epic": epic_num},
+                )
 
             # ── Plan ↔ deepen_plan ──
             ppe = plan.get("plan_phase_epic")
             dppe = plan.get("deepen_plan_phase_epic")
             if not ppe:
-                if epic_dependencies_met(phase, epic_num, phase_num, eigen_root):
-                    return (
-                        "plan_phase_epic",
-                        {"scope": "epic", "phase": phase_num, "epic": epic_num},
-                    )
-                else:
-                    all_epics_converged = False
-                    continue
+                return (
+                    "plan_phase_epic",
+                    {"scope": "epic", "phase": phase_num, "epic": epic_num},
+                )
             if not dppe:
                 dppe = {"status": "not_started", "feedback_consumed": False}
 
@@ -229,6 +226,10 @@ def determine_next(
 
         # ── All epics in this phase checked ──
         if all_epics_converged:
+            # Human checkpoint: phase is done but not yet approved.
+            # Status can be "not_started" (needs eigen_continue Mode 1) or
+            # "testing" (user is running manual tests, needs eigen_continue Mode 2).
+            # Only "approved" allows the pipeline to advance to the next phase.
             if phase_review.get("status") != "approved":
                 return None
         else:

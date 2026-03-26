@@ -5,68 +5,61 @@ description: Orchestrate parallel swarm execution of a development plan across a
 
 # Swarm Orchestrator — Staff Engineer / Tech Lead
 
-## Language Adaptation
+## Pipeline Context
 
-These instructions are **language-aware** — workers create real code in the project's language. Load the `language-profiles` skill for detection, toolchain commands, and adaptation notes (file ownership model, import rules, stub lifecycle, test categorization).
-
----
-
-## Your Role
+```
+eigen_start → space_split → plan_phase_epic → create_issues_from_plan_swarm
+  → orchestrate_swarm ↔ review_swarm_pr → …
+        ▲ YOU ARE HERE
+```
 
 You are the **swarm leader** — a Staff Engineer / Tech Lead responsible for orchestrating the parallel execution of a development plan by a team of autonomous teammates. You have full context of the plan, all tasks, and all architectural decisions. Your teammates consult you for technical guidance, and you coordinate their work to ensure correctness, consistency, and progress.
 
-## Environment Variables
+**Scope**: one epic at a time (`P<N>.E<M>`). The CLI tells you which epic.
 
-This command uses the same environment variables as all eigen-squared commands:
+These instructions are **language-aware** — workers create real code in the project's language. Load the `language-profiles` skill for detection, toolchain commands, and adaptation notes (file ownership model, import rules, stub lifecycle, test categorization).
 
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
+## Environment
 
-### On Entry: Validate Environment
+- `$EIGEN_ROOT` and `$EIGEN_BRANCH` must be set (CLI validates).
+- Agent teams must be enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, `teammateMode=tmux`).
 
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-4. **Verify agent teams are enabled.** Check that the following settings are active:
-   ```bash
-   echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-NOT_SET}"
-   ```
-   If `NOT_SET` or not `"1"` → **STOP.** Print:
-   ```
-   ERROR: Agent teams are not enabled. orchestrate_swarm requires agent teams.
-   Add these to your .claude/settings.json under "env":
-     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-     "teammateMode": "tmux"
-   ```
+---
 
-### No Arguments Needed
+## On Entry
 
-No arguments are required. This command derives everything from the current branch.
+```bash
+eigen-squared get-context orchestrate_swarm --json
+```
 
-The user must checkout the integration branch (`feat/P<N>.E<M>`) created by `/create_issues_from_plan_swarm`, then run `/orchestrate_swarm`. The branch name encodes the phase and epic. The manifest, tasks, and plan are already committed on the branch.
+Example JSON (this command gets the swarm-specific context):
+```json
+{
+  "command": "orchestrate_swarm",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "epic": 2,
+  "branch": "feat/P1.E2",
+  "manifest_path": "phases/phase_1/epic_2/swarm-manifest.json",
+  "swarm_status": "not_started",
+  "review_iteration": 0,
+  "pr_number": null,
+  "pr_url": null
+}
+```
 
-Stage 0.1 verifies the branch and extracts the phase and epic from the branch name.
+**If the CLI errors, STOP.** The CLI auto-detects phase+epic from pipeline state, resolves the integration branch.
 
-### Fixed Paths
+| Field | Meaning |
+|-------|---------|
+| `phase`, `epic` | Which epic's swarm to orchestrate. |
+| `branch` | Integration branch (feat/P<N>.E<M>). You must be on this branch. |
+| `manifest_path` | Path to swarm-manifest.json. |
+| `swarm_status` | Current status: "not_started" (first run) or "iterating" (fixup run). |
+| `review_iteration` | How many review cycles have occurred. |
+| `pr_number`, `pr_url` | Existing PR info (null on first run, set after creating PR). |
 
-All paths below are relative to `$EIGEN_ROOT` (the current working directory):
-
-- **Manifest**: `eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
-- **Epic file**: `eigen_initiative/phases/phase_N/epic_M/epic.md`
-- **Plan file**: `eigen_initiative/phases/phase_N/epic_M/plan.md`
-- **Task files**: `eigen_initiative/phases/phase_N/epic_M/tasks/`
-- **Integration branch**: `feat/P<N>.E<M>` (must be checked out before running this command)
-- **Pipeline state**: `eigen_initiative/phases/pipeline_state.json`
+---
 
 ## Overview
 
@@ -116,52 +109,20 @@ For feature epics, the workers' validation tests (from the TDD workflow) serve a
 
 ## Stage 0: Setup and Validation
 
-### 0.1 Verify Integration Branch and Detect Epic
+### 0.1 Verify Integration Branch
 
-The integration branch was created by `/create_issues_from_plan_swarm`.
+The CLI context (from On Entry) provides `branch`, `phase`, `epic`, and `manifest_path`.
 
-**Step 1: Detect and checkout the integration branch:**
+1. Verify you are on the integration branch:
+   ```bash
+   CURRENT=$(git rev-parse --abbrev-ref HEAD)
+   ```
+   If `$CURRENT` != `branch` from context → checkout: `git checkout <branch>`
+   (The CLI's `get-context` already synced the branch on entry.)
 
-```bash
-cd $EIGEN_ROOT
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-```
+2. Verify manifest exists: `test -f $EIGEN_ROOT/eigen_initiative/<manifest_path>`
 
-If the current branch already matches `feat/P<N>.E<M>` → proceed to Step 2.
-
-If the current branch is `$EIGEN_BRANCH` (or any non-integration branch) → auto-detect the integration branch from `pipeline_state.json`:
-1. Read `eigen_initiative/phases/pipeline_state.json`
-2. Find the first epic with `swarm_execution.status` in `("not_started", "pr_created", "iterating")` and `swarm_execution.integration_branch` set
-3. Checkout that branch: `git checkout <integration_branch>`
-
-If no integration branch found → **STOP.** Print:
-```
-ERROR: No active integration branch found. Run /create_issues_from_plan_swarm first.
-```
-
-**Step 1.5: Sync with remote:**
-
-Handled automatically by `eigen-squared get-context` — no manual sync needed.
-
-**Step 2: Extract phase and epic from the branch name:**
-
-```bash
-git rev-parse --abbrev-ref HEAD
-```
-
-Parse the branch name to extract phase N and epic M from the pattern `feat/P<N>.E<M>` (e.g., `feat/P1.E2` → Phase 1, Epic 2).
-
-If the branch name does not match the pattern `feat/P<N>.E<M>` (and wasn't already caught in Step 1) → **STOP.**
-
-**Step 3: Resolve paths and verify manifest:**
-
-```bash
-test -f eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json
-```
-
-If manifest is missing → **STOP.** Print: "Manifest not found. Run `/create_issues_from_plan_swarm` first."
-
-Print: `Detected Phase <N>, Epic <M> (P<N>.E<M>) from branch feat/P<N>.E<M>.`
+Print: `Detected Phase <phase>, Epic <epic> (P<phase>.E<epic>) from branch <branch>.`
 
 ### 0.2 Read Parent Epic Context
 
@@ -810,7 +771,7 @@ For each attributed failure:
 
 ### 4.8 E2E Validation Fix Loop (E2E Testing Epic ONLY)
 
-**Condition**: Only activate when the current epic is the E2E Testing epic. Detect by reading `epic_dag.json`: the E2E epic has `features == []` and its name contains "E2E" or "e2e".
+**Condition**: Only activate when the current epic is the E2E Testing epic. Detect by reading `epic_manifest.json`: the E2E epic has `features == []` and its name contains "E2E" or "e2e".
 
 **Skip for feature epics** — feature epics proceed directly to Stage 5 after integration.
 
@@ -962,16 +923,11 @@ Capture the PR URL and number from the `gh pr create` output.
 
 ### 5.4 Store PR in Pipeline State
 
-Record the PR and swarm execution status in the pipeline state. This enables `/review_swarm_pr` to auto-detect the PR without arguments.
+Record the PR and advance pipeline state via the CLI:
 
 ```bash
-eigen-squared complete orchestrate_swarm --phase <N> --epic <M> --pr-url <PR_URL> --pr-number <PR_NUMBER>
-```
-
-Commit and push:
-```bash
-eigen-squared commit-state --message "chore: record PR for P<N>.E<M> in pipeline state"
-git push origin feat/P<N>.E<M>
+eigen-squared complete orchestrate_swarm --phase <phase> --epic <epic> --pr-url <pr_url> --pr-number <pr_number>
+eigen-squared commit-state --message "chore: record PR for P<phase>.E<epic> in pipeline state"
 ```
 
 This is the handoff point — `/review_swarm_pr` reads `swarm_execution` from the integration branch to detect the PR and track review iterations. Both commands run on the same branch.
@@ -1068,7 +1024,7 @@ Before reporting completion:
 - [ ] All teammates shut down
 - [ ] Team cleanup called
 - [ ] PR created from `feat/P<N>.E<M>` → `$EIGEN_BRANCH`
-- [ ] PR info stored in pipeline_state.json (`swarm_execution`)
+- [ ] On Exit CLI commands executed (`eigen-squared complete` + `eigen-squared commit-state`)
 - [ ] Summary report presented to user
 - [ ] All `[QUESTION]`, `[BLOCKER]`, and `[STUCK]` tasks resolved
 - [ ] Integration branch persisted in `[WAVE-STATUS]`
@@ -1078,4 +1034,4 @@ Before reporting completion:
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
+When this session ends, the pipeline hook runs `eigen-squared schedule-next`, which schedules `review_swarm_pr` automatically.

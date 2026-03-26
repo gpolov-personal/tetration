@@ -315,30 +315,33 @@ class TestDetermineNext:
             result = determine_next(state)
         assert result is None
 
-    def test_bug4_phase_without_bootstrap_keys(self):
+    def test_phase_without_bootstrap_keys_returns_none(self):
+        """Missing bootstrap keys is a data integrity error — pipeline stops."""
         phase = make_phase(include_bootstrap=False, space_split_converged=False)
         phase["space_split"]["status"] = "not_started"
         state = make_pipeline_state(phases={"1": phase})
         result = determine_next(state)
-        assert result[0] == "space_split"
+        assert result is None  # Data integrity error, not fallback to space_split
 
     def test_bug5_missing_plan_schedules_plan(self):
+        """Sequential: first non-converged epic gets planned immediately."""
         phase = make_phase(plans={})
         state = make_pipeline_state(phases={"1": phase})
         with patch("cli.transitions.load_epic_order", return_value=[1]):
-            with patch("cli.transitions.epic_dependencies_met", return_value=True):
-                result = determine_next(state)
+            result = determine_next(state)
         assert result is not None
         assert result[0] == "plan_phase_epic"
         assert result[1]["epic"] == 1
 
-    def test_missing_plan_with_unmet_deps_waits(self):
+    def test_sequential_epics_first_unplanned_gets_scheduled(self):
+        """Sequential: with 2 epics and no plans, first epic gets planned."""
         phase = make_phase(plans={})
         state = make_pipeline_state(phases={"1": phase})
         with patch("cli.transitions.load_epic_order", return_value=[1, 2]):
-            with patch("cli.transitions.epic_dependencies_met", return_value=False):
-                result = determine_next(state)
-        assert result is None
+            result = determine_next(state)
+        assert result is not None
+        assert result[0] == "plan_phase_epic"
+        assert result[1]["epic"] == 1  # First epic, not second
 
     def test_bug6_create_issues_inferred(self):
         epic = make_epic_plan(
@@ -377,11 +380,11 @@ class TestDetermineNext:
         assert result[0] == "space_split"
 
     def test_missing_plan_sub_keys_no_crash(self):
+        """Sequential: plan entry exists but no plan_phase_epic sub-key → plan it."""
         phase = make_phase(plans={"1": {"swarm_execution": make_swarm_state()}})
         state = make_pipeline_state(phases={"1": phase})
         with patch("cli.transitions.load_epic_order", return_value=[1]):
-            with patch("cli.transitions.epic_dependencies_met", return_value=True):
-                result = determine_next(state)
+            result = determine_next(state)
         assert result is not None
         assert result[0] == "plan_phase_epic"
 
@@ -436,8 +439,7 @@ class TestResolveBranch:
         phase = make_phase(plans={})
         state = make_pipeline_state(phases={"1": phase})
         with patch("cli.transitions.load_epic_order", return_value=[1]):
-            with patch("cli.transitions.epic_dependencies_met", return_value=True):
-                assert resolve_branch(state) == "main"
+            assert resolve_branch(state) == "main"
 
     def test_complete_pipeline_returns_empty(self):
         phase = make_phase(phase_review_status="approved")

@@ -5,9 +5,24 @@ description: ONE-TIME launcher — validate environment and kick off a fresh aut
 
 # Eigen Start — Launch the Autonomous Pipeline
 
+## Pipeline Context
+
+```
+eigen_start (you are here)
+    │
+    ▼ [session ends → Stop hook fires → eigen-squared schedule-next]
+    │
+    ▼
+time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
+space_split ↔ deepen_space_split → [per epic: plan → create → orchestrate → review] →
+STOP at E2E Testing epic convergence
+```
+
+This is the **ONE-TIME interactive launcher**. It validates the environment, collects configuration from the user, installs the pipeline controller via the `eigen-squared` CLI, and initializes `pipeline_state.json`. After this session ends, the Stop hook takes over and the pipeline runs autonomously — you never run `/eigen_start` again for this pipeline.
+
 ## Your Role
 
-You are a **ONE-TIME pipeline launcher**. You validate that everything is ready — environment variables, claude-tasks server, initiative documents, agent teams — and then create the first one-off task in claude-tasks to start a **fresh** autonomous pipeline. After this, the pipeline runs itself until a phase is complete.
+You are a **ONE-TIME pipeline launcher**. You validate that everything is ready — environment variables, claude-tasks server, initiative documents, agent teams — and then install the pipeline controller and initialize state for a **fresh** autonomous pipeline. After this, the pipeline runs itself until a phase is complete.
 
 This command is for **brand new pipelines ONLY**. If the pipeline has already started, use `/eigen_continue` instead.
 
@@ -252,9 +267,11 @@ Initiative documents:
 
 ## Step 4: Check Pipeline State (must be fresh)
 
-Load the `pipeline-state-schema` skill to understand the pipeline state format.
-
 Check if `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` exists:
+
+```bash
+test -f $EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json && echo "EXISTS" || echo "NOT_FOUND"
+```
 
 - **If it exists** → **STOP.** Print:
   ```
@@ -368,15 +385,16 @@ Agent Teams:        enabled
 
 Initiative:         <filename>
 Blackbox:           <filename>
-Pipeline State:     <not started | in progress at stage X>
+Pipeline State:     not started (fresh)
 
 Scheduled Start:    <resolved time — e.g., "2026-03-17 15:00:00 UTC (in 30 minutes)">
 
-The autonomous pipeline will run:
+The autonomous pipeline will run sequentially:
   time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
   space_split ↔ deepen_space_split → [per epic: plan → create → orchestrate → review] →
   STOP at E2E Testing epic convergence
 
+Epics execute one at a time in dependency order.
 Each command runs ~3 minutes after the previous finishes.
 ```
 
@@ -397,10 +415,10 @@ This creates `.eigen/` directory with env file and hook script, registers the St
 ### 7.2 Initialize pipeline state
 
 ```bash
-eigen-squared init --initiative "<initiative name>" --phase-count 0
+eigen-squared init --initiative "<initiative name from Step 3>" --phase-count 0
 ```
 
-Note: phase_count is 0 because time_split hasn't run yet. The CLI creates `pipeline_state.json` with `time_split.status = "not_started"`.
+Phase count is 0 because time_split hasn't run yet. The CLI creates `pipeline_state.json` with `time_split.status = "not_started"`.
 
 ### 7.3 Verify installation
 
@@ -412,6 +430,8 @@ eigen-squared status
 ### 7.4 First task scheduling
 
 When this session ends, the Stop hook will run `eigen-squared schedule-next`, which will schedule `/time_split` automatically.
+
+**Do NOT schedule tasks via curl.** The hook handles it.
 
 Print:
 ```
@@ -446,4 +466,4 @@ To cancel: disable the pending task in claude-tasks TUI or API.
 - **claude-tasks must be running** in a separate terminal (`claude-tasks serve`).
 - **One claude-tasks server, multiple projects** — each project's `working_dir` points to its own root, and each has its own `.claude/settings.json` with isolated env vars.
 - **ONE-TIME use only** — this command is for fresh pipelines. If the pipeline has already started, use `/eigen_continue` to review the completed phase and launch the next one.
-- **Pipeline controller hook** — the `eigen-squared` CLI handles hook installation, pipeline state, and command scheduling. The Stop hook runs `eigen-squared schedule-next` for all branch management and task scheduling. Commands no longer contain auto-chain logic.
+- **Pipeline controller** — the `eigen-squared` CLI handles hook installation, pipeline state, and command scheduling. The Stop hook runs `eigen-squared schedule-next` for all branch management and task scheduling. Commands no longer contain auto-chain logic.

@@ -5,11 +5,27 @@ description: Decompose a development plan into file-disjoint task files and gene
 
 # Swarm Task Generation — Plan to Tasks + Manifest
 
-## Language Adaptation
+## Pipeline Context
 
-These instructions are **language-aware** — task specifications reference file paths, import conventions, and test patterns that depend on the project's languages. Load the `language-profiles` skill for detection, toolchain commands, and adaptation notes.
+```
+eigen_start ──► space_split ──► plan_phase_epic
+                                      │
+                              ┌───────┘
+                              ▼
+                   ══════════════════════════
+                   ║ create_issues_from_    ║
+                   ║   plan_swarm           ║  ◄── YOU ARE HERE
+                   ══════════════════════════
+                              │
+                              ▼
+                      orchestrate_swarm ──► review_swarm_pr
+```
 
-The following aspects must be resolved from the language profile for the detected languages:
+**Role.** You are a senior technical architect decomposing a converged development plan into discrete, implementable tasks optimized for parallel execution by a swarm of autonomous agents. You produce task files and a machine-readable `swarm-manifest.json` that the orchestrator uses to coordinate the swarm.
+
+**One-shot.** This command has no deepen pair and no convergence loop. It reads a converged plan once and produces all outputs in a single pass.
+
+**Language-aware.** Task specifications reference file paths, import conventions, and test patterns that depend on the project's languages. Load the `language-profiles` skill for detection, toolchain commands, and adaptation notes. Resolve from the language profile:
 - **File extensions** in `files_owned` and `test_files_owned` — use the project's actual extensions
 - **Import rules** in Interface Dependencies — how consumers import from stubs varies by language (see "Import / Dependency Rules" in the `language-profiles` skill)
 - **Package index files** in `shared_files` — some languages have barrel/index files that become shared files, others don't (see "Package Index / Shared Files" in the skill)
@@ -18,47 +34,9 @@ The following aspects must be resolved from the language profile for the detecte
 
 ---
 
-## Your Role
+## Environment
 
-You are a senior technical architect responsible for decomposing a comprehensive development plan into discrete, implementable tasks **optimized for parallel execution by a swarm of autonomous agents**. You produce task files and a machine-readable `swarm-manifest.json` that the orchestrator will use to coordinate the swarm.
-
-## Objective
-
-Generate tasks that:
-1. **Are independently implementable** — each task is atomic, containing code development and its tests
-2. **Follow the plan's structure** — respect the Parallelization Strategy's components, waves, and dependencies
-3. **Are appropriately scoped** — not too granular (avoid "add one line") nor too broad (avoid "implement entire epic")
-4. **Include sufficient context** — sub-agents should understand WHY and HOW, not just WHAT
-5. **Have clear success criteria** — verifiable acceptance criteria and validation steps
-6. **Declare file ownership** — each task explicitly lists which files it creates/modifies
-7. **Have no file ownership overlaps** — no two tasks can own the same file; shared files go to the integration task
-
-## Environment Variables
-
-This command uses the same environment variables as all eigen-squared commands:
-
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
-
-### On Entry: Validate Environment
-
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-
-## Pipeline Awareness
-
-The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
+The `eigen-squared` CLI auto-detects the current phase and epic from `epic_manifest.json` and pipeline state. No manual arguments are needed.
 
 ### On Entry
 
@@ -66,39 +44,60 @@ The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pi
 eigen-squared get-context create_issues_from_plan_swarm --json
 ```
 
-If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON for `phase`, `epic`, `branch`, `manifest_path`, and `recommendations`.
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON:
+
+```json
+{
+  "command": "create_issues_from_plan_swarm",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "epic": 2,
+  "branch": "feat/P1.E2",
+  "plan_file": "phases/phase_1/epic_2/plan.md",
+  "epic_file": "phases/phase_1/epic_2/epic.md",
+  "phase_e2e_config": "phases/phase_1/phase_e2e_config.json",
+  "bootstrap_report": "phases/phase_1/bootstrap-report.json",
+  "phase_manifest": "phases/phase_1_manifest.md",
+  "recommendations": [...]
+}
+```
+
+All paths are relative to `$EIGEN_ROOT/eigen_initiative/`. The CLI auto-detects phase+epic (first epic with converged plan and no manifest), validates prerequisites, and returns these paths.
+
+**How to read it:**
+
+| Field | Meaning |
+|-------|---------|
+| `phase`, `epic` | Which epic to task-ify (auto-detected). |
+| `branch` | Integration branch name (will be created in Stage 5). |
+| `plan_file` | Path to the converged plan — your primary input. |
+| `epic_file` | Path to the epic definition. |
+| `phase_e2e_config` | Path to E2E configuration for scenarios. |
+| `bootstrap_report` | Path to bootstrap context (languages, tooling, entities). |
+| `phase_manifest` | Path to phase manifest for broader context. |
+| `recommendations` | Advisory observations from upstream deepen commands. |
+
+### Fixed Paths
+
+All paths are relative to `$EIGEN_ROOT`:
+
+- **Plan file**: `eigen_initiative/phases/phase_N/epic_M/plan.md`
+- **Epic file**: `eigen_initiative/phases/phase_N/epic_M/epic.md`
+- **Task directory**: `eigen_initiative/phases/phase_N/epic_M/tasks/`
+- **Manifest file**: `eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
+- **Phase E2E config**: `eigen_initiative/phases/phase_N/phase_e2e_config.json`
+- **Bootstrap report**: `eigen_initiative/phases/phase_N/bootstrap-report.json`
+- **Initiative index**: `eigen_initiative/_index.md`
 
 ### On Exit
 
 After creating tasks, manifest, and integration branch:
 
 ```bash
-eigen-squared complete create_issues_from_plan_swarm --phase <N> --epic <M> --manifest-path <manifest_path> --integration-branch feat/P<N>.E<M>
+eigen-squared checkout-branch --phase <phase> --epic <epic> --create
+eigen-squared complete create_issues_from_plan_swarm --phase <phase> --epic <epic> --manifest-path eigen_initiative/phases/phase_<phase>/epic_<epic>/swarm-manifest.json --integration-branch feat/P<phase>.E<epic>
+eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
-
-To create the integration branch:
-```bash
-eigen-squared checkout-branch --phase <N> --epic <M> --create
-```
-
-The CLI handles all state updates atomically.
-
-### Fixed Paths
-
-- **Plan file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`
-- **Epic file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`
-- **Task directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/tasks/`
-- **Manifest file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
-- **Phase E2E config**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/phase_e2e_config.json`
-- **Bootstrap report**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`
-- **Pipeline state**: `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`
-- **Initiative index**: `$EIGEN_ROOT/eigen_initiative/_index.md`
-
-## Input
-
-No arguments are required. The phase and epic are auto-detected from the pipeline state.
-
-The plan file must exist and contain the strategic plan with a Parallelization Strategy section produced by `/plan_phase_epic`.
 
 ## Output
 
@@ -128,20 +127,22 @@ Task IDs use the triplet convention:
 
 ## Stage 0: Ingest
 
+All file paths from the CLI context. Prepend `$EIGEN_ROOT/eigen_initiative/` to each relative path.
+
 ### 0.1 Read Plan File
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If not found → **STOP.** Print: "No plan found. Run `/plan_phase_epic` first."
+1. Read `plan_file` (from CLI context). If not found → **STOP.** Print: "No plan found. Run `/plan_phase_epic` first."
 2. Extract the full plan content, including the Parallelization Strategy section.
 3. If no Parallelization Strategy section exists, derive one from the plan before proceeding (identify independent components, shared files, and interfaces).
 
 ### 0.2 Read Epic File
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`.
+1. Read `epic_file` (from CLI context).
 2. Parse YAML frontmatter for `id`, `phase`, `epic_number`, `features`, `feature_count`.
 
 ### 0.3 Read Phase E2E Config
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/phase_e2e_config.json`.
+1. Read `phase_e2e_config` (from CLI context).
 2. Determine the epic type:
    - **Feature epic**: this epic has features (non-empty `features` array in epic.md). Read `epic_validation_scenarios` filtered to this epic's ID.
    - **E2E Testing epic**: this epic has no features (empty `features` array, name is "E2E Testing"). Read `phase_e2e_scenarios` and `infrastructure_requirements`.
@@ -149,10 +150,10 @@ Task IDs use the triplet convention:
 
 ### 0.4 Read Bootstrap Report
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`.
+1. Read `bootstrap_report` (from CLI context).
 2. Extract: `languages`, `tooling_decisions`, `entities_created`.
 
-### 0.5 Read Recommendations (if present)
+### 0.5 Read Recommendations
 
 1. Parse `recommendations` from the JSON returned by `eigen-squared get-context` (see **On Entry** above).
 2. Use as advisory context for task boundary analysis and dependency graph construction.
@@ -451,9 +452,11 @@ Write the validated manifest to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epi
 
 ---
 
-### 4.4 Finalize Pipeline State
+### 4.4 Signal Completion
 
-Pipeline state updates are handled by the CLI on exit (see **On Exit** above). You do not modify `pipeline_state.json` directly.
+```bash
+eigen-squared complete create_issues_from_plan_swarm --phase <phase> --epic <epic> --manifest-path eigen_initiative/phases/phase_<phase>/epic_<epic>/swarm-manifest.json --integration-branch feat/P<phase>.E<epic>
+```
 
 ---
 
@@ -461,27 +464,25 @@ Pipeline state updates are handled by the CLI on exit (see **On Exit** above). Y
 
 After all tasks and the manifest are created, create the integration branch and commit the artifacts. The orchestrator and workers will operate on this branch from `$EIGEN_ROOT`.
 
-### Sync with Remote
-
-Handled automatically by `eigen-squared get-context` — no manual sync needed.
-
-### 5.1 Create the Integration Branch from $EIGEN_BRANCH
+### 5.1 Create the Integration Branch
 
 ```bash
-eigen-squared checkout-branch --phase <N> --epic <M> --create
+eigen-squared checkout-branch --phase <phase> --epic <epic> --create
 ```
+
+The CLI creates `feat/P<N>.E<M>` from the latest `$EIGEN_BRANCH`, pulling first to include all merged changes from previous epics.
 
 ### 5.2 Commit Manifest and Tasks on the Integration Branch
 
 The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`. Since we checked out `feat/P<N>.E<M>` (which was created from `origin/$EIGEN_BRANCH`), these files are already present in the working directory — no copying needed.
 
 ```bash
-eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<N>.E<M>" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/
+eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 ### 5.3 Branch state
 
-After committing and pushing, the working directory remains on the `feat/P<N>.E<M>` integration branch. The pipeline controller hook handles checking out the correct branch for the next command (orchestrate_swarm on this same branch, or EIGEN_BRANCH for other commands).
+After committing and pushing, the working directory remains on the `feat/P<N>.E<M>` integration branch. The `eigen-squared schedule-next` hook handles checking out the correct branch for the next command (orchestrate_swarm on this same branch, or EIGEN_BRANCH for other commands).
 
 ---
 

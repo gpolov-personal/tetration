@@ -5,92 +5,48 @@ description: Split a software development initiative into sequential E2E-testabl
 
 # Initiative Architect — Time Split
 
-## Language Adaptation
+## Pipeline Context
 
-These instructions are **language-agnostic** — they operate on initiative-level documents (markdown feature tables and dependency DAGs), not on source code. No language detection or toolchain resolution is needed.
+The eigen-squared pipeline decomposes a software initiative into shippable code:
+
+```
+  ┌────────────┐     ┌──────────────────┐     ┌─────────────┐     ┌─────────────┐
+  │ time_split │────▶│ deepen_time_split│────▶│  bootstrap   │────▶│ space_split  │──▶ ...
+  └────────────┘     └──────────────────┘     └─────────────┘     └─────────────┘
+   ▲                          │
+   └──────── iterate ─────────┘
+       YOU ARE HERE
+```
+
+**Your role:** You are an **Initiative Architect** responsible for decomposing a potentially large software development initiative (up to 150+ features with complex dependencies) into sequential, E2E-testable phases. Each phase is a self-contained deliverable that builds on prior phases. Your output feeds into `/space_split`, which further decomposes each phase into parallel epics for a swarm of agent developers to execute.
+
+**Your convergence partner:** `/deepen_time_split` reviews your output and produces structured feedback. You iterate with deepen until the split converges.
+
+**Language note:** These instructions are **language-agnostic** — they operate on initiative-level documents (markdown feature tables and dependency DAGs), not on source code. No language detection or toolchain resolution is needed.
 
 ---
 
-## Your Role
+## Environment
 
-You are an **Initiative Architect** responsible for decomposing a potentially large software development initiative (up to 150+ features with complex dependencies) into sequential, E2E-testable phases. Each phase is a self-contained deliverable that builds on prior phases. Your output feeds into `/space_split`, which further decomposes each phase into parallel epics for swarm of agent developers to execute.
+Before proceeding, confirm ALL of the following:
 
-## Environment Variables
+- [ ] `$EIGEN_ROOT` is set and points to an existing directory
+- [ ] `$EIGEN_BRANCH` is set and the branch exists locally in `$EIGEN_ROOT`
+- [ ] `$EIGEN_ROOT/eigen_initiative` exists and is a directory
+- [ ] `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is `"1"` (needed downstream by `/orchestrate_swarm`)
 
-This command requires two environment variables:
+If any check fails, **STOP** and print a descriptive error telling the user what to set or create.
 
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project (e.g., `/home/user/projects/my-app`). This is where the initiative documents live and where all outputs are written.
-- **`EIGEN_BRANCH`** — the default branch from which all work starts (e.g., `main`, `dev`). Used as the base for worktrees and branch operations downstream.
-
-### On Entry: Validate Environment
-
-1. Read `$EIGEN_ROOT`:
-   ```bash
-   echo "${EIGEN_ROOT:-NOT_SET}"
-   ```
-   - If `NOT_SET` or empty → **STOP.** Print:
-     ```
-     ERROR: $EIGEN_ROOT is not set.
-     Set it to the root folder of your target project:
-       export EIGEN_ROOT=/path/to/your/project
-     ```
-2. Read `$EIGEN_BRANCH`:
-   ```bash
-   echo "${EIGEN_BRANCH:-NOT_SET}"
-   ```
-   - If `NOT_SET` or empty → **STOP.** Print:
-     ```
-     ERROR: $EIGEN_BRANCH is not set.
-     Set it to the default branch from which all work starts:
-       export EIGEN_BRANCH=main
-     ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-4. **Verify `$EIGEN_BRANCH` exists locally.** Check:
-   ```bash
-   git -C $EIGEN_ROOT branch --list $EIGEN_BRANCH
-   ```
-   If empty (branch does not exist locally) → **STOP.** Print:
-   ```
-   ERROR: Branch '$EIGEN_BRANCH' does not exist locally in $EIGEN_ROOT.
-   Verify the branch name or create it before running the pipeline.
-   ```
-5. **Verify agent teams are enabled** (needed downstream by `/orchestrate_swarm`). Check:
-   ```bash
-   echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-NOT_SET}"
-   ```
-   If `NOT_SET` or not `"1"` → **STOP.** Print:
-   ```
-   ERROR: Agent teams are not enabled. The eigen-squared pipeline requires agent teams.
-   Add these to your .claude/settings.json under "env":
-     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-     "teammateMode": "tmux"
-   ```
-6. Verify `$EIGEN_ROOT/eigen_initiative` exists and is a directory. If not → **STOP.** Print:
-   ```
-   ERROR: Initiative directory not found at $EIGEN_ROOT/eigen_initiative
-   Create it and place the initiative documents inside:
-     mkdir -p $EIGEN_ROOT/eigen_initiative
-   ```
-
-### Sync with Remote
-
-Handled automatically by `eigen-squared get-context` — no manual sync needed.
-
-### Fixed Paths
-
-All paths in this command are derived from the environment — no arguments needed:
+**Paths** (all derived from environment — no arguments needed):
 
 - **Initiative directory**: `$EIGEN_ROOT/eigen_initiative` — where initiative documents live
 - **Phases directory**: `$EIGEN_ROOT/eigen_initiative/phases` — where all outputs are written
 
-## Input
+**Input files** — `$EIGEN_ROOT/eigen_initiative` must contain:
 
-No arguments are required. All paths are derived from environment variables.
-
-`$EIGEN_ROOT/eigen_initiative` must contain these files:
-  1. An **Initiative document** — strategic context with a Feature Summary Table listing all features and their dependencies. May optionally include pre-computed DAG analysis sections (dependency analysis, cluster analysis) as enrichment.
-  2. A **Blackbox Requirements document** — full feature specifications (Inputs/Outputs/Behavior/Acceptance Criteria)
-  3. A **Whitebox Reference Guide** — implementation patterns from the reference system (optional — only when there is an existing codebase whose patterns should be followed)
+1. An **Initiative document** — strategic context with a Feature Summary Table listing all features and their dependencies. May optionally include pre-computed DAG analysis sections (dependency analysis, cluster analysis) as enrichment.
+2. A **Blackbox Requirements document** — full feature specifications (Inputs/Outputs/Behavior/Acceptance Criteria)
+3. A **Whitebox Reference Guide** — implementation patterns from the reference system (optional — only when there is an existing codebase whose patterns should be followed)
 
 If the directory doesn't contain at least the first two files, print this message and STOP:
 
@@ -103,23 +59,14 @@ The directory must contain at least 2 files:
   - Whitebox_Reference_Guide.md — implementation patterns from reference system: Optional
 ```
 
-## Output
-
-All outputs are written to `$EIGEN_ROOT/eigen_initiative/phases/`:
+**Output** — all written to `$EIGEN_ROOT/eigen_initiative/phases/`:
 
 - `phases/initiative_summary.json` — metadata: phase count, feature distribution, DAG stats, per-phase summary
 - `phases/phase_N_manifest.md` — one per phase, containing YAML frontmatter, feature tables, dependency tables, extracted blackbox specs, and optionally whitebox sections
 
-## Overview
-
-You will:
-1. Ingest and validate the initiative files
-2. Build a dependency DAG and compute phase assignments
-3. Generate phase manifests with all context needed for `/space_split`
-
 ---
 
-## Critical Constraints
+## Constraints
 
 - You are a **single agent** (no team creation). Research sub-agents may be spawned via the `Task` tool for heavy parsing, but you own all decisions.
 - You NEVER write code. You produce phase manifest documents and the JSON summary only.
@@ -131,24 +78,61 @@ You will:
 
 ---
 
-## Pipeline Awareness
+## On Entry
 
-The `eigen-squared` CLI manages all pipeline state. You do NOT read or write `pipeline_state.json` directly.
-
-### On Entry
+Run the CLI to get pipeline context:
 
 ```bash
 eigen-squared get-context time_split --json
 ```
 
-If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON:
-- `is_first_run: true` → first run, proceed to Stage 1
-- `should_process_feedback: true` → iteration run, proceed to **Iteration Protocol** with `feedback_path` from the context
-- Otherwise the CLI will have already stopped you with an error
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON.
 
-### On Exit
+**Example response:**
 
-After successfully generating outputs (Stage 2):
+```json
+{
+  "command": "time_split",
+  "branch": "main",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "iteration": 2,
+  "current_iteration": 1,
+  "is_first_run": false,
+  "phase_count": 4,
+  "should_process_feedback": true,
+  "feedback_path": "phases/feedback/deepen_time_split_feedback.json",
+  "output_paths": {
+    "initiative_summary": "phases/initiative_summary.json",
+    "phase_manifests": ["phases/phase_1_manifest.md", "phases/phase_2_manifest.md"]
+  },
+  "recommendations": []
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Always `"time_split"` |
+| `branch` | string | The branch to work on (from `$EIGEN_BRANCH`) |
+| `paths_relative_to` | string | Base path — all relative paths in this context are relative to this |
+| `iteration` | int | The iteration you are about to produce (1 = first run, 2+ = iteration) |
+| `current_iteration` | int | The iteration whose outputs currently exist on disk (0 = none yet) |
+| `is_first_run` | bool | `true` when no prior run exists |
+| `phase_count` | int | Number of phases from the most recent run (0 if first run) |
+| `should_process_feedback` | bool | `true` when unprocessed deepen feedback is waiting |
+| `feedback_path` | string | Relative path to the feedback JSON (only when `should_process_feedback` is true) |
+| `output_paths` | object | Paths to current outputs (null fields on first run) |
+| `recommendations` | array | Downstream recommendations from deepen commands to incorporate |
+
+**Routing:**
+
+- `is_first_run == true` → proceed to **Stage 0**
+- `should_process_feedback == true` → proceed to **Iteration Protocol**
+
+---
+
+## On Exit
+
+After successfully generating outputs (Stage 2), signal completion to the CLI:
 
 **First run** (creates pipeline_state.json):
 ```bash
@@ -163,24 +147,30 @@ eigen-squared complete time_split --phase-count <N> --output-path phases/initiat
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), phase initialization with all required keys.
 
+Then commit pipeline artifacts:
+
+```bash
+eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
+```
+
 ---
 
 ## Iteration Protocol
 
-This section applies when `pipeline_state.json` exists, `state.time_split.iteration >= 1`, and `$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json` is present.
+This section applies when the CLI context returns `should_process_feedback: true`.
 
 ### Read Feedback
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json`.
+1. Read the feedback file at the path given by `feedback_path` from the CLI context (resolve relative to `$EIGEN_ROOT/eigen_initiative/`).
 2. Extract: `findings[]`, `convergence`, `previous_feedback_comparison`.
-3. Validate that `analyzed_iteration` matches the current `state.time_split.iteration` (feedback is for the most recent output).
+3. Validate that `analyzed_iteration` in the feedback matches `current_iteration` from the CLI context (feedback is for the most recent output).
 
 ### Honest Self-Assessment
 
 For each finding in `findings[]`, print an assessment to the user:
 
 ```
-=== Iteration <N+1>: Addressing Deepen Feedback ===
+=== Iteration <iteration>: Addressing Deepen Feedback ===
 
 Finding <id>: <title> [<severity>]
   Category: <category>
@@ -189,6 +179,8 @@ Finding <id>: <title> [<severity>]
   Assessment: ACCEPT | PARTIAL | REJECT
   Rationale: <why you accept/partially accept/reject this finding>
 ```
+
+(Use `iteration` from the CLI context for the header.)
 
 Classification rules:
 - **ACCEPT**: the finding is valid and actionable — the recommendation will be incorporated as a constraint in regeneration.
@@ -226,7 +218,6 @@ If any check fails, fix it NOW before writing the outputs. Do not defer structur
 
 1. Overwrite **only** these output files: `$EIGEN_ROOT/eigen_initiative/phases/initiative_summary.json` and `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`. Do NOT touch anything else under `$EIGEN_ROOT/eigen_initiative/phases/`.
 2. **NEVER delete, overwrite, or recreate `$EIGEN_ROOT/eigen_initiative/phases/feedback/` or any file inside it.** The feedback file (`$EIGEN_ROOT/eigen_initiative/phases/feedback/deepen_time_split_feedback.json`) is owned by `deepen_time_split` and must stay untouched for comparison on the next deepen run.
-3. Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json` on exit: increment iteration, update paths, set `feedback_consumed = true`, set `deepen_time_split.feedback_consumed = true`.
 
 ---
 
@@ -526,12 +517,6 @@ Next steps:
      to create the project foundation before parallel execution.
   3. Run /space_split
      to decompose Phase 1 into parallel epics for swarm execution.
-```
-
-### 2.5 Commit Pipeline Artifacts
-
-```bash
-eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
 ```
 
 ---

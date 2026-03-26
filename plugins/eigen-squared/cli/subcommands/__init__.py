@@ -252,7 +252,13 @@ def cmd_get_context(args: Namespace) -> int:
         if phase is not None and epic is not None:
             branch = git_ops.integration_branch_name(phase, epic)
 
-    context: dict = {"command": cmd, "phase": phase, "epic": epic, "branch": branch}
+    # Base context — only include phase/epic if relevant to this command
+    # All paths in context are relative to $EIGEN_ROOT/eigen_initiative/
+    context: dict = {"command": cmd, "branch": branch, "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/"}
+    if phase is not None:
+        context["phase"] = phase
+    if epic is not None:
+        context["epic"] = epic
 
     # Build command-specific context
     if cmd in ("time_split", "deepen_time_split"):
@@ -261,15 +267,55 @@ def cmd_get_context(args: Namespace) -> int:
 
         if cmd == "time_split":
             if ts.convergence.converged:
-                print("ERROR: time_split already converged", file=sys.stderr)
+                print(
+                    f"ERROR: time_split already converged "
+                    f"(iteration {ts.iteration}, decided by "
+                    f"{ts.convergence.decided_by} at {ts.convergence.decided_at}). "
+                    f"No re-run needed.",
+                    file=sys.stderr,
+                )
                 return 1
             context["iteration"] = ts.iteration + 1
+            context["current_iteration"] = ts.iteration
             context["is_first_run"] = ts.iteration == 0
-            context["should_process_feedback"] = (
-                ts.iteration >= 1 and not ts.feedback_consumed
-            )
-            if dts.feedback_path:
-                context["feedback_path"] = dts.feedback_path
+            context["phase_count"] = ts.phase_count
+
+            # Guard: feedback lifecycle checks
+            if ts.iteration >= 1:
+                # Check if feedback file actually exists on disk
+                feedback_exists = False
+                if dts.feedback_path and root:
+                    feedback_file = Path(root) / "eigen_initiative" / dts.feedback_path
+                    feedback_exists = feedback_file.exists()
+
+                if ts.feedback_consumed and not feedback_exists:
+                    print(
+                        f"ERROR: time_split has already run (iteration {ts.iteration}). "
+                        f"Run /deepen_time_split first to generate feedback before re-running.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                if ts.feedback_consumed and feedback_exists:
+                    print(
+                        f"ERROR: Feedback already processed in iteration {ts.iteration}. "
+                        f"Run /deepen_time_split again for fresh review before re-running.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                if not ts.feedback_consumed and feedback_exists:
+                    context["should_process_feedback"] = True
+                    context["feedback_path"] = dts.feedback_path
+                elif not ts.feedback_consumed and not feedback_exists:
+                    print(
+                        f"ERROR: time_split iteration {ts.iteration} has unprocessed feedback "
+                        f"but feedback file not found at {dts.feedback_path}. "
+                        f"Run /deepen_time_split to generate it.",
+                        file=sys.stderr,
+                    )
+                    return 1
+            else:
+                context["should_process_feedback"] = False
+
             context["output_paths"] = ts.output_paths
             recs = state.recommendations.get("time_split", [])
             context["recommendations"] = [
@@ -277,13 +323,58 @@ def cmd_get_context(args: Namespace) -> int:
             ]
         else:  # deepen_time_split
             if ts.convergence.converged:
-                print("ERROR: time_split already converged, no deepen needed", file=sys.stderr)
+                print(
+                    f"ERROR: time_split already converged "
+                    f"(decided at {ts.convergence.decided_at}: "
+                    f"{ts.convergence.reason}). No further review needed.",
+                    file=sys.stderr,
+                )
                 return 1
+            if ts.status == "not_started":
+                print(
+                    "ERROR: time_split has not run yet. "
+                    "Run /time_split first to generate the phase split.",
+                    file=sys.stderr,
+                )
+                return 1
+
             context["iteration"] = dts.iteration + 1
-            context["previous_feedback_path"] = dts.feedback_path
-            context["previous_feedback_exists"] = dts.feedback_path is not None
-            context["main_command_outputs"] = ts.output_paths
+            context["main_command_iteration"] = ts.iteration
+            context["phase_count"] = ts.phase_count
             context["lessons_dir"] = "eigen_lessons/time_split/"
+
+            # Enrich main_command_outputs with phase manifests and source files
+            outputs = dict(ts.output_paths)
+            if ts.phase_count:
+                outputs["phase_manifests"] = [
+                    f"phases/phase_{i}_manifest.md"
+                    for i in range(1, ts.phase_count + 1)
+                ]
+            # Try to read source_files from initiative_summary
+            if root and outputs.get("initiative_summary"):
+                summary_path = Path(root) / "eigen_initiative" / outputs["initiative_summary"]
+                if summary_path.exists():
+                    try:
+                        summary = json.loads(summary_path.read_text())
+                        if "source_files" in summary:
+                            outputs["source_files"] = summary["source_files"]
+                    except (json.JSONDecodeError, OSError):
+                        pass
+            context["main_command_outputs"] = outputs
+
+            # Check if previous feedback exists on disk and warn about overwrite
+            if dts.feedback_path and root:
+                prev_file = Path(root) / "eigen_initiative" / dts.feedback_path
+                context["previous_feedback_path"] = dts.feedback_path
+                context["previous_feedback_exists"] = prev_file.exists()
+                if prev_file.exists() and not dts.feedback_consumed:
+                    context["overwrite_warning"] = (
+                        "Existing feedback has not been consumed by time_split yet. "
+                        "Re-analyzing will overwrite it."
+                    )
+            else:
+                context["previous_feedback_path"] = None
+                context["previous_feedback_exists"] = False
 
     elif cmd in MAIN_COMMANDS:
         pk = str(phase)
@@ -304,44 +395,95 @@ def cmd_get_context(args: Namespace) -> int:
                 return 1
             ek = str(epic)
             if ek not in ph.plans:
+                # First run for this epic — plan entry doesn't exist yet
                 context["is_first_run"] = True
                 context["iteration"] = 1
-            else:
-                ms = ph.plans[ek].plan_phase_epic
-                ds = ph.plans[ek].deepen_plan_phase_epic
-                if ms.convergence.converged:
-                    print(f"ERROR: plan P{phase}.E{epic} already converged", file=sys.stderr)
-                    return 1
-                context["iteration"] = ms.iteration + 1
-                context["is_first_run"] = ms.iteration == 0
-                context["should_process_feedback"] = ms.iteration >= 1 and not ms.feedback_consumed
-                if ds.feedback_path:
-                    context["feedback_path"] = ds.feedback_path
-                context["output_paths"] = ms.output_paths
-            recs = [
-                r.to_dict() if hasattr(r, "to_dict") else r
-                for r in state.recommendations.get(cmd, [])
-                if (isinstance(r, dict) and r.get("phase") in (phase, None))
-                or (hasattr(r, "phase") and r.phase in (phase, None))
-            ]
-            context["recommendations"] = recs
-            print(json.dumps(context, indent=2) if getattr(args, "as_json", False) else str(context))
-            return 0
+                context["current_iteration"] = 0
+                context["should_process_feedback"] = False
+                context["output_paths"] = {}
+                context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+                recs = [
+                    r.to_dict() if hasattr(r, "to_dict") else r
+                    for r in state.recommendations.get(cmd, [])
+                    if (
+                        (isinstance(r, dict) and r.get("phase") in (phase, None) and r.get("epic") in (epic, None))
+                        or (hasattr(r, "phase") and r.phase in (phase, None) and getattr(r, "epic", None) in (epic, None))
+                    )
+                ]
+                context["recommendations"] = recs
+                if getattr(args, "as_json", False):
+                    print(json.dumps(context, indent=2))
+                else:
+                    for k, v in context.items():
+                        print(f"  {k}: {v}")
+                return 0
+            ms = ph.plans[ek].plan_phase_epic
+            ds = ph.plans[ek].deepen_plan_phase_epic
+
+        # --- Standard flow for all main commands (bootstrap, space_split, plan_phase_epic) ---
 
         if ms.convergence.converged:
-            print(f"ERROR: {cmd} phase {phase} already converged", file=sys.stderr)
+            print(
+                f"ERROR: {cmd} phase {phase} already converged "
+                f"(decided at {ms.convergence.decided_at}: {ms.convergence.reason}). "
+                f"No re-run needed.",
+                file=sys.stderr,
+            )
             return 1
+
         context["iteration"] = ms.iteration + 1
+        context["current_iteration"] = ms.iteration
         context["is_first_run"] = ms.iteration == 0
-        context["should_process_feedback"] = ms.iteration >= 1 and not ms.feedback_consumed
-        if ds.feedback_path:
-            context["feedback_path"] = ds.feedback_path
+
+        # Guard: feedback lifecycle checks (same logic as time_split)
+        if ms.iteration >= 1:
+            feedback_exists = False
+            if ds.feedback_path and root:
+                feedback_file = Path(root) / "eigen_initiative" / ds.feedback_path
+                feedback_exists = feedback_file.exists()
+
+            if ms.feedback_consumed and not feedback_exists:
+                print(
+                    f"ERROR: {cmd} phase {phase} has already run (iteration {ms.iteration}). "
+                    f"Run /deepen_{cmd} first to generate feedback before re-running.",
+                    file=sys.stderr,
+                )
+                return 1
+            if ms.feedback_consumed and feedback_exists:
+                print(
+                    f"ERROR: Feedback already processed for {cmd} phase {phase}. "
+                    f"Run /deepen_{cmd} again for fresh review before re-running.",
+                    file=sys.stderr,
+                )
+                return 1
+            if not ms.feedback_consumed and feedback_exists:
+                context["should_process_feedback"] = True
+                context["feedback_path"] = ds.feedback_path
+            elif not ms.feedback_consumed and not feedback_exists:
+                print(
+                    f"ERROR: {cmd} phase {phase} has unprocessed feedback but "
+                    f"feedback file not found at {ds.feedback_path}. "
+                    f"Run /deepen_{cmd} to generate it.",
+                    file=sys.stderr,
+                )
+                return 1
+        else:
+            context["should_process_feedback"] = False
+
         context["output_paths"] = ms.output_paths
+
+        # Add phase-specific paths
+        context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+
         recs = [
             r.to_dict() if hasattr(r, "to_dict") else r
             for r in state.recommendations.get(cmd, [])
-            if (isinstance(r, dict) and r.get("phase") in (phase, None))
-            or (hasattr(r, "phase") and r.phase in (phase, None))
+            if (
+                (isinstance(r, dict) and r.get("phase") in (phase, None)
+                 and (epic is None or r.get("epic") in (epic, None)))
+                or (hasattr(r, "phase") and r.phase in (phase, None)
+                    and (epic is None or getattr(r, "epic", None) in (epic, None)))
+            )
         ]
         context["recommendations"] = recs
 
@@ -371,13 +513,57 @@ def cmd_get_context(args: Namespace) -> int:
             ds = ph.plans[ek].deepen_plan_phase_epic
 
         if ms.convergence.converged:
-            print(f"ERROR: {main_cmd} already converged, no deepen needed", file=sys.stderr)
+            print(
+                f"ERROR: {main_cmd} phase {phase} already converged "
+                f"(decided at {ms.convergence.decided_at}: {ms.convergence.reason}). "
+                f"No further review needed.",
+                file=sys.stderr,
+            )
             return 1
+        if ms.status == "not_started":
+            print(
+                f"ERROR: {main_cmd} has not run yet for phase {phase}. "
+                f"Run /{main_cmd} first.",
+                file=sys.stderr,
+            )
+            return 1
+
         context["iteration"] = ds.iteration + 1
-        context["previous_feedback_path"] = ds.feedback_path
-        context["previous_feedback_exists"] = ds.feedback_path is not None
-        context["main_command_outputs"] = ms.output_paths
+        context["main_command_iteration"] = ms.iteration
         context["lessons_dir"] = f"eigen_lessons/{main_cmd}/"
+
+        # Enrich main_command_outputs with phase-specific paths
+        outputs = dict(ms.output_paths)
+        if phase is not None:
+            outputs["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+        context["main_command_outputs"] = outputs
+
+        # Read recommendations for awareness
+        recs = [
+            r.to_dict() if hasattr(r, "to_dict") else r
+            for r in state.recommendations.get(main_cmd, [])
+            if (
+                (isinstance(r, dict) and r.get("phase") in (phase, None)
+                 and (epic is None or r.get("epic") in (epic, None)))
+                or (hasattr(r, "phase") and r.phase in (phase, None)
+                    and (epic is None or getattr(r, "epic", None) in (epic, None)))
+            )
+        ]
+        context["recommendations"] = recs
+
+        # Check if previous feedback exists on disk
+        if ds.feedback_path and root:
+            prev_file = Path(root) / "eigen_initiative" / ds.feedback_path
+            context["previous_feedback_exists"] = prev_file.exists()
+            context["previous_feedback_path"] = ds.feedback_path
+            if prev_file.exists() and not ds.feedback_consumed:
+                context["overwrite_warning"] = (
+                    f"Existing feedback has not been consumed by {main_cmd} yet. "
+                    f"Re-analyzing will overwrite it."
+                )
+        else:
+            context["previous_feedback_exists"] = False
+            context["previous_feedback_path"] = None
 
     elif cmd in ("create_issues_from_plan_swarm", "orchestrate_swarm", "review_swarm_pr"):
         if phase is None or epic is None:
@@ -387,13 +573,52 @@ def cmd_get_context(args: Namespace) -> int:
         if pk not in state.phases or ek not in state.phases[pk].plans:
             print(f"ERROR: Plan P{phase}.E{epic} not found", file=sys.stderr)
             return 1
-        sw = state.phases[pk].plans[ek].swarm_execution
-        context["branch"] = sw.integration_branch or git_ops.integration_branch_name(phase, epic)
-        context["manifest_path"] = sw.manifest_path
-        context["swarm_status"] = sw.status
-        context["review_iteration"] = sw.review_iteration
-        context["pr_number"] = sw.pr_number
-        context["pr_url"] = sw.pr_url
+        ep = state.phases[pk].plans[ek]
+        sw = ep.swarm_execution
+
+        if cmd == "create_issues_from_plan_swarm":
+            # Guard: plan must be converged
+            if not ep.plan_phase_epic.convergence.converged:
+                print(
+                    f"ERROR: Plan P{phase}.E{epic} has not converged yet. "
+                    f"Run /plan_phase_epic and /deepen_plan_phase_epic until converged.",
+                    file=sys.stderr,
+                )
+                return 1
+            # Guard: manifest must NOT exist
+            if sw.manifest_path is not None:
+                print(
+                    f"ERROR: Manifest already exists for P{phase}.E{epic} at {sw.manifest_path}. "
+                    f"This epic has already been task-ified.",
+                    file=sys.stderr,
+                )
+                return 1
+            context["branch"] = git_ops.integration_branch_name(phase, epic)
+            context["plan_file"] = ep.plan_phase_epic.output_paths.get("plan_file", f"phases/phase_{phase}/epic_{epic}/plan.md")
+            context["epic_file"] = f"phases/phase_{phase}/epic_{epic}/epic.md"
+            context["phase_e2e_config"] = f"phases/phase_{phase}/phase_e2e_config.json"
+            context["bootstrap_report"] = f"phases/phase_{phase}/bootstrap-report.json"
+            context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+            # Recommendations filtered by phase AND epic
+            recs = [
+                r.to_dict() if hasattr(r, "to_dict") else r
+                for r in state.recommendations.get(cmd, [])
+                if (
+                    (isinstance(r, dict) and r.get("phase") in (phase, None)
+                     and r.get("epic") in (epic, None))
+                    or (hasattr(r, "phase") and r.phase in (phase, None)
+                        and getattr(r, "epic", None) in (epic, None))
+                )
+            ]
+            context["recommendations"] = recs
+
+        else:  # orchestrate_swarm, review_swarm_pr
+            context["branch"] = sw.integration_branch or git_ops.integration_branch_name(phase, epic)
+            context["manifest_path"] = sw.manifest_path
+            context["swarm_status"] = sw.status
+            context["review_iteration"] = sw.review_iteration
+            context["pr_number"] = sw.pr_number
+            context["pr_url"] = sw.pr_url
 
     if getattr(args, "as_json", False):
         print(json.dumps(context, indent=2))
@@ -437,6 +662,7 @@ def cmd_complete(args: Namespace) -> int:
         dts.last_run_at = now
         dts.feedback_consumed = False
         state.time_split.feedback_consumed = False
+        state.time_split.status = "iterating"  # signal main command needs re-run
         if args.feedback_path:
             dts.feedback_path = args.feedback_path
         if args.findings_summary:
@@ -475,8 +701,8 @@ def cmd_complete(args: Namespace) -> int:
             ms.output_paths["bootstrap_report"] = args.output_path
             ms.output_paths["target_repo"] = _eigen_root()
         elif cmd == "space_split":
-            if args.epic_dag:
-                ms.output_paths["epic_dag"] = args.epic_dag
+            if args.epic_manifest:
+                ms.output_paths["epic_manifest"] = args.epic_manifest
             if args.e2e_config:
                 ms.output_paths["phase_e2e_config"] = args.e2e_config
             if args.epic_ids:
@@ -512,6 +738,7 @@ def cmd_complete(args: Namespace) -> int:
         ds.last_run_at = now
         ds.feedback_consumed = False
         ms.feedback_consumed = False
+        ms.status = "iterating"  # signal main command needs re-run
 
         if args.feedback_path:
             ds.feedback_path = args.feedback_path
@@ -557,7 +784,10 @@ def cmd_complete(args: Namespace) -> int:
         pk, ek = str(phase), str(epic)
         sw = state.phases[pk].plans[ek].swarm_execution
         sw.review_iteration += 1
-        sw.status = "iterating"
+        # Status stays as-is here (pr_created). The command decides:
+        # - If findings remain: set-swarm-status iterating (creates fixup tasks)
+        # - If zero findings: mark-converged swarm_execution (sets converged)
+        # Do NOT hardcode status — the command controls the decision.
         if args.report_path:
             sw.review_reports.append(args.report_path)
         if args.findings_summary:
@@ -784,7 +1014,11 @@ def cmd_resolve_branch(args: Namespace) -> int:
 def cmd_checkout_branch(args: Namespace) -> int:
     root = _eigen_root()
     branch = git_ops.integration_branch_name(args.phase, args.epic)
-    ok = git_ops.checkout_branch(branch, root, create=args.create)
+    ok = git_ops.checkout_branch(
+        branch, root,
+        create=args.create,
+        base_branch=_eigen_branch() if args.create else "",
+    )
     if ok:
         print(json.dumps({"status": "checked_out", "branch": branch}))
         return 0
