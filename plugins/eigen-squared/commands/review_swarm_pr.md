@@ -5,83 +5,75 @@ description: Scope-aware post-swarm PR review that spawns review agents, triages
 
 # Scope-Aware Post-Swarm PR Review
 
-## Language Adaptation
+## Pipeline Context
+
+```
+                        eigen-squared pipeline
+                        ~~~~~~~~~~~~~~~~~~~~~~
+  plan_phase_epic ──► orchestrate_swarm ◄──► review_swarm_pr
+                                         ▲
+                                         │
+                                    YOU ARE HERE
+```
+
+You are a **Senior Code Review Architect** performing a scope-aware review of the work produced by a development swarm. You understand exactly what the swarm was supposed to deliver — and you only flag gaps within that scope. You do NOT flag missing functionality that belongs to other swarms or future work.
+
+This command participates in a **convergence loop** with `orchestrate_swarm`:
+- `review_swarm_pr` reviews the PR, creates fixup tasks if needed
+- `orchestrate_swarm` executes fixup tasks
+- `review_swarm_pr` reviews again
+- Loop continues until ALL findings (P1, P2, and P3) are resolved (converged)
+
+**Scope**: one epic at a time (P<N>.E<M>).
 
 This command spawns review agents that need to understand the project's language conventions. Load the `language-profiles` skill to detect the project's languages and discover relevant review skills from the Stack-Specific Skills table.
 
 ---
 
-## Your Role
+## Environment
 
-You are a **Senior Code Review Architect** performing a scope-aware review of the work produced by a development swarm. You understand exactly what the swarm was supposed to deliver — and you only flag gaps within that scope. You do NOT flag missing functionality that belongs to other swarms or future work.
+Before proceeding, verify:
 
-This command participates in a **convergence loop** with `/orchestrate_swarm`:
-- review_swarm_pr reviews the PR, creates fixup tasks if needed
-- orchestrate_swarm executes fixup tasks
-- review_swarm_pr reviews again
-- Loop continues until ALL findings (P1, P2, and P3) are resolved (converged)
+- [x] `$EIGEN_ROOT` is set (absolute path to target project root)
+- [x] `$EIGEN_BRANCH` is set (default branch, e.g. `main`)
 
-## Environment Variables
+If either is missing → **STOP** with a descriptive error.
 
-This command uses the same environment variables as all eigen-squared commands:
+---
 
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
+## On Entry
 
-### On Entry: Validate Environment
+```bash
+eigen-squared get-context review_swarm_pr --json
+```
 
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
+Example JSON:
+```json
+{
+  "command": "review_swarm_pr",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "epic": 2,
+  "branch": "feat/P1.E2",
+  "manifest_path": "phases/phase_1/epic_2/swarm-manifest.json",
+  "swarm_status": "pr_created",
+  "review_iteration": 0,
+  "pr_number": 42,
+  "pr_url": "https://github.com/..."
+}
+```
 
-### Branch Verification and Epic Detection
+| Field | Meaning |
+|-------|---------|
+| `phase`, `epic` | Which epic's PR to review. |
+| `branch` | Integration branch. Must be checked out. |
+| `manifest_path` | Path to swarm-manifest.json. |
+| `swarm_status` | `"pr_created"` (first review) or `"iterating"` (fixup review). |
+| `review_iteration` | How many reviews done so far (0 = first review). |
+| `pr_number` | PR number for `gh` commands. |
+| `pr_url` | PR URL for display. |
 
-This command MUST run on the same integration branch used by `/orchestrate_swarm`. No arguments needed — everything is derived from the branch name.
-
-1. Detect and checkout the integration branch:
-   ```bash
-   cd $EIGEN_ROOT
-   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-   ```
-   If the current branch already matches `feat/P<N>.E<M>` → proceed.
-   If not → auto-detect from `pipeline_state.json`: find the first epic with `swarm_execution.status` in `("pr_created", "iterating")` and checkout `swarm_execution.integration_branch`.
-   If no active integration branch found → **STOP.**
-
-2. Sync with remote:
-   ```bash
-   git pull origin feat/P<N>.E<M>
-   ```
-
-3. Extract phase N and epic M from the branch name `feat/P<N>.E<M>`.
-
-4. Verify the manifest exists:
-   ```bash
-   test -f eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json
-   ```
-   If missing → **STOP.**
-
-Print: `Detected Phase <N>, Epic <M> (P<N>.E<M>) from branch feat/P<N>.E<M>.`
-
-### Fixed Paths
-
-All paths are relative to `$EIGEN_ROOT` (current working directory):
-
-- **Manifest**: `eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json`
-- **Epic file**: `eigen_initiative/phases/phase_N/epic_M/epic.md`
-- **Plan file**: `eigen_initiative/phases/phase_N/epic_M/plan.md`
-- **Task directory**: `eigen_initiative/phases/phase_N/epic_M/tasks/`
-- **Pipeline state**: `eigen_initiative/phases/pipeline_state.json`
-- **Review report**: `eigen_initiative/phases/phase_N/epic_M/review_report_iteration_<N>.md`
-- **Lessons directory**: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`
+---
 
 ## Overview
 
@@ -102,11 +94,11 @@ You will:
 
 ### Detect Iteration Context
 
-1. Read `eigen_initiative/phases/pipeline_state.json` from the integration branch.
-2. Check `state.phases[N].plans[M].swarm_execution`:
-   - `status == "converged"` → **STOP.** Print: "Review for P<N>.E<M> has already converged. PR is ready to merge."
-   - `review_iteration` field → current iteration number (0 = first review)
-3. If a previous review report exists (`review_report_iteration_<N-1>.md`), read it for cross-iteration comparison.
+The CLI context provides `review_iteration` and `swarm_status`:
+- `review_iteration == 0` → first review
+- `review_iteration >= 1` → re-review after fixups
+
+If a previous review report exists (`review_report_iteration_<review_iteration - 1>.md`), read it for cross-iteration comparison.
 
 ### Convergence Decision (after collecting findings, Stage 4)
 
@@ -130,12 +122,7 @@ Apply these rules **in order**:
 
 ### 0.1 Validate PR
 
-Read the PR number from pipeline state (`swarm_execution.pr_number`) or derive it:
-```bash
-gh pr list --head feat/P<N>.E<M> --json number,url,state --jq '.[0]'
-```
-
-Fetch PR metadata:
+The CLI context provides `pr_number`. Fetch PR metadata:
 ```bash
 gh pr view <pr_number> --json title,body,headRefName,headRefOid,baseRefName,state,url,additions,deletions,changedFiles
 ```
@@ -389,7 +376,7 @@ git push origin feat/P<N>.E<M>
 
 ### 6.1 Determine Lesson Scope
 
-Check if the current epic is the **E2E Testing epic** (read `epic_dag.json` — the E2E epic has `name == "E2E Testing"` and `features == []`).
+Check if the current epic is the **E2E Testing epic** (read `epic_manifest.json` — the E2E epic has `name == "E2E Testing"` and `features == []`).
 
 - **If E2E Testing epic**: create lessons for **ALL findings (P1, P2, and P3)**. The E2E Testing epic is the most critical learning opportunity in each phase — every finding here (infrastructure failures, cross-component bugs, integration patterns) is a systemic insight that improves future phases. Do not skip any severity.
 
@@ -409,41 +396,20 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`.
 
 ### 7.1 Update Pipeline State
 
-Update `eigen_initiative/phases/pipeline_state.json` on the integration branch:
+Use the CLI to update pipeline state:
 
 **If converged:**
-```json
-"swarm_execution": {
-  "status": "converged",
-  "review_iteration": <N>,
-  "convergence": {
-    "converged": true,
-    "decided_by": "review_swarm_pr",
-    "decided_at": "<ISO 8601>",
-    "reason": "<rationale>"
-  },
-  "review_reports": ["..._iteration_1.md", "..._iteration_2.md"],
-  ...existing fields preserved...
-}
-```
-
-**If continuing:**
-```json
-"swarm_execution": {
-  "status": "iterating",
-  "review_iteration": <N>,
-  "convergence": { "converged": false },
-  "findings_summary": { "p1": <x>, "p2": <y>, "p3": <z> },
-  "review_reports": ["..._iteration_1.md", ...],
-  ...existing fields preserved...
-}
-```
-
-Commit and push:
 ```bash
-git add eigen_initiative/phases/pipeline_state.json
-git commit -m "chore: update pipeline state — review iteration <N> for P<N>.E<M>"
-git push origin feat/P<N>.E<M>
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}'
+eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "<rationale>"
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+```
+
+**If continuing (P1 or P2 findings remain):**
+```bash
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}'
+eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
@@ -523,6 +489,4 @@ Next steps:
 
 ## Pipeline Continuation
 
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
+When this session ends, the pipeline hook runs `eigen-squared schedule-next`, which schedules either `orchestrate_swarm` (if continuing with fixups) or `plan_phase_epic` for the next epic (if converged and more epics remain).

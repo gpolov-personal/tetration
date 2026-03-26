@@ -5,105 +5,108 @@ description: Review bootstrap output with parallel research agents, diagnose err
 
 # Deepen Bootstrap — Foundation Architecture Review
 
-## Introduction
+## Pipeline Context
 
-This command takes the output of `/bootstrap` (committed foundation files in `$EIGEN_ROOT` + `bootstrap-report.json`) and subjects it to comprehensive review by parallel research and review agents. Every structural, architectural, tooling, contract quality, and incremental readiness issue is diagnosed.
+```
+bootstrap ──► deepen_bootstrap ──► bootstrap (if CONTINUE) ──► ... ──► deepen_bootstrap (CONVERGED) ──► space_split
+                  │                                                          │
+                  └── writes feedback + lessons ◄───────────────────────────┘
+```
+
+**Role:** Review agent for the `bootstrap` command. Takes bootstrap's committed foundation files and `bootstrap-report.json`, subjects them to comprehensive validation by parallel research and review agents. Every structural, architectural, tooling, contract quality, and incremental readiness issue is diagnosed.
 
 Bootstrap creates the universal foundation: directories, entity stubs, contracts, package manifests, quality config, basic CI, and optionally Docker artifacts (Dockerfile, docker-compose.yml, .dockerignore — see `bootstrap-report.json` field `delta_applied.dockerfile_created`). It does NOT create database migrations or E2E test infrastructure — those are handled by feature epics and the E2E Testing epic.
 
-Diagnosed errors are written as structured lesson JSONs to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/`. These lessons are later consumed by `/compound_improve` to permanently improve the `bootstrap` command itself.
+**Convergence authority:** This command decides when bootstrap's output is good enough to proceed. It writes the `converged` flag and the rationale.
 
-## Environment Variables
-
-This command uses the same environment variables as all eigen-squared commands:
-
-- **`EIGEN_ROOT`** — absolute path to the root folder of the target project
-- **`EIGEN_BRANCH`** — the default branch from which all work starts
-
-### On Entry: Validate Environment
-
-1. Read `$EIGEN_ROOT`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_ROOT is not set.
-   Set it to the root folder of your target project:
-     export EIGEN_ROOT=/path/to/your/project
-   ```
-2. Read `$EIGEN_BRANCH`. If not set or empty → **STOP.** Print:
-   ```
-   ERROR: $EIGEN_BRANCH is not set.
-   Set it to the default branch from which all work starts:
-     export EIGEN_BRANCH=main
-   ```
-3. Verify `$EIGEN_ROOT` exists and is a directory.
-
-### Phase Auto-Detection
-
-No arguments are required. The target phase is auto-detected from the pipeline state.
-
-### Sync with Remote
-
-```bash
-cd $EIGEN_ROOT
-git pull origin $EIGEN_BRANCH
-```
-
-### Auto-Detection
-
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`. If not found → **STOP.** Print:
-   ```
-   ERROR: No pipeline_state.json found at $EIGEN_ROOT/eigen_initiative/phases/
-   Run /time_split and /bootstrap first.
-   ```
-2. Scan `state.phases` to find the first phase N (in numeric order) where:
-   - `bootstrap.status == "completed"` OR `bootstrap.status == "iterating"` (bootstrap has run)
-   - AND `bootstrap.convergence.converged == false` (not yet converged)
-3. If no such phase is found → **STOP.** Print:
-   ```
-   No phase is ready for deepen_bootstrap.
-   Either all phases have converged, or bootstrap has not run yet.
-   Run /bootstrap if needed, or check pipeline_state.json for current status.
-   ```
-4. The detected phase number N determines:
-   - **Phase manifest**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`
-   - **Phase directory**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/`
-   - **Feedback file**: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_bootstrap_feedback.json`
-   - **Lessons directory**: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/`
-
-Print: `Auto-detected Phase <N> for deepen_bootstrap.`
+**Lesson writing:** Diagnosed errors are written as structured lesson JSONs to the `lessons_dir` path. These lessons are later consumed by `/compound_improve` to permanently improve the `bootstrap` command itself.
 
 ---
 
-## Pipeline Awareness
+## Environment
 
-Deepen bootstrap operates at per-phase scope. The phase number N was auto-detected during environment validation. Load the `pipeline-state-schema` skill for the full schema, field definitions, and feedback lifecycle.
+Before starting, confirm:
 
-### On Entry
+- [ ] `EIGEN_ROOT` is set and points to an existing directory
+- [ ] `EIGEN_BRANCH` is set (the default branch)
+- [ ] The `eigen-squared` CLI is available on `PATH`
 
-The pipeline state was already read during Phase Auto-Detection. Now check deepen-specific state for phase N:
+---
 
-- Check `state.phases[N].deepen_bootstrap.feedback_consumed`:
-  - `feedback_consumed == false` AND feedback file exists → warn: "Existing feedback has not been consumed by bootstrap yet. Re-analyzing will overwrite it." Proceed anyway.
-- Read current `state.phases[N].deepen_bootstrap.iteration` to determine iteration context.
+## On Entry
 
-### On Exit
+```bash
+eigen-squared get-context deepen_bootstrap --json
+```
 
-Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
-- Set `state.phases[N].deepen_bootstrap.status` to `"completed"`
-- Increment `state.phases[N].deepen_bootstrap.iteration`
-- Set `state.phases[N].deepen_bootstrap.last_run_at` to current ISO 8601 timestamp
-- Set `state.phases[N].deepen_bootstrap.feedback_path` to the feedback file path
-- Set `state.phases[N].deepen_bootstrap.feedback_consumed` to `false` (fresh feedback, not yet processed)
-- Set `state.phases[N].bootstrap.feedback_consumed` to `false` (signal to bootstrap that fresh feedback is available)
-- Update `state.phases[N].deepen_bootstrap.findings_summary` with counts from the feedback file
-- If convergence was decided:
-  - Set `state.phases[N].bootstrap.convergence.converged` to `true`
-  - Set `state.phases[N].bootstrap.convergence.decided_by` to `"deepen_bootstrap"`
-  - Set `state.phases[N].bootstrap.convergence.decided_at` to current ISO 8601 timestamp
-  - Set `state.phases[N].bootstrap.convergence.reason` to the convergence rationale
-  - Write low-severity findings with downstream impact to `recommendations` (see Convergence Recommendations stage)
-- If continuing iteration:
-  - Set `state.phases[N].bootstrap.status` to `"iterating"`
-- Set `updated_at` to current timestamp
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON:
+
+```json
+{
+  "command": "deepen_bootstrap",
+  "branch": "main",
+  "paths_relative_to": "$EIGEN_ROOT/eigen_initiative/",
+  "phase": 1,
+  "iteration": 2,
+  "main_command_iteration": 3,
+  "main_command_outputs": {
+    "bootstrap_report": "phases/phase_1/bootstrap-report.json",
+    "target_repo": "/home/user/projects/my-app",
+    "phase_manifest": "phases/phase_1_manifest.md"
+  },
+  "lessons_dir": "eigen_lessons/bootstrap/",
+  "recommendations": [],
+  "previous_feedback_path": "phases/phase_1/feedback/deepen_bootstrap_feedback.json",
+  "previous_feedback_exists": true,
+  "overwrite_warning": "Existing feedback has not been consumed by bootstrap yet."
+}
+```
+
+| Field | Use |
+|---|---|
+| `phase` | The target phase number N for this run |
+| `iteration` | Current deepen_bootstrap iteration (for convergence limit checks) |
+| `main_command_iteration` | Bootstrap iteration that was analyzed (written into feedback JSON) |
+| `main_command_outputs.bootstrap_report` | Relative path to bootstrap-report.json (resolve against `paths_relative_to`) |
+| `main_command_outputs.target_repo` | Absolute path to the target repository to scan |
+| `main_command_outputs.phase_manifest` | Relative path to the phase manifest (resolve against `paths_relative_to`) |
+| `lessons_dir` | Relative path to the lessons directory (resolve against `paths_relative_to`) |
+| `recommendations` | Upstream recommendations for bootstrap — use as awareness context |
+| `previous_feedback_path` | Relative path to previous feedback file (resolve against `paths_relative_to`) |
+| `previous_feedback_exists` | Whether previous feedback exists for iteration comparison |
+| `overwrite_warning` | If set, display this warning to the user and proceed |
+
+If `overwrite_warning` is present, print the warning and continue.
+
+---
+
+## On Exit
+
+After completing the review and writing the feedback file:
+
+```bash
+eigen-squared complete deepen_bootstrap --phase <phase> --feedback-path <path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+```
+
+If converging:
+
+```bash
+eigen-squared mark-converged bootstrap --phase <phase> --reason "..."
+```
+
+If adding downstream recommendations at convergence:
+
+```bash
+eigen-squared add-recommendation --from-cmd deepen_bootstrap --target <target> --iteration <main_command_iteration> --text "..."
+```
+
+Commit all artifacts:
+
+```bash
+eigen-squared commit-state --message "pipeline: deepen_bootstrap phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/bootstrap/
+```
+
+The `eigen-squared schedule-next` hook fires when this session ends. It reads the pipeline state (updated by the CLI) and schedules the next command automatically. You do not need to schedule anything.
 
 ---
 
@@ -111,8 +114,8 @@ Update `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`:
 
 ### Detect Iteration Context
 
-1. Check if `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_bootstrap_feedback.json` already exists (previous feedback).
-2. If it exists, read it for comparison, oscillation detection, and progress tracking.
+1. Check if `previous_feedback_exists` is true in the CLI context (previous feedback).
+2. If it exists, read the file at `previous_feedback_path` (resolved against `paths_relative_to`) for comparison, oscillation detection, and progress tracking.
 3. If no previous feedback exists, this is the first deepen iteration.
 
 ### Convergence Decision Protocol
@@ -122,7 +125,7 @@ After collecting all findings, apply these convergence rules **in order**:
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain AND verification passes.
    - Rationale: "All significant issues resolved, verification passes."
 
-2. **Converge if**: iteration limit reached (`state.phases[N].deepen_bootstrap.iteration >= 8`).
+2. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
 3. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
@@ -145,7 +148,7 @@ For each finding that is actionable by bootstrap, produce explicit surgical inst
 
 ### 0.1 Read Phase Manifest
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md`.
+1. Read the phase manifest at `main_command_outputs.phase_manifest` (resolved against `paths_relative_to`).
 2. Parse YAML frontmatter: `phase`, `initiative`, `feature_count`, `clusters_included`, `priority_distribution`, `e2e_summary`, `depends_on_phases`.
 3. Parse markdown body:
    - **Features by Domain**: feature tables — build a map of feature id → {name, priority, local_deps, cross_phase_deps, cluster, domain}
@@ -156,17 +159,17 @@ For each finding that is actionable by bootstrap, produce explicit surgical inst
 
 ### 0.2 Read Bootstrap Report
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json`.
+1. Read the bootstrap report at `main_command_outputs.bootstrap_report` (resolved against `paths_relative_to`).
 2. If the report file doesn't exist → **STOP.** Print:
    ```
-   ERROR: No bootstrap-report.json found at $EIGEN_ROOT/eigen_initiative/phases/phase_N/
+   ERROR: No bootstrap-report.json found at the expected path.
    Bootstrap must have completed before running deepen_bootstrap.
    ```
 3. Extract: `delta_applied`, `entities_created`, `contracts_created`, `verification`, `tooling_decisions`, `commits`, `repo_state_before`, `languages`.
 
 ### 0.3 Scan Target Repo
 
-Scan `$EIGEN_ROOT` to build a ground-truth picture of what actually exists:
+Scan `main_command_outputs.target_repo` to build a ground-truth picture of what actually exists:
 
 1. **Directory structure**: recursive listing to depth 4
 2. **Entity/model files**: language-specific scan for class/interface/struct definitions
@@ -179,17 +182,24 @@ Compare against the bootstrap report's `delta_applied` to identify discrepancies
 
 ### 0.4 Load Existing Lessons
 
-1. Glob `$EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/*.json`.
+1. Glob `lessons_dir` (resolved against `paths_relative_to`) for `*.json`.
 2. Read and parse each lesson JSON — used to avoid duplicating known issues in the lesson extraction phase.
 
 ### 0.5 Read Upstream Recommendations (Awareness)
 
-Read `recommendations.bootstrap` from `$EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json`.
+Read the `recommendations` array from the CLI context.
 
 Use these as additional context when reviewing bootstrap's output:
 - They inform your analysis but do NOT constitute findings on their own.
 - Do NOT create findings solely because a recommendation was not addressed.
 - You MAY reference a recommendation in a finding's rationale if you independently identify a related issue.
+
+### 0.6 Load Previous Feedback (if exists)
+
+If `previous_feedback_exists` is true in the CLI context, read the feedback file at `previous_feedback_path` (resolved against `paths_relative_to`). This is used for:
+- Iteration comparison and progress tracking
+- Oscillation detection (findings that flip between present/absent across iterations)
+- Identifying which previous findings have been addressed by bootstrap
 
 ---
 
@@ -539,7 +549,7 @@ For each finding, assign:
 
 ### 6.4 Write Iteration Feedback File
 
-Write the feedback to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_bootstrap_feedback.json`. **Do NOT modify bootstrap-report.json** — feedback is always a separate file.
+Write the feedback to the feedback path for phase N: `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_bootstrap_feedback.json`. **Do NOT modify bootstrap-report.json** — feedback is always a separate file.
 
 Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/`
 
@@ -548,7 +558,7 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/f
   "schema_version": "1.0.0",
   "command": "deepen_bootstrap",
   "iteration": "<current deepen_bootstrap iteration>",
-  "analyzed_iteration": "<state.phases[N].bootstrap.iteration that was analyzed>",
+  "analyzed_iteration": "<main_command_iteration from CLI context>",
   "created_at": "<ISO 8601>",
   "source_outputs_analyzed": {
     "bootstrap_report": "phases/phase_N/bootstrap-report.json",
@@ -636,16 +646,17 @@ Apply the Convergence Decision Protocol (from the Iteration Protocol section abo
 
 **Skip this section entirely if convergence decision is NOT "converged".**
 
-At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands. See the `pipeline-state-schema` skill for the full recommendations specification.
+At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands.
 
 1. **Filter findings with downstream impact:** Only low-severity findings where `downstream_impact.affects_commands` is non-empty.
 2. **For each affected downstream command** (space_split, plan_phase_epic, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
    - Describe the **observed condition** in bootstrap's output.
    - State the **implication** for the downstream command.
-3. **Write to pipeline_state.json** — update `recommendations[<target_command>]`:
-   - Replace all entries where `from` == `"deepen_bootstrap"` (preserve entries from other deepen commands).
-   - Max 5 entries per target command.
-   - Each entry: `{ "from": "deepen_bootstrap", "at_iteration": <current iteration>, "phase": <N>, "epic": null, "text": "<observation>" }`
+3. **Write recommendations via CLI** — for each observation:
+   ```bash
+   eigen-squared add-recommendation --from-cmd deepen_bootstrap --target <target_command> --iteration <main_command_iteration> --text "<observation>"
+   ```
+   - Max 5 calls per target command.
 4. If no findings have downstream impact, do not write any recommendations.
 
 **Constraints:**
@@ -692,11 +703,11 @@ For each new lesson, check the existing lessons loaded in Stage 0.4:
 
 ### 7.3 Write Lesson Files
 
-1. Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/`
-2. For each new non-duplicate lesson, write to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/<id>.json`
+1. Ensure directory exists: `mkdir -p` the `lessons_dir` path (resolved against `paths_relative_to`).
+2. For each new non-duplicate lesson, write to: `<lessons_dir>/<id>.json`
 3. Print summary:
    ```
-   Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/
+   Lessons written: <N> new lessons to <lessons_dir>
    Skipped: <M> duplicates of existing lessons
    ```
 
@@ -727,7 +738,7 @@ Top Issues:
 
 Convergence: <CONVERGED — reason | CONTINUE — N high/medium-severity findings remain>
 Feedback written to: $EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/deepen_bootstrap_feedback.json
-Lessons: <N> new lessons written to $EIGEN_ROOT/eigen_initiative/eigen_lessons/bootstrap/
+Lessons: <N> new lessons written to <lessons_dir>
 
 Next steps:
   If CONTINUE:
@@ -738,20 +749,3 @@ Next steps:
     Run /space_split to decompose Phase <N> into parallel epics.
     Run /compound_improve to apply accumulated lessons to the bootstrap command.
 ```
-
-### Commit Pipeline Artifacts
-
-```bash
-cd $EIGEN_ROOT
-git add eigen_initiative/phases/phase_N/feedback/ eigen_initiative/phases/pipeline_state.json
-git commit -m "pipeline: deepen_bootstrap phase <N> — iteration <N>, <CONVERGED|CONTINUE>"
-git push origin $EIGEN_BRANCH
-```
-
----
-
-## Pipeline Continuation
-
-After this command completes, the pipeline controller hook (`Stop` event) reads `pipeline_state.json`, checks out the correct branch, and schedules the next command automatically.
-
-**Your only responsibility**: update `pipeline_state.json` accurately before the session ends. Do not schedule any tasks or run any curl commands for pipeline orchestration.
