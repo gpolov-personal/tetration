@@ -142,11 +142,7 @@ If the CLI exits with an error (non-zero), **STOP** and display the error messag
 ```bash
 eigen-squared complete bootstrap --phase <phase> --output-path phases/phase_<phase>/bootstrap-report.json
 eigen-squared commit-state --message "pipeline: bootstrap phase <phase> — foundation created" --additional-paths eigen_initiative/phases/phase_<phase>/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart).
@@ -613,17 +609,4 @@ Next steps:
 
 ### 5.3 Commit Pipeline Artifacts
 
-```bash
-eigen-squared commit-state --message "pipeline: bootstrap phase <N> — foundation created" --additional-paths eigen_initiative/phases/phase_<N>/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
-```
-
----
-
-## Pipeline Continuation
-
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.
+Execute the **On Exit** section above — it handles `complete`, `commit-state`, and `schedule-next`.

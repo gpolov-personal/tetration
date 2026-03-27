@@ -97,11 +97,7 @@ After creating tasks, manifest, and integration branch:
 eigen-squared checkout-branch --phase <phase> --epic <epic> --create
 eigen-squared complete create_issues_from_plan_swarm --phase <phase> --epic <epic> --manifest-path eigen_initiative/phases/phase_<phase>/epic_<epic>/swarm-manifest.json --integration-branch feat/P<phase>.E<epic>
 eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ## Output
@@ -481,18 +477,11 @@ The CLI creates `feat/P<N>.E<M>` from the latest `$EIGEN_BRANCH`, pulling first 
 
 The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`. Since we checked out `feat/P<N>.E<M>` (which was created from `origin/$EIGEN_BRANCH`), these files are already present in the working directory — no copying needed.
 
-```bash
-eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
-```
+Execute the **On Exit** section above — it handles `checkout-branch`, `complete`, `commit-state`, and `schedule-next`.
 
 ### 5.3 Branch state
 
-After committing and pushing, the working directory remains on the `feat/P<N>.E<M>` integration branch. The schedule-next call in On Exit handles checking out the correct branch for the next command (orchestrate_swarm on this same branch, or EIGEN_BRANCH for other commands).
+After committing and pushing, the working directory remains on the `feat/P<N>.E<M>` integration branch.
 
 ---
 
@@ -563,8 +552,3 @@ Before finalizing, verify:
 
 **Remember**: These tasks will be executed by autonomous sub-agents **running in parallel as a swarm**. Your task specifications are their PRIMARY GUIDANCE. The `swarm-manifest.json` is the KEY ARTIFACT that the orchestrator will use to coordinate execution. File ownership boundaries are CONTRACTUAL — violating them causes silent data loss in a swarm.
 
----
-
-## Pipeline Continuation
-
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.

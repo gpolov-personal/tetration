@@ -163,11 +163,7 @@ Then commit pipeline artifacts:
 
 ```bash
 eigen-squared commit-state --message "pipeline: space_split phase <phase> — <epic_count> epics created" --additional-paths eigen_initiative/phases/phase_<phase>/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ---
@@ -701,8 +697,3 @@ Next steps:
 
 Then run the **On Exit** CLI commands.
 
----
-
-## Pipeline Continuation
-
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.
