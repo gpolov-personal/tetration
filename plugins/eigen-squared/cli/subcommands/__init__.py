@@ -73,9 +73,6 @@ MAIN_TO_DEEPEN = {
     "space_split": "deepen_space_split",
 }
 
-# Commands that self-converge (no deepen pair)
-CONVERGE_COMMANDS = {"plan_epic_converge"}
-
 DEEPEN_TO_MAIN = {v: k for k, v in MAIN_TO_DEEPEN.items()}
 
 # Which commands are "deepen" commands
