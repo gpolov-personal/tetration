@@ -103,7 +103,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 
 - `phase` and `epic`: which epic to plan (N and M throughout this document)
 - `is_first_run: true` → first run, no existing plan. Proceed to Stage 0.
-- `is_first_run: false` → crash recovery. Check if `plan.md` exists at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If it exists, the coordinator reads it and skips Stage 2 (planning round), resuming from Stage 3 (review round). If it does not exist, treat as first run.
+- `is_first_run: false` → crash recovery. Check if `plan.md` exists at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If it exists, the coordinator reads it and skips Stage 2 (planning round), resuming from Stage 3 (review round). Also check for `convergence_state.json` in the same directory — if present, restore the round counter and findings history for oscillation detection. If `plan.md` does not exist, treat as first run.
 - `recommendations`: advisory observations from upstream deepen commands. Read and use as context during plan generation. Do NOT treat as requirements.
 
 ## On Exit
@@ -697,9 +697,26 @@ Send back ONLY the modified sections of the plan."
 
 Wait for the planner's response. The planner sends the modified sections back to the coordinator.
 
-### 6.3 Update Plan on Disk (Crash Recovery Checkpoint)
+### 6.3 Update Plan and Convergence State on Disk (Crash Recovery Checkpoint)
 
-Write the updated plan to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. This ensures crash recovery can resume from the latest version.
+Write the updated plan to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`.
+
+Also write convergence tracking state to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/convergence_state.json`:
+
+```json
+{
+  "current_round": <R>,
+  "max_rounds": 4,
+  "findings_history": [
+    { "round": 1, "high": <N>, "medium": <N>, "low": <N>, "finding_ids": ["<id1>", ...] },
+    { "round": 2, "high": <N>, "medium": <N>, "low": <N>, "finding_ids": ["<id1>", ...] }
+  ],
+  "reviewers_active": ["structural-reviewer", "strategic-reviewer", "skills-reviewer"],
+  "reviewer_failures": []
+}
+```
+
+This ensures crash recovery can resume from the latest version with convergence history intact. On re-run (`is_first_run: false`), read `convergence_state.json` to restore the round counter and findings history for oscillation detection.
 
 ### 6.4 Send to Affected Reviewers
 

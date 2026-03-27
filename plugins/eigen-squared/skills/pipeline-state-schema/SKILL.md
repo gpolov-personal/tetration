@@ -15,7 +15,7 @@ Created by `time_split` on first run. Read and updated by all 10 initiative-scal
 
 ```json
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "initiative": "<name from initiative document>",
   "created_at": "<ISO 8601>",
   "updated_at": "<ISO 8601>",
