@@ -210,45 +210,13 @@ class TestBackwardCompatibility:
         ps = PipelineState.from_dict(v1)
         assert ps.schema_version == "1.0.0"  # preserved from input
 
-    def test_v2_epic_plan_with_plan_phase_epic_migrates_to_plan_epic_converge(self):
-        """v2.x EpicPlan with plan_phase_epic + deepen_plan_phase_epic
-        migrates to plan_epic_converge."""
-        v2_epic = {
-            "plan_phase_epic": {
-                "status": "completed",
-                "iteration": 3,
-                "output_paths": {"plan_file": "phases/phase_1/epic_1/plan.md"},
-                "feedback_consumed": True,
-                "convergence": {
-                    "converged": True,
-                    "decided_by": "deepen_plan_phase_epic",
-                    "reason": "All issues resolved",
-                },
-            },
-            "deepen_plan_phase_epic": {
-                "status": "completed",
-                "iteration": 3,
-                "feedback_path": "phases/phase_1/epic_1/feedback/feedback.json",
-                "findings_summary": {"high": 0, "medium": 2, "low": 5},
-            },
+    def test_epic_plan_ignores_unknown_keys(self):
+        """EpicPlan.from_dict ignores unknown keys (e.g., old plan_phase_epic)."""
+        d = {
+            "plan_phase_epic": {"status": "completed"},  # unknown/old key
             "swarm_execution": {"status": "not_started"},
         }
-        ep = EpicPlan.from_dict(v2_epic)
-        # Should have migrated to plan_epic_converge
-        assert ep.plan_epic_converge.status == "completed"
-        assert ep.plan_epic_converge.iteration == 3
-        assert ep.plan_epic_converge.convergence.converged is True
-        assert ep.plan_epic_converge.convergence.decided_by == "deepen_plan_phase_epic"
-        assert ep.plan_epic_converge.output_paths["plan_file"] == "phases/phase_1/epic_1/plan.md"
-        # Findings summary merged from deepen
-        assert ep.plan_epic_converge.findings_summary is not None
-        assert ep.plan_epic_converge.findings_summary.medium == 2
-        # Feedback path merged from deepen into output_paths
-        assert ep.plan_epic_converge.output_paths["feedback_file"] == "phases/phase_1/epic_1/feedback/feedback.json"
-        # Swarm execution preserved
+        ep = EpicPlan.from_dict(d)
+        # plan_epic_converge should be default (not_started), not migrated
+        assert ep.plan_epic_converge.status == "not_started"
         assert ep.swarm_execution.status == "not_started"
-        # Round-trip: serialized form uses plan_epic_converge, not plan_phase_epic
-        d = ep.to_dict()
-        assert "plan_epic_converge" in d
-        assert "plan_phase_epic" not in d
-        assert "deepen_plan_phase_epic" not in d

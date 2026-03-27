@@ -55,7 +55,7 @@ All paths are relative to `$EIGEN_ROOT/eigen_initiative/`:
 - **Bootstrap report**: `phases/phase_N/bootstrap-report.json`
 - **Epic manifest**: `phases/phase_N/epic_manifest.json`
 - **Feedback file**: `phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json`
-- **Lessons directory**: `eigen_lessons/plan_phase_epic/`
+- **Lessons directory**: `eigen_lessons/plan_epic_converge/`
 
 The epic file (`epic.md`) must exist and contain features, blackbox specs, validation criteria, inter-epic interfaces, and bootstrap context produced by `/space_split`.
 
@@ -63,7 +63,7 @@ The epic file (`epic.md`) must exist and contain features, blackbox specs, valid
 
 - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md` — strategic development plan with parallelization strategy
 - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json` — convergence feedback (for pipeline state compatibility)
-- `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/*.json` — lesson files for each non-false-positive finding
+- `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/*.json` — lesson files for each non-false-positive finding
 
 ## Constraints
 
@@ -96,7 +96,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
   "is_first_run": true,
   "output_paths": {},
   "phase_manifest": "phases/phase_1_manifest.md",
-  "lessons_dir": "eigen_lessons/plan_phase_epic/",
+  "lessons_dir": "eigen_lessons/plan_epic_converge/",
   "recommendations": []
 }
 ```
@@ -112,7 +112,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 eigen-squared complete plan_epic_converge --phase <N> --epic <M> --plan-file phases/phase_<N>/epic_<M>/plan.md --feedback-path phases/phase_<N>/epic_<M>/feedback/plan_epic_converge_feedback.json --findings-summary '{"high": 0, "medium": 0, "low": <count>}'
 eigen-squared mark-converged plan_epic_converge --phase <N> --epic <M> --reason "<convergence rationale>"
 eigen-squared add-recommendation --from-cmd plan_epic_converge --target create_issues_from_plan_swarm --iteration <N> --text "<observation>"
-eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/,eigen_initiative/eigen_lessons/plan_phase_epic/
+eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/,eigen_initiative/eigen_lessons/plan_epic_converge/
 [ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
@@ -763,7 +763,7 @@ Write to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_
 
 Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/`
 
-Use the same feedback schema as deepen_plan_phase_epic for pipeline state compatibility:
+Write the feedback JSON with this schema:
 
 ```json
 {
@@ -810,7 +810,7 @@ The `findings` array includes ALL findings from all rounds — both resolved and
 
 ### 7.3 Lesson Extraction
 
-For each non-false-positive finding discovered during the convergence loop, create a lesson JSON in `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/`:
+For each non-false-positive finding discovered during the convergence loop, create a lesson JSON in `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/`:
 
 ```json
 {
@@ -836,13 +836,13 @@ For each non-false-positive finding discovered during the convergence loop, crea
 
 **Deduplication**: Before writing each lesson, check existing lessons in the directory. If a lesson with the same `affected_section` + `category` + similar `root_cause` already exists, skip it. If the existing lesson has `"status": "applied"`, still skip.
 
-Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/`
+Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/`
 
-Write each new non-duplicate lesson to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/<id>.json`
+Write each new non-duplicate lesson to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/<id>.json`
 
 Print summary:
 ```
-Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/
+Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/
 Skipped: <M> duplicates of existing lessons
 ```
 
@@ -917,7 +917,7 @@ Before writing the final plan and proceeding to On Exit, verify:
 
 1. **NEVER modify epic.md** — it is owned by `/space_split` and is read-only input.
 2. **Plan.md is written by the planner teammate, managed by the coordinator** — the coordinator writes it to disk, the planner generates and updates the content.
-3. **Feedback JSON is written at convergence for pipeline state compatibility** — it uses the same schema as deepen_plan_phase_epic so downstream commands and the CLI can read it without changes.
+3. **Feedback JSON is written at convergence** — it records the convergence rationale, findings history, and round count for auditability.
 4. **The CLI is the single source of truth for pipeline state** — all pipeline state reads and writes go through `eigen-squared` CLI commands, never through direct file manipulation of pipeline state.
 5. **Convergence is decided by the coordinator using the severity rubric** — reviewers propose severity, the coordinator decides.
 6. **Maximum 4 internal rounds** — if convergence is not reached by round 4, the coordinator accepts the current state (Rule 2).

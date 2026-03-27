@@ -480,5 +480,5 @@ $EIGEN_ROOT/eigen_initiative/
     time_split/                                # Lessons from deepen_time_split
     bootstrap/                                 # Lessons from deepen_bootstrap
     space_split/                               # Lessons from deepen_space_split
-    plan_phase_epic/                           # Lessons from plan_epic_converge (dir name kept for backward compat)
+    plan_epic_converge/                        # Lessons from plan_epic_converge
 ```

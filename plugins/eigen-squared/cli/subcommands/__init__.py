@@ -562,9 +562,7 @@ def cmd_get_context(args: Namespace) -> int:
             context["current_iteration"] = 0
             context["output_paths"] = {}
             context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-            # Dir name kept as plan_phase_epic for backward compat with
-            # existing lessons and compound_improve references.
-            context["lessons_dir"] = "eigen_lessons/plan_phase_epic/"
+            context["lessons_dir"] = "eigen_lessons/plan_epic_converge/"
             recs = [
                 r.to_dict() if hasattr(r, "to_dict") else r
                 for r in state.recommendations.get("plan_epic_converge", [])
@@ -596,9 +594,7 @@ def cmd_get_context(args: Namespace) -> int:
         context["is_first_run"] = pec.iteration == 0
         context["output_paths"] = pec.output_paths
         context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-        # Dir name kept as plan_phase_epic for backward compat with
-        # existing lessons and compound_improve references.
-        context["lessons_dir"] = "eigen_lessons/plan_phase_epic/"
+        context["lessons_dir"] = "eigen_lessons/plan_epic_converge/"
         recs = [
             r.to_dict() if hasattr(r, "to_dict") else r
             for r in state.recommendations.get("plan_epic_converge", [])
