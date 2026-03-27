@@ -90,7 +90,8 @@ After completing the review, writing the feedback file, and writing lessons:
 eigen-squared complete deepen_space_split \
   --phase <phase> \
   --feedback-path <feedback_file_path> \
-  --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+  --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}' \
+  --locked-skills '["skill-a", "skill-b", ...]'  # only on first iteration (when skills were discovered)
 ```
 
 ```bash
@@ -141,6 +142,23 @@ When comparing current findings against previous iteration findings, use **epic-
 
 This protocol is deterministic: epic numbers and feature IDs are stable across reformulations, unlike titles and descriptions which the LLM may rephrase each iteration.
 
+### Medium Finding Degradation (iteration 4+)
+
+When the current iteration is >= 4, apply this degradation before the Convergence Decision:
+
+1. For each finding with `severity: medium`:
+   - If the finding is classified as `new_finding` (no match in previous iterations per the Finding Matching Protocol):
+     - **Degrade to `low` for convergence purposes.** The finding no longer blocks convergence.
+     - **Write a recommendation** to pipeline_state.json preserving the original `medium` severity:
+       ```bash
+       eigen-squared add-recommendation --from-cmd deepen_space_split --target plan_epic_converge --phase <N> --iteration <iter> --text "[MEDIUM — degraded at iteration <N>] <finding title>: <finding description>"
+       ```
+   - If the finding is classified as `persisting` or `regressed`: keep `medium` severity. It still blocks convergence.
+
+2. Update the findings summary counts AFTER degradation (the degraded findings count as `low`, not `medium`).
+
+This prevents newly-discovered medium findings from blocking convergence in late iterations, while ensuring downstream commands are aware of the concerns.
+
 ### Convergence Decision Protocol
 
 After collecting all findings, apply these convergence rules **in order**:
@@ -148,23 +166,30 @@ After collecting all findings, apply these convergence rules **in order**:
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain.
    - Rationale: "All significant issues resolved."
 
-2. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
+2. **Converge if**: iteration >= 4 AND all current medium findings are `new_findings` (not `persisting` or `regressed`) AND total high+medium count decreased compared to previous iteration.
+   - Rationale: "Diminishing returns — remaining medium findings are new and the trend is improving. Accepting current state."
+   - **Action**: Write all remaining medium `new_findings` as recommendations to pipeline_state.json (preserving `medium` severity) so downstream commands have visibility:
+     ```bash
+     eigen-squared add-recommendation --from-cmd deepen_space_split --target plan_epic_converge --phase <N> --iteration <iter> --text "[MEDIUM — not resolved at convergence] <finding title>: <finding description>"
+     ```
+
+3. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
-3. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
+4. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Rationale: "Oscillation detected. Accepting current state to break the cycle."
 
-4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by epic/feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same epics/features keep appearing in findings without resolution).
+5. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by epic/feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same epics/features keep appearing in findings without resolution).
    - Rationale: "Stagnation detected. The same epics/features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by plan_epic_converge's deeper analysis."
 
-5. **Converge if**: epic decomposition is unchanged from previous iteration AND no new high-severity or medium-severity findings.
+6. **Converge if**: epic decomposition is unchanged from previous iteration AND no new high-severity or medium-severity findings.
    - Epic file stability weight: if the epic decomposition hasn't changed, favor convergence.
 
-6. **Converge if**: downstream `/plan_epic_converge` has already run on any epic in this phase.
+7. **Converge if**: downstream `/plan_epic_converge` has already run on any epic in this phase.
    - Strongly favor convergence to avoid invalidating downstream work.
    - Rationale: "Downstream plan generation has already started. Accepting current decomposition."
 
-7. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
+8. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
 
 ### Epic Update Guidance
 
@@ -515,9 +540,20 @@ Phase manifest summary:
 
 ### 5.1 Discover and Apply Available Skills
 
+**First iteration** (no `locked_skills` in CLI context):
+
 1. Discover ALL available skills from all sources (project, user, all plugins).
 2. Match skills to the phase's domains and technologies.
-3. Spawn one sub-agent per matched skill to review the epic decomposition through that skill's lens.
+3. Record the matched skill names as a JSON list.
+4. Spawn one sub-agent per matched skill to review the epic decomposition through that skill's lens.
+5. Spawn all in parallel.
+6. On Exit: pass the matched skill list to `eigen-squared complete` via `--locked-skills '["skill-a", "skill-b", ...]'`
+
+**Subsequent iterations** (`locked_skills` present in CLI context):
+
+1. Read `locked_skills` from the CLI context — this is the fixed set from iteration 1.
+2. Do NOT rediscover skills. Do NOT add new skills.
+3. Spawn one sub-agent per skill in `locked_skills`.
 4. Spawn all in parallel.
 
 ---

@@ -85,8 +85,10 @@ If `overwrite_warning` is present, print the warning and continue.
 After completing the review and writing the feedback file:
 
 ```bash
-eigen-squared complete deepen_bootstrap --phase <phase> --feedback-path <path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+eigen-squared complete deepen_bootstrap --phase <phase> --feedback-path <path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}' --locked-skills '["skill-a", "skill-b", ...]'
 ```
+
+Include `--locked-skills` only when skills were discovered in this iteration (first iteration, or when `locked_skills` was not already present in CLI context). On subsequent iterations the locked skills are already persisted — omit the flag.
 
 If converging:
 
@@ -117,6 +119,38 @@ eigen-squared schedule-next
 2. If it exists, read the file at `previous_feedback_path` (resolved against `paths_relative_to`) for comparison, oscillation detection, and progress tracking.
 3. If no previous feedback exists, this is the first deepen iteration.
 
+### Finding Matching Protocol (iteration 2+)
+
+When comparing current findings against previous iteration findings, use **entity-path matching**:
+
+1. For each current finding, extract all entity/file paths mentioned in `description`, `recommendation`, and `affected_output` (e.g., `src/models/user.py`, `contracts/auth-service.yaml`, `docker-compose.yml`).
+2. For each previous finding, extract the same paths.
+3. Two findings **match** if they share at least one entity/file path AND belong to the same `category`.
+4. Classify matched findings:
+   - **Persisting**: current finding matches a previous finding that was NOT addressed
+   - **Regressed**: current finding matches a previous finding that WAS addressed (appeared in `findings_addressed` of the previous comparison)
+   - **Oscillating**: finding has appeared in 3+ non-consecutive iterations, or has been in `findings_regressed` at least once
+5. Findings with NO path match to any previous finding → `new_findings`.
+
+This protocol is deterministic: entity/file paths are stable identifiers that don't change when the LLM rephrases a finding's title or description.
+
+### Medium Finding Degradation (iteration 4+)
+
+When the current iteration is >= 4, apply this degradation before the Convergence Decision:
+
+1. For each finding with `severity: medium`:
+   - If the finding is classified as `new_finding` (no match in previous iterations per the Finding Matching Protocol):
+     - **Degrade to `low` for convergence purposes.** The finding no longer blocks convergence.
+     - **Write a recommendation** to pipeline_state.json preserving the original `medium` severity:
+       ```bash
+       eigen-squared add-recommendation --from-cmd deepen_bootstrap --target space_split --phase <N> --iteration <iter> --text "[MEDIUM — degraded at iteration <N>] <finding title>: <finding description>"
+       ```
+   - If the finding is classified as `persisting` or `regressed`: keep `medium` severity. It still blocks convergence.
+
+2. Update the findings summary counts AFTER degradation (the degraded findings count as `low`, not `medium`).
+
+This prevents newly-discovered medium findings from blocking convergence in late iterations, while ensuring downstream commands are aware of the concerns.
+
 ### Convergence Decision Protocol
 
 After collecting all findings, apply these convergence rules **in order**:
@@ -124,13 +158,20 @@ After collecting all findings, apply these convergence rules **in order**:
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain AND verification passes.
    - Rationale: "All significant issues resolved, verification passes."
 
-2. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
+2. **Converge if**: iteration >= 4 AND all current medium findings are `new_findings` (not `persisting` or `regressed`) AND total high+medium count decreased compared to previous iteration.
+   - Rationale: "Diminishing returns — remaining medium findings are new and the trend is improving. Accepting current state."
+   - **Action**: Write all remaining medium `new_findings` as recommendations to pipeline_state.json (preserving `medium` severity) so downstream commands have visibility:
+     ```bash
+     eigen-squared add-recommendation --from-cmd deepen_bootstrap --target space_split --phase <N> --iteration <iter> --text "[MEDIUM — not resolved at convergence] <finding title>: <finding description>"
+     ```
+
+3. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
-3. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
+4. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Rationale: "Oscillation detected. Accepting current state to break the cycle."
 
-4. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated.
+5. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated.
 
 ### Code Change Guidance Generation
 
@@ -503,9 +544,20 @@ Report every broken reference: {source_file, reference, target, issue_type}"
 
 ### 5.1 Discover and Apply Available Skills
 
+**First iteration** (no `locked_skills` in CLI context):
+
 1. Discover ALL available skills from all sources (project, user, all plugins).
 2. Match skills to the bootstrap's domains and technologies (e.g., python-testing-patterns for Python projects, react-best-practices for React frontends).
-3. Spawn one sub-agent per matched skill to review the foundation through that skill's lens.
+3. Record the matched skill names as a JSON list.
+4. Spawn one sub-agent per matched skill to review the foundation through that skill's lens.
+5. Spawn all in parallel.
+6. On Exit: pass the matched skill list to `eigen-squared complete` via `--locked-skills '["skill-a", "skill-b", ...]'`
+
+**Subsequent iterations** (`locked_skills` present in CLI context):
+
+1. Read `locked_skills` from the CLI context — this is the fixed set from iteration 1.
+2. Do NOT rediscover skills. Do NOT add new skills.
+3. Spawn one sub-agent per skill in `locked_skills`.
 4. Spawn all in parallel.
 
 ---

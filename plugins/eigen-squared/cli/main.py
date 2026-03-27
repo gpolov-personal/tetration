@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--e2e-config", help="E2E config path (space_split)")
     p.add_argument("--epic-ids", help="JSON list of epic IDs (space_split)")
     p.add_argument("--plan-file", help="Plan file path (plan_epic_converge)")
+    p.add_argument("--locked-skills", help="JSON list of locked skill names (deepen commands)")
 
     # ── mark-converged ──
     p = sub.add_parser("mark-converged", help="Set convergence for a step")

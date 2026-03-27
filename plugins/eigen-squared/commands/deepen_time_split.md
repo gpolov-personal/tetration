@@ -89,7 +89,8 @@ After completing the review, writing the feedback file, and writing lessons:
 # Always — mark this deepen run complete
 eigen-squared complete deepen_time_split \
   --feedback-path <feedback_file_path> \
-  --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}'
+  --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}' \
+  --locked-skills '["skill-a", "skill-b", ...]'  # include when skills were discovered this iteration
 ```
 
 ```bash
@@ -135,6 +136,23 @@ When comparing current findings against previous iteration findings, use **featu
 
 This protocol is deterministic: feature IDs (F01, F02...) are stable across reformulations, unlike titles and descriptions which the LLM may rephrase each iteration.
 
+### Medium Finding Degradation (iteration 4+)
+
+When the current iteration is >= 4, apply this degradation before the Convergence Decision:
+
+1. For each finding with `severity: medium`:
+   - If the finding is classified as `new_finding` (no match in previous iterations per the Finding Matching Protocol):
+     - **Degrade to `low` for convergence purposes.** The finding no longer blocks convergence.
+     - **Write a recommendation** to pipeline_state.json preserving the original `medium` severity:
+       ```bash
+       eigen-squared add-recommendation --from-cmd deepen_time_split --target bootstrap --phase <N> --iteration <iter> --text "[MEDIUM — degraded at iteration <N>] <finding title>: <finding description>"
+       ```
+   - If the finding is classified as `persisting` or `regressed`: keep `medium` severity. It still blocks convergence.
+
+2. Update the findings summary counts AFTER degradation (the degraded findings count as `low`, not `medium`).
+
+This prevents newly-discovered medium findings from blocking convergence in late iterations, while ensuring downstream commands are aware of the concerns.
+
 ### Convergence Decision Protocol
 
 After collecting all findings (Stage 5), apply these convergence rules **in order**:
@@ -142,19 +160,26 @@ After collecting all findings (Stage 5), apply these convergence rules **in orde
 1. **Converge if**: zero high-severity findings AND zero medium-severity findings remain.
    - Rationale: "All significant issues resolved."
 
-2. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
+2. **Converge if**: iteration >= 4 AND all current medium findings are `new_findings` (not `persisting` or `regressed`) AND total high+medium count decreased compared to previous iteration.
+   - Rationale: "Diminishing returns — remaining medium findings are new and the trend is improving. Accepting current state."
+   - **Action**: Write all remaining medium `new_findings` as recommendations to pipeline_state.json (preserving `medium` severity) so downstream commands have visibility:
+     ```bash
+     eigen-squared add-recommendation --from-cmd deepen_time_split --target bootstrap --iteration <iter> --text "[MEDIUM — not resolved at convergence] <finding title>: <finding description>"
+     ```
+
+3. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
    - Set `convergence.iteration_limit_reached` to `true` in the feedback file.
 
-3. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same features keep appearing in findings across iterations without resolution).
+4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same features keep appearing in findings across iterations without resolution).
    - Rationale: "Stagnation detected. The same features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by downstream commands (bootstrap, space_split)."
 
-4. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
+5. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Oscillation = a finding was fixed in iteration N, reappeared in N+1, fixed again in N+2 (or a finding alternates between accept/reject across iterations).
    - Rationale: "Oscillation detected on findings [<ids>]. Accepting current state to break the cycle."
    - Set `convergence.oscillation_detected` to `true` and record `oscillation_details` in the feedback file.
 
-5. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
+6. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
    - Decision: `"continue"`
 
 ### Downstream Impact Assessment
@@ -394,9 +419,20 @@ Phase split summary:
 
 ### 4.1 Discover and Apply Available Skills
 
+**First iteration** (no `locked_skills` in CLI context):
+
 1. Discover ALL available skills from all sources (project, user, all plugins).
 2. Match skills to the initiative's domains and technologies.
-3. Spawn one sub-agent per matched skill to review the phase split through that skill's lens.
+3. Record the matched skill names as a JSON list.
+4. Spawn one sub-agent per matched skill to review the phase split through that skill's lens.
+5. Spawn all in parallel.
+6. On Exit: pass the matched skill list to `eigen-squared complete` via `--locked-skills '["skill-a", "skill-b", ...]'`
+
+**Subsequent iterations** (`locked_skills` present in CLI context):
+
+1. Read `locked_skills` from the CLI context — this is the fixed set from iteration 1.
+2. Do NOT rediscover skills. Do NOT add new skills.
+3. Spawn one sub-agent per skill in `locked_skills`.
 4. Spawn all in parallel.
 
 ---

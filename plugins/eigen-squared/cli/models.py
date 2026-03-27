@@ -188,9 +188,10 @@ class DeepenCommandState:
     feedback_path: Optional[str] = None
     feedback_consumed: bool = False
     findings_summary: FindingsSummary = field(default_factory=FindingsSummary)
+    locked_skills: Optional[list[str]] = None  # Skills locked after first iteration
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "status": self.status,
             "iteration": self.iteration,
             "last_run_at": self.last_run_at,
@@ -198,6 +199,9 @@ class DeepenCommandState:
             "feedback_consumed": self.feedback_consumed,
             "findings_summary": self.findings_summary.to_dict(),
         }
+        if self.locked_skills is not None:
+            d["locked_skills"] = self.locked_skills
+        return d
 
     @classmethod
     def from_dict(cls, d: dict | None) -> DeepenCommandState:
@@ -210,6 +214,7 @@ class DeepenCommandState:
             feedback_path=d.get("feedback_path"),
             feedback_consumed=bool(d.get("feedback_consumed", False)),
             findings_summary=FindingsSummary.from_dict(d.get("findings_summary")),
+            locked_skills=d.get("locked_skills"),
         )
 
 

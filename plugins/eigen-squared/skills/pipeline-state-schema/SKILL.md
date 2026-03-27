@@ -111,7 +111,8 @@ Created by `time_split` on first run. Read and updated by all 10 initiative-scal
       "last_run_at": null,
       "feedback_path": null,
       "feedback_consumed": false,
-      "findings_summary": { "high": 0, "medium": 0, "low": 0 }
+      "findings_summary": { "high": 0, "medium": 0, "low": 0 },
+      "locked_skills": null
     },
     "phases": {}
   },
@@ -155,7 +156,8 @@ Created by `time_split` on first run. Read and updated by all 10 initiative-scal
     "last_run_at": null,
     "feedback_path": null,
     "feedback_consumed": false,
-    "findings_summary": { "high": 0, "medium": 0, "low": 0 }
+    "findings_summary": { "high": 0, "medium": 0, "low": 0 },
+    "locked_skills": null
   },
   "space_split": {
     "status": "not_started|completed|iterating",
@@ -180,7 +182,8 @@ Created by `time_split` on first run. Read and updated by all 10 initiative-scal
     "last_run_at": null,
     "feedback_path": null,
     "feedback_consumed": false,
-    "findings_summary": { "high": 0, "medium": 0, "low": 0 }
+    "findings_summary": { "high": 0, "medium": 0, "low": 0 },
+    "locked_skills": null
   },
   "phase_review": {
     "status": "not_started|testing|approved",
@@ -191,6 +194,19 @@ Created by `time_split` on first run. Read and updated by all 10 initiative-scal
   "plans": {}
 }
 ```
+
+### `locked_skills` (Deepen Command State)
+
+```json
+"locked_skills": ["skill-a", "skill-b", ...]  // Optional. Set on first iteration by the deepen command.
+                                                // Subsequent iterations use this fixed set instead of rediscovering.
+                                                // Prevents skill variability from introducing new findings mid-loop.
+```
+
+- **Type**: array of strings, or `null`.
+- **Default**: `null` (no skills locked yet).
+- **Set by**: The deepen command on its **first iteration**. Once set, subsequent iterations reuse this exact list.
+- **Purpose**: Skill selection can vary between iterations due to non-deterministic discovery. Locking the skill set after the first iteration ensures that findings across iterations are comparable and that new skills cannot introduce novel findings that restart convergence.
 
 ---
 
@@ -419,6 +435,14 @@ Convergence is **decided by deepen commands** for main/deepen pairs, and **inter
 For main/deepen pairs: once converged, both the main command and deepen command will STOP on entry with a convergence message. The next command in the chain can proceed.
 
 For `plan_epic_converge`: convergence is managed internally by its agent team. The `decided_by` field is set to `"plan_epic_converge"` itself. Once converged, re-running `plan_epic_converge` will STOP on entry with a convergence message.
+
+### Late-Iteration Convergence Rules
+
+These rules apply to deepen commands at iteration 4 and beyond, preventing indefinite loops when only medium-severity findings remain:
+
+1. **Diminishing returns rule** — If `iteration >= 4`, all remaining findings are medium severity (no high), and the total finding count has decreased compared to the previous iteration, the deepen command converges. Any remaining medium findings are written as recommendations to the appropriate downstream commands.
+
+2. **Medium degradation rule** — At iteration 4+, any **new** medium-severity findings (not carried over from the previous iteration) are automatically degraded to low severity and written as recommendations. The original medium severity is preserved in the recommendation text for downstream awareness. This prevents fresh medium findings from extending the loop indefinitely while still surfacing them to commands that can act on them.
 
 ---
 

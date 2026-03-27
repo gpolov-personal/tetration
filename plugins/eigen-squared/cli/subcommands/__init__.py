@@ -378,6 +378,10 @@ def cmd_get_context(args: Namespace) -> int:
                 context["previous_feedback_path"] = None
                 context["previous_feedback_exists"] = False
 
+            # Pass locked skills if they exist
+            if dts.locked_skills is not None:
+                context["locked_skills"] = dts.locked_skills
+
     elif cmd in MAIN_COMMANDS:
         pk = str(phase)
         if pk not in state.phases:
@@ -536,6 +540,10 @@ def cmd_get_context(args: Namespace) -> int:
         else:
             context["previous_feedback_exists"] = False
             context["previous_feedback_path"] = None
+
+        # Pass locked skills if they exist
+        if ds.locked_skills is not None:
+            context["locked_skills"] = ds.locked_skills
 
     elif cmd == "plan_epic_converge":
         if epic is None:
@@ -703,6 +711,8 @@ def cmd_complete(args: Namespace) -> int:
             from ..models import FindingsSummary
             fs = json.loads(args.findings_summary)
             dts.findings_summary = FindingsSummary.from_dict(fs)
+        if args.locked_skills:
+            dts.locked_skills = json.loads(args.locked_skills)
 
     elif cmd in MAIN_COMMANDS and phase is not None:
         pk = str(phase)
@@ -765,6 +775,8 @@ def cmd_complete(args: Namespace) -> int:
             from ..models import FindingsSummary
             fs = json.loads(args.findings_summary)
             ds.findings_summary = FindingsSummary.from_dict(fs)
+        if args.locked_skills:
+            ds.locked_skills = json.loads(args.locked_skills)
 
     elif cmd == "plan_epic_converge":
         if phase is None or epic is None:

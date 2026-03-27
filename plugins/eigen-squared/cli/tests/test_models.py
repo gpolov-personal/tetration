@@ -54,6 +54,25 @@ class TestRoundTrip:
         )
         assert DeepenCommandState.from_dict(d.to_dict()) == d
 
+    def test_deepen_command_state_locked_skills(self):
+        d = DeepenCommandState(
+            status="completed", iteration=3,
+            locked_skills=["skill-a", "skill-b", "skill-c"],
+            findings_summary=FindingsSummary(high=0, medium=1, low=2),
+        )
+        serialized = d.to_dict()
+        assert serialized["locked_skills"] == ["skill-a", "skill-b", "skill-c"]
+        restored = DeepenCommandState.from_dict(serialized)
+        assert restored == d
+        assert restored.locked_skills == ["skill-a", "skill-b", "skill-c"]
+
+    def test_deepen_command_state_no_locked_skills(self):
+        d = DeepenCommandState(status="completed", iteration=1)
+        serialized = d.to_dict()
+        assert "locked_skills" not in serialized
+        restored = DeepenCommandState.from_dict(serialized)
+        assert restored.locked_skills is None
+
     def test_swarm_execution(self):
         s = SwarmExecution(
             status="pr_created", integration_branch="feat/P1.E2",
