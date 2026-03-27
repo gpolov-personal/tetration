@@ -292,27 +292,8 @@ class EpicPlan:
     def from_dict(cls, d: dict | None) -> EpicPlan:
         if not d:
             return cls()
-        # Backward compatibility: migrate legacy format
-        if "plan_phase_epic" in d and "plan_epic_converge" not in d:
-            return cls._from_legacy_dict(d)
         return cls(
             plan_epic_converge=MainCommandState.from_dict(d.get("plan_epic_converge")),
-            swarm_execution=SwarmExecution.from_dict(d.get("swarm_execution")),
-        )
-
-    @classmethod
-    def _from_legacy_dict(cls, d: dict) -> EpicPlan:
-        """Migrate from plan_phase_epic + deepen_plan_phase_epic to plan_epic_converge."""
-        main = MainCommandState.from_dict(d.get("plan_phase_epic"))
-        deepen = DeepenCommandState.from_dict(d.get("deepen_plan_phase_epic"))
-        # Merge deepen state into main
-        if deepen.findings_summary:
-            main.findings_summary = deepen.findings_summary
-        # If deepen had a feedback_path, store it in output_paths
-        if deepen.feedback_path:
-            main.output_paths["feedback_file"] = deepen.feedback_path
-        return cls(
-            plan_epic_converge=main,
             swarm_execution=SwarmExecution.from_dict(d.get("swarm_execution")),
         )
 

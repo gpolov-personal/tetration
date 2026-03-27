@@ -208,7 +208,7 @@ $EIGEN_ROOT/
       time_split/
       bootstrap/
       space_split/
-      plan_phase_epic/                    # (kept for backward compat)
+      plan_epic_converge/
       review_swarm_pr/
   .eigen/
     env                               # Pipeline environment variables

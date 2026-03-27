@@ -209,3 +209,14 @@ class TestBackwardCompatibility:
         v1 = {"initiative": "test", "state": {"time_split": {}, "deepen_time_split": {}}}
         ps = PipelineState.from_dict(v1)
         assert ps.schema_version == "1.0.0"  # preserved from input
+
+    def test_epic_plan_ignores_unknown_keys(self):
+        """EpicPlan.from_dict ignores unknown keys (e.g., old plan_phase_epic)."""
+        d = {
+            "plan_phase_epic": {"status": "completed"},  # unknown/old key
+            "swarm_execution": {"status": "not_started"},
+        }
+        ep = EpicPlan.from_dict(d)
+        # plan_epic_converge should be default (not_started), not migrated
+        assert ep.plan_epic_converge.status == "not_started"
+        assert ep.swarm_execution.status == "not_started"

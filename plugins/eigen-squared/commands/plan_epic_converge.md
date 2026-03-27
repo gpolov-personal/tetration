@@ -55,7 +55,7 @@ All paths are relative to `$EIGEN_ROOT/eigen_initiative/`:
 - **Bootstrap report**: `phases/phase_N/bootstrap-report.json`
 - **Epic manifest**: `phases/phase_N/epic_manifest.json`
 - **Feedback file**: `phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json`
-- **Lessons directory**: `eigen_lessons/plan_phase_epic/`
+- **Lessons directory**: `eigen_lessons/plan_epic_converge/`
 
 The epic file (`epic.md`) must exist and contain features, blackbox specs, validation criteria, inter-epic interfaces, and bootstrap context produced by `/space_split`.
 
@@ -63,7 +63,7 @@ The epic file (`epic.md`) must exist and contain features, blackbox specs, valid
 
 - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md` — strategic development plan with parallelization strategy
 - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json` — convergence feedback (for pipeline state compatibility)
-- `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/*.json` — lesson files for each non-false-positive finding
+- `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/*.json` — lesson files for each non-false-positive finding
 
 ## Constraints
 
@@ -96,14 +96,14 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
   "is_first_run": true,
   "output_paths": {},
   "phase_manifest": "phases/phase_1_manifest.md",
-  "lessons_dir": "eigen_lessons/plan_phase_epic/",
+  "lessons_dir": "eigen_lessons/plan_epic_converge/",
   "recommendations": []
 }
 ```
 
 - `phase` and `epic`: which epic to plan (N and M throughout this document)
 - `is_first_run: true` → first run, no existing plan. Proceed to Stage 0.
-- `is_first_run: false` → crash recovery. Check if `plan.md` exists at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If it exists, the coordinator reads it and skips Stage 2 (planning round), resuming from Stage 3 (review round). If it does not exist, treat as first run.
+- `is_first_run: false` → crash recovery. Check if `plan.md` exists at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If it exists, the coordinator reads it and skips Stage 2 (planning round), resuming from Stage 3 (review round). Also check for `convergence_state.json` in the same directory — if present, restore the round counter and findings history for oscillation detection. If `plan.md` does not exist, treat as first run.
 - `recommendations`: advisory observations from upstream deepen commands. Read and use as context during plan generation. Do NOT treat as requirements.
 
 ## On Exit
@@ -112,7 +112,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 eigen-squared complete plan_epic_converge --phase <N> --epic <M> --plan-file phases/phase_<N>/epic_<M>/plan.md --feedback-path phases/phase_<N>/epic_<M>/feedback/plan_epic_converge_feedback.json --findings-summary '{"high": 0, "medium": 0, "low": <count>}'
 eigen-squared mark-converged plan_epic_converge --phase <N> --epic <M> --reason "<convergence rationale>"
 eigen-squared add-recommendation --from-cmd plan_epic_converge --target create_issues_from_plan_swarm --iteration <N> --text "<observation>"
-eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/,eigen_initiative/eigen_lessons/plan_phase_epic/
+eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/,eigen_initiative/eigen_lessons/plan_epic_converge/
 [ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
@@ -129,6 +129,8 @@ Create an agent team for this planning session:
 ```
 TeamCreate({ team_name: "plan-P<N>-E<M>", description: "Plan convergence for P<N>.E<M>" })
 ```
+
+If TeamCreate fails, **STOP** and display the error. Do not proceed to Stage 1.
 
 You are now the **coordinator** of this team. Your teammates will communicate with you via SendMessage, and you manage the convergence loop.
 
@@ -546,6 +548,11 @@ EPIC CONTEXT:
 
 Wait for all 3 reviewers to send their findings back via SendMessage.
 
+**Teammate failure handling:** If a reviewer goes idle (you receive a teammate idle notification) without sending findings, or sends a malformed response that cannot be parsed as JSON:
+1. Log which reviewer failed and proceed with findings from the remaining reviewers.
+2. Do NOT wait indefinitely — if only 1 or 2 reviewers respond, that is sufficient to continue the convergence loop.
+3. Note the missing reviewer in the feedback JSON (`"reviewer_failures": ["<name>"]`).
+
 Each reviewer sends findings in this format:
 
 ```json
@@ -690,9 +697,26 @@ Send back ONLY the modified sections of the plan."
 
 Wait for the planner's response. The planner sends the modified sections back to the coordinator.
 
-### 6.3 Update Plan on Disk (Crash Recovery Checkpoint)
+### 6.3 Update Plan and Convergence State on Disk (Crash Recovery Checkpoint)
 
-Write the updated plan to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. This ensures crash recovery can resume from the latest version.
+Write the updated plan to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`.
+
+Also write convergence tracking state to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/convergence_state.json`:
+
+```json
+{
+  "current_round": <R>,
+  "max_rounds": 4,
+  "findings_history": [
+    { "round": 1, "high": <N>, "medium": <N>, "low": <N>, "finding_ids": ["<id1>", ...] },
+    { "round": 2, "high": <N>, "medium": <N>, "low": <N>, "finding_ids": ["<id1>", ...] }
+  ],
+  "reviewers_active": ["structural-reviewer", "strategic-reviewer", "skills-reviewer"],
+  "reviewer_failures": []
+}
+```
+
+This ensures crash recovery can resume from the latest version with convergence history intact. On re-run (`is_first_run: false`), read `convergence_state.json` to restore the round counter and findings history for oscillation detection.
 
 ### 6.4 Send to Affected Reviewers
 
@@ -723,7 +747,7 @@ For each applied change:
 })
 ```
 
-Wait for all engaged reviewers to respond. Then return to Stage 4 (Coordinator Synthesis) with the new findings.
+Wait for all engaged reviewers to respond. Apply the same **teammate failure handling** as Stage 3 — if a reviewer goes idle or sends malformed output, proceed with the remaining reviewers' findings. Then return to Stage 4 (Coordinator Synthesis) with the new findings.
 
 ---
 
@@ -739,7 +763,7 @@ Write to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_
 
 Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/`
 
-Use the same feedback schema as deepen_plan_phase_epic for pipeline state compatibility:
+Write the feedback JSON with this schema:
 
 ```json
 {
@@ -786,7 +810,7 @@ The `findings` array includes ALL findings from all rounds — both resolved and
 
 ### 7.3 Lesson Extraction
 
-For each non-false-positive finding discovered during the convergence loop, create a lesson JSON in `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/`:
+For each non-false-positive finding discovered during the convergence loop, create a lesson JSON in `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/`:
 
 ```json
 {
@@ -812,34 +836,19 @@ For each non-false-positive finding discovered during the convergence loop, crea
 
 **Deduplication**: Before writing each lesson, check existing lessons in the directory. If a lesson with the same `affected_section` + `category` + similar `root_cause` already exists, skip it. If the existing lesson has `"status": "applied"`, still skip.
 
-Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/`
+Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/`
 
-Write each new non-duplicate lesson to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/<id>.json`
+Write each new non-duplicate lesson to: `$EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/<id>.json`
 
 Print summary:
 ```
-Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_phase_epic/
+Lessons written: <N> new lessons to $EIGEN_ROOT/eigen_initiative/eigen_lessons/plan_epic_converge/
 Skipped: <M> duplicates of existing lessons
 ```
 
 ### 7.4 Execute On Exit Commands
 
-Run the On Exit commands sequentially:
-
-```bash
-eigen-squared complete plan_epic_converge --phase <N> --epic <M> --plan-file phases/phase_<N>/epic_<M>/plan.md --feedback-path phases/phase_<N>/epic_<M>/feedback/plan_epic_converge_feedback.json --findings-summary '{"high": 0, "medium": 0, "low": <count>}'
-```
-
-```bash
-eigen-squared mark-converged plan_epic_converge --phase <N> --epic <M> --reason "<convergence rationale>"
-```
-
-If there are genuine downstream insights from the convergence process (max 5):
-```bash
-eigen-squared add-recommendation --from-cmd plan_epic_converge --target create_issues_from_plan_swarm --iteration <N> --text "<observation>"
-```
-
-Execute the **On Exit** section above — it handles `complete`, `mark-converged`, `add-recommendation`, `commit-state`, and `schedule-next`.
+Execute the **On Exit** section above. It contains the single authoritative code block with all CLI calls in order: `complete`, `mark-converged`, `add-recommendation` (optional, max 5), `commit-state`, and `schedule-next`. Do NOT run these commands individually — run the On Exit code block once.
 
 ### 7.5 Team Shutdown
 
@@ -852,7 +861,11 @@ SendMessage({ to: "strategic-reviewer", message: "Plan converged. Shutting down.
 SendMessage({ to: "skills-reviewer", message: "Plan converged. Shutting down. Thank you." })
 ```
 
-Wait for confirmations, then cleanup the team.
+Wait for confirmations, then delete the team:
+
+```
+TeamDelete({ team_name: "plan-P<N>-E<M>" })
+```
 
 ### 7.6 Print Summary
 
@@ -904,7 +917,7 @@ Before writing the final plan and proceeding to On Exit, verify:
 
 1. **NEVER modify epic.md** — it is owned by `/space_split` and is read-only input.
 2. **Plan.md is written by the planner teammate, managed by the coordinator** — the coordinator writes it to disk, the planner generates and updates the content.
-3. **Feedback JSON is written at convergence for pipeline state compatibility** — it uses the same schema as deepen_plan_phase_epic so downstream commands and the CLI can read it without changes.
+3. **Feedback JSON is written at convergence** — it records the convergence rationale, findings history, and round count for auditability.
 4. **The CLI is the single source of truth for pipeline state** — all pipeline state reads and writes go through `eigen-squared` CLI commands, never through direct file manipulation of pipeline state.
 5. **Convergence is decided by the coordinator using the severity rubric** — reviewers propose severity, the coordinator decides.
 6. **Maximum 4 internal rounds** — if convergence is not reached by round 4, the coordinator accepts the current state (Rule 2).

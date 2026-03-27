@@ -73,9 +73,6 @@ MAIN_TO_DEEPEN = {
     "space_split": "deepen_space_split",
 }
 
-# Commands that self-converge (no deepen pair)
-CONVERGE_COMMANDS = {"plan_epic_converge"}
-
 DEEPEN_TO_MAIN = {v: k for k, v in MAIN_TO_DEEPEN.items()}
 
 # Which commands are "deepen" commands
@@ -562,7 +559,7 @@ def cmd_get_context(args: Namespace) -> int:
             context["current_iteration"] = 0
             context["output_paths"] = {}
             context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-            context["lessons_dir"] = "eigen_lessons/plan_phase_epic/"
+            context["lessons_dir"] = "eigen_lessons/plan_epic_converge/"
             recs = [
                 r.to_dict() if hasattr(r, "to_dict") else r
                 for r in state.recommendations.get("plan_epic_converge", [])
@@ -594,7 +591,7 @@ def cmd_get_context(args: Namespace) -> int:
         context["is_first_run"] = pec.iteration == 0
         context["output_paths"] = pec.output_paths
         context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-        context["lessons_dir"] = "eigen_lessons/plan_phase_epic/"
+        context["lessons_dir"] = "eigen_lessons/plan_epic_converge/"
         recs = [
             r.to_dict() if hasattr(r, "to_dict") else r
             for r in state.recommendations.get("plan_epic_converge", [])

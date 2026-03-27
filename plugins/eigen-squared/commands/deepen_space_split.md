@@ -176,11 +176,11 @@ After collecting all findings, apply these convergence rules **in order**:
 3. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
-4. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
-   - Rationale: "Oscillation detected. Accepting current state to break the cycle."
-
-5. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by epic/feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same epics/features keep appearing in findings without resolution).
+4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by epic/feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same epics/features keep appearing in findings without resolution).
    - Rationale: "Stagnation detected. The same epics/features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by plan_epic_converge's deeper analysis."
+
+5. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
+   - Rationale: "Oscillation detected. Accepting current state to break the cycle."
 
 6. **Converge if**: epic decomposition is unchanged from previous iteration AND no new high-severity or medium-severity findings.
    - Epic file stability weight: if the epic decomposition hasn't changed, favor convergence.
