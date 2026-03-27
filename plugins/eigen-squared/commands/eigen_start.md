@@ -31,6 +31,14 @@ This is an **interactive command** — it asks the user for configuration values
 
 ---
 
+## Flag: `--reinstall-cli-only`
+
+If the user invokes this command with `--reinstall-cli-only` (e.g., `/eigen_start --reinstall-cli-only`), **skip ALL steps** and jump directly to **Step 7.1** (Install the `eigen-squared` CLI globally). After completing Step 7.1, print the installed version and **STOP** — do not run Steps 7.2–7.5 or any other step.
+
+This allows updating the CLI wrapper after a plugin version change without requiring a fresh pipeline.
+
+---
+
 ## Step 1: Check Environment Variables
 
 The eigen-squared pipeline requires these env vars to be set in the project's `.claude/settings.json` (NOT in the shell). This ensures each project has its own isolated configuration and prevents cross-project mix-ups.
@@ -449,9 +457,35 @@ The eigen-squared CLI is a Python module inside this plugin. It needs to be acce
 
 **Step 1: Discover the plugin path.** Use the Glob tool to find the `cli/__main__.py` file near this command file. The plugin cache path will look like `~/.claude/plugins/cache/tetration/eigen-squared/<version>/`. Store this as `PLUGIN_PATH`.
 
-**Step 2: Read the version.** Read `$PLUGIN_PATH/.claude-plugin/plugin.json` and extract the `version` field (e.g., `2.1.0`).
+**Step 2: Read the version.** Read `$PLUGIN_PATH/.claude-plugin/plugin.json` and extract the `version` field (e.g., `2.1.0`). Store this as `NEW_VERSION`.
 
-**Step 3: Create the wrapper script** at `~/.local/bin/eigen-squared`:
+**Step 3: Check if already installed.**
+
+```bash
+test -x ~/.local/bin/eigen-squared && ~/.local/bin/eigen-squared --version 2>/dev/null
+```
+
+Compare the installed version with `NEW_VERSION`:
+
+- **If not installed** (wrapper doesn't exist or not executable) → proceed to Step 4 (install).
+- **If installed with the same version** → print `eigen-squared CLI v<VERSION> already installed — skipping.` and skip to Step 5.
+- **If installed with a different version** → print a warning and ask the user:
+  ```
+  WARNING: eigen-squared CLI is already installed at ~/.local/bin/eigen-squared
+    Installed version: <INSTALLED_VERSION>
+    This plugin version: <NEW_VERSION>
+
+  Overwriting will affect ALL projects that use this CLI.
+  If another project's pipeline is running, it will start using v<NEW_VERSION>.
+
+  Options:
+    1. Overwrite — install v<NEW_VERSION> (recommended if no other pipeline is active)
+    2. Skip — keep v<INSTALLED_VERSION> (use /eigen_start --reinstall-cli-only later)
+  ```
+  - **Option 1** → proceed to Step 4.
+  - **Option 2** → skip to Step 5.
+
+**Step 4: Create the wrapper script** at `~/.local/bin/eigen-squared`:
 
 ```bash
 mkdir -p ~/.local/bin
@@ -461,7 +495,7 @@ cat > ~/.local/bin/eigen-squared << 'WRAPPER_EOF'
 PLUGIN_PATH="<RESOLVED_PLUGIN_PATH>"
 if [ ! -d "$PLUGIN_PATH/cli" ]; then
     echo "ERROR: eigen-squared plugin not found at $PLUGIN_PATH"
-    echo "The plugin may have been updated. Run /eigen_start again to fix."
+    echo "The plugin may have been updated. Run /eigen_start --reinstall-cli-only to fix."
     exit 1
 fi
 export PYTHONPATH="$PLUGIN_PATH"
@@ -470,9 +504,9 @@ WRAPPER_EOF
 chmod +x ~/.local/bin/eigen-squared
 ```
 
-Replace `<RESOLVED_PLUGIN_PATH>` with the actual absolute path discovered in Step 1, and `<VERSION>` with the version from Step 2.
+Replace `<RESOLVED_PLUGIN_PATH>` with the actual absolute path discovered in Step 1, and `<VERSION>` with `NEW_VERSION`.
 
-**Step 4: Verify it works:**
+**Step 5: Verify it works:**
 
 ```bash
 eigen-squared --version
