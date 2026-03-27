@@ -609,13 +609,4 @@ Next steps:
 
 ### 5.3 Commit Pipeline Artifacts
 
-```bash
-eigen-squared commit-state --message "pipeline: bootstrap phase <N> — foundation created" --additional-paths eigen_initiative/phases/phase_<N>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
-```
-
----
-
-## Pipeline Continuation
-
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.
+Execute the **On Exit** section above — it handles `complete`, `commit-state`, and `schedule-next`.

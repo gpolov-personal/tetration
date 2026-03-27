@@ -487,8 +487,3 @@ Next steps:
 - **Post-merge state**: after auto-merge, the working directory is on `$EIGEN_BRANCH` with all epic artifacts (code, tasks, manifest, pipeline_state, reports) merged in.
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
 
----
-
-## Pipeline Continuation
-
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.
