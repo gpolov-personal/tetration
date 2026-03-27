@@ -168,10 +168,13 @@ After collecting all findings, apply these convergence rules **in order**:
 3. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
    - Rationale: "Maximum iteration limit (8) reached. Accepting current state."
 
-4. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
+4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by entity/file path, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same entity/file paths keep appearing in findings across iterations without resolution).
+   - Rationale: "Stagnation detected. The same entity/file paths keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by space_split's deeper analysis."
+
+5. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Rationale: "Oscillation detected. Accepting current state to break the cycle."
 
-5. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated.
+6. **Continue if**: any high-severity or medium-severity actionable findings remain that have not oscillated or stagnated.
 
 ### Code Change Guidance Generation
 

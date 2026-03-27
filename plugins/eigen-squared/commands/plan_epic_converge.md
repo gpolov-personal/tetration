@@ -130,6 +130,8 @@ Create an agent team for this planning session:
 TeamCreate({ team_name: "plan-P<N>-E<M>", description: "Plan convergence for P<N>.E<M>" })
 ```
 
+If TeamCreate fails, **STOP** and display the error. Do not proceed to Stage 1.
+
 You are now the **coordinator** of this team. Your teammates will communicate with you via SendMessage, and you manage the convergence loop.
 
 ---
@@ -546,6 +548,11 @@ EPIC CONTEXT:
 
 Wait for all 3 reviewers to send their findings back via SendMessage.
 
+**Teammate failure handling:** If a reviewer goes idle (you receive a teammate idle notification) without sending findings, or sends a malformed response that cannot be parsed as JSON:
+1. Log which reviewer failed and proceed with findings from the remaining reviewers.
+2. Do NOT wait indefinitely — if only 1 or 2 reviewers respond, that is sufficient to continue the convergence loop.
+3. Note the missing reviewer in the feedback JSON (`"reviewer_failures": ["<name>"]`).
+
 Each reviewer sends findings in this format:
 
 ```json
@@ -723,7 +730,7 @@ For each applied change:
 })
 ```
 
-Wait for all engaged reviewers to respond. Then return to Stage 4 (Coordinator Synthesis) with the new findings.
+Wait for all engaged reviewers to respond. Apply the same **teammate failure handling** as Stage 3 — if a reviewer goes idle or sends malformed output, proceed with the remaining reviewers' findings. Then return to Stage 4 (Coordinator Synthesis) with the new findings.
 
 ---
 
@@ -824,22 +831,7 @@ Skipped: <M> duplicates of existing lessons
 
 ### 7.4 Execute On Exit Commands
 
-Run the On Exit commands sequentially:
-
-```bash
-eigen-squared complete plan_epic_converge --phase <N> --epic <M> --plan-file phases/phase_<N>/epic_<M>/plan.md --feedback-path phases/phase_<N>/epic_<M>/feedback/plan_epic_converge_feedback.json --findings-summary '{"high": 0, "medium": 0, "low": <count>}'
-```
-
-```bash
-eigen-squared mark-converged plan_epic_converge --phase <N> --epic <M> --reason "<convergence rationale>"
-```
-
-If there are genuine downstream insights from the convergence process (max 5):
-```bash
-eigen-squared add-recommendation --from-cmd plan_epic_converge --target create_issues_from_plan_swarm --iteration <N> --text "<observation>"
-```
-
-Execute the **On Exit** section above — it handles `complete`, `mark-converged`, `add-recommendation`, `commit-state`, and `schedule-next`.
+Execute the **On Exit** section above. It contains the single authoritative code block with all CLI calls in order: `complete`, `mark-converged`, `add-recommendation` (optional, max 5), `commit-state`, and `schedule-next`. Do NOT run these commands individually — run the On Exit code block once.
 
 ### 7.5 Team Shutdown
 
@@ -852,7 +844,11 @@ SendMessage({ to: "strategic-reviewer", message: "Plan converged. Shutting down.
 SendMessage({ to: "skills-reviewer", message: "Plan converged. Shutting down. Thank you." })
 ```
 
-Wait for confirmations, then cleanup the team.
+Wait for confirmations, then delete the team:
+
+```
+TeamDelete({ team_name: "plan-P<N>-E<M>" })
+```
 
 ### 7.6 Print Summary
 
