@@ -114,11 +114,7 @@ Commit all artifacts:
 eigen-squared commit-state \
   --message "pipeline: deepen_space_split phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" \
   --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/space_split/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ---

@@ -113,11 +113,7 @@ eigen-squared complete plan_epic_converge --phase <N> --epic <M> --plan-file pha
 eigen-squared mark-converged plan_epic_converge --phase <N> --epic <M> --reason "<convergence rationale>"
 eigen-squared add-recommendation --from-cmd plan_epic_converge --target create_issues_from_plan_swarm --iteration <N> --text "<observation>"
 eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/,eigen_initiative/eigen_lessons/plan_phase_epic/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 The `add-recommendation` command is OPTIONAL — only execute it if there are genuine downstream insights from the convergence process. Maximum 5 recommendations per target command. Write observations and implications, NOT action items.
@@ -850,11 +846,7 @@ eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --
 
 Schedule the next command:
 ```bash
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ### 7.5 Team Shutdown

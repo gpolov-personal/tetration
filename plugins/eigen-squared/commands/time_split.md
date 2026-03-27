@@ -151,11 +151,7 @@ Then commit pipeline artifacts:
 
 ```bash
 eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ---

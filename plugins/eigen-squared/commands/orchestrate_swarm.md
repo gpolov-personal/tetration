@@ -928,11 +928,7 @@ Record the PR and advance pipeline state via the CLI:
 ```bash
 eigen-squared complete orchestrate_swarm --phase <phase> --epic <epic> --pr-url <pr_url> --pr-number <pr_number>
 eigen-squared commit-state --message "chore: record PR for P<phase>.E<epic> in pipeline state"
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 This is the handoff point — `/review_swarm_pr` reads `swarm_execution` from the integration branch to detect the PR and track review iterations. Both commands run on the same branch.

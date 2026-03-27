@@ -97,11 +97,7 @@ After creating tasks, manifest, and integration branch:
 eigen-squared checkout-branch --phase <phase> --epic <epic> --create
 eigen-squared complete create_issues_from_plan_swarm --phase <phase> --epic <epic> --manifest-path eigen_initiative/phases/phase_<phase>/epic_<epic>/swarm-manifest.json --integration-branch feat/P<phase>.E<epic>
 eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ## Output
@@ -483,11 +479,7 @@ The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/
 
 ```bash
 eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ### 5.3 Branch state
