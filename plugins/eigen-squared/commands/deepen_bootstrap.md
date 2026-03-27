@@ -106,7 +106,11 @@ Commit all artifacts:
 
 ```bash
 eigen-squared commit-state --message "pipeline: deepen_bootstrap phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/bootstrap/
-eigen-squared schedule-next
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
 ```
 
 ---

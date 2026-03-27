@@ -442,7 +442,7 @@ Design decisions affect architecture and need user approval. Contextualize the q
 
 **Escalation to user is ALLOWED:** Unlike teammates, you (the leader) CAN ask the user for input when you need it. If a decision could have significant architectural impact and you are not confident, escalate. You are the leader, not a background worker.
 
-**Autonomous Mode (when `$CLAUDE_TASKS_API` is set):** The pipeline is running without a human present. In this mode, do NOT use AskUserQuestion at any escalation point. Instead, take the **most conservative and reversible decision** yourself:
+**Autonomous Mode (when `$AUTOCHAIN` is `true`):** The pipeline is running without a human present. In this mode, do NOT use AskUserQuestion at any escalation point. Instead, take the **most conservative and reversible decision** yourself:
 
 - **design_decision**: Choose the option that minimizes coupling, is easiest to revert, and doesn't close doors to alternatives. Create a `[DECISION-AUTONOMOUS]` task documenting: the decision made, rationale, reversibility assessment, and the worker's original question. Respond to the worker and continue.
 - **fix loop exhausted** (Stage 4.7, 4.8): Accept the current state and proceed to PR creation. Document unresolved failures in a `[DECISION-AUTONOMOUS]` task. `/review_swarm_pr` will capture them as findings.
@@ -509,8 +509,8 @@ A teammate has failed on the same test 3+ consecutive times and cannot resolve i
    Each worker starts with a budget of 5 assisted attempts. Decrement on each `[STUCK]` resolution.
 
 5. **Escalate if budget exhausted**: If a worker's fix budget reaches 0 and they're still stuck:
-   - **Manual mode** (`$CLAUDE_TASKS_API` not set): escalate to the user with full context (test name, error pattern, all attempted approaches, leader's analysis).
-   - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): mark the `[WORK]` task as "failed", skip it and any tasks that depend on it (mark as "skipped"). Create a `[DECISION-AUTONOMOUS]` task: "Task <id> failed after exhausting fix budget (<N> assisted attempts). Error: <pattern>. Skipped. Dependents skipped: <list>. Fix expected via /review_swarm_pr." Continue with the rest of the swarm.
+   - **Manual mode** (`$AUTOCHAIN` not `true`): escalate to the user with full context (test name, error pattern, all attempted approaches, leader's analysis).
+   - **Autonomous mode** (`$AUTOCHAIN` is `true`): mark the `[WORK]` task as "failed", skip it and any tasks that depend on it (mark as "skipped"). Create a `[DECISION-AUTONOMOUS]` task: "Task <id> failed after exhausting fix budget (<N> assisted attempts). Error: <pattern>. Skipped. Dependents skipped: <list>. Fix expected via /review_swarm_pr." Continue with the rest of the swarm.
 
 ### Handling: Test Issue Report (`[QUESTION]` with type `test_issue`)
 
@@ -521,7 +521,7 @@ A teammate found a problem with a validation test and needs the leader to decide
 3. **Evaluate**:
    - Is the test wrong? (test assumption doesn't match plan/requirements) → Authorize the worker to fix the test. Be specific about what to change.
    - Is the implementation wrong? (test correctly validates the requirement, worker's code doesn't match) → Tell the worker what their code should do differently.
-   - Is the requirement ambiguous? → **Manual mode**: Escalate to user via Route B for design decision. **Autonomous mode** (`$CLAUDE_TASKS_API` set): choose the simpler interpretation, create `[DECISION-AUTONOMOUS]` task documenting the ambiguity and your interpretation, instruct the worker accordingly.
+   - Is the requirement ambiguous? → **Manual mode**: Escalate to user via Route B for design decision. **Autonomous mode** (`$AUTOCHAIN` is `true`): choose the simpler interpretation, create `[DECISION-AUTONOMOUS]` task documenting the ambiguity and your interpretation, instruct the worker accordingly.
 4. **Respond**:
    ```javascript
    TaskUpdate({ taskId: "<question_id>", status: "completed",
@@ -591,7 +591,7 @@ When a teammate finishes and goes idle, you receive an automatic notification.
    - Check working notes: `test -f swarm_working_notes/working-notes-<task.id>.md`
    - If working notes exist (partially done): re-spawn with the same prompt — the worker will resume from the last checkpoint
    - If no working notes: spawn fresh with the original prompt
-   - If crashes TWICE: create `[BLOCKER]`. **Manual mode**: escalate to user. **Autonomous mode** (`$CLAUDE_TASKS_API` set): mark task as "failed", skip dependents, create `[DECISION-AUTONOMOUS]` task, continue
+   - If crashes TWICE: create `[BLOCKER]`. **Manual mode**: escalate to user. **Autonomous mode** (`$AUTOCHAIN` is `true`): mark task as "failed", skip dependents, create `[DECISION-AUTONOMOUS]` task, continue
 
 ### Handling: Stub Ready Message (from interface providers)
 
@@ -635,7 +635,7 @@ SendMessage({
 
 For each stub_file in `interface_providers`:
 - Read the file and check if it still contains only stub/interface markers (see "Stub Detection" in the `language-profiles` skill)
-- If a provider completed but the file still looks like a stub: **Manual mode**: escalate to user. **Autonomous mode** (`$CLAUDE_TASKS_API` set): create `[DECISION-AUTONOMOUS]` task noting the unreplaced stub, mark provider task as "failed", continue with integration (the stub will cause test failures that `/review_swarm_pr` will capture)
+- If a provider completed but the file still looks like a stub: **Manual mode**: escalate to user. **Autonomous mode** (`$AUTOCHAIN` is `true`): create `[DECISION-AUTONOMOUS]` task noting the unreplaced stub, mark provider task as "failed", continue with integration (the stub will cause test failures that `/review_swarm_pr` will capture)
 
 ### 4.3 Verify Consumer Step C Completion (Safety Check)
 
@@ -645,7 +645,7 @@ This is a safety net — consumers self-validate in their Step C (see `code_from
 
 1. Verify all consumer tasks with `interface_deps` have status "completed". If any consumer is still in_progress or stuck, check their messages for Step C failures.
 2. As a belt-and-suspenders check, re-run consumer test suites (use the test runner from the `language-profiles` skill for the detected language).
-3. If tests fail here, it means a consumer's Step C missed something. Create `[BLOCKER]`. **Manual mode**: escalate to user with failure details. **Autonomous mode** (`$CLAUDE_TASKS_API` set): create `[DECISION-AUTONOMOUS]` task with failure details, proceed to integration anyway (failures will surface in post-integration tests and be captured by `/review_swarm_pr`).
+3. If tests fail here, it means a consumer's Step C missed something. Create `[BLOCKER]`. **Manual mode**: escalate to user with failure details. **Autonomous mode** (`$AUTOCHAIN` is `true`): create `[DECISION-AUTONOMOUS]` task with failure details, proceed to integration anyway (failures will surface in post-integration tests and be captured by `/review_swarm_pr`).
 4. If all pass, proceed to integration.
 
 ### 4.4 Spawn Integration Teammate
@@ -718,7 +718,7 @@ For each failing test:
 
 2. **Semantic matching** (medium confidence): If stack trace has only framework/library files, match test name keywords against task summaries from the manifest.
 
-3. **Escalate to user**: If neither method produces confident attribution: **Manual mode**: present the failure details and ask which worker should investigate. **Autonomous mode** (`$CLAUDE_TASKS_API` set): attribute to the worker whose files are most closely related (best-effort), create `[DECISION-AUTONOMOUS]` task noting low-confidence attribution, proceed.
+3. **Escalate to user**: If neither method produces confident attribution: **Manual mode**: present the failure details and ask which worker should investigate. **Autonomous mode** (`$AUTOCHAIN` is `true`): attribute to the worker whose files are most closely related (best-effort), create `[DECISION-AUTONOMOUS]` task noting low-confidence attribution, proceed.
 
 **4.7.2 Spawn Fix Workers**
 
@@ -758,7 +758,7 @@ For each attributed failure:
    - For stuck tests: do NOT reassign to the same worker — try secondary attribution or escalate
    - Increment iteration, repeat from 4.7.1
 6. If failures remain AND iteration >= 3:
-   - **Manual mode** (`$CLAUDE_TASKS_API` not set): Escalate to user with comprehensive report:
+   - **Manual mode** (`$AUTOCHAIN` not `true`): Escalate to user with comprehensive report:
      ```
      "3 post-integration fix iterations completed. <N> failures remain.
       Stuck tests: <list>. My analysis: <leader assessment>.
@@ -767,7 +767,7 @@ For each attributed failure:
       2. Provide guidance for another iteration
       3. Take manual control"
      ```
-   - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "Post-integration fix loop exhausted after 3 iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Stage 5.
+   - **Autonomous mode** (`$AUTOCHAIN` is `true`): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "Post-integration fix loop exhausted after 3 iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Stage 5.
 
 ### 4.8 E2E Validation Fix Loop (E2E Testing Epic ONLY)
 
@@ -823,8 +823,8 @@ This is the key differentiator from the post-integration fix loop. E2E failures 
 4. **Tier 2 — Semantic matching** (medium confidence):
    - If stack trace has only framework files, match test name keywords against feature task summaries
 5. **Tier 3 — Escalate to user**:
-   - **Manual mode** (`$CLAUDE_TASKS_API` not set): Batch all unattributed failures and present to user for manual attribution.
-   - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): Attribute to the worker whose files are most closely related (best-effort). Create `[DECISION-AUTONOMOUS]` task noting low-confidence attribution for each. Proceed with fix workers.
+   - **Manual mode** (`$AUTOCHAIN` not `true`): Batch all unattributed failures and present to user for manual attribution.
+   - **Autonomous mode** (`$AUTOCHAIN` is `true`): Attribute to the worker whose files are most closely related (best-effort). Create `[DECISION-AUTONOMOUS]` task noting low-confidence attribution for each. Proceed with fix workers.
 
 **4.8.5 Spawn Fix Workers**
 
@@ -860,7 +860,7 @@ For each attributed CODE_BUG:
    - **Iteration 1 (Independent)**: Fix workers receive error details only. No leader guidance.
    - **Iteration 2 (Guided)**: Leader provides specific guidance for recurring failures. Stuck tests reassigned to secondary suspects.
    - **Iteration 3 (Final)**: No new fix workers spawned. If failures remain:
-     - **Manual mode** (`$CLAUDE_TASKS_API` not set): Present comprehensive report to user:
+     - **Manual mode** (`$AUTOCHAIN` not `true`): Present comprehensive report to user:
        ```
        "<max_iterations> E2E fix iterations completed.
         Progress: <failure counts per iteration>.
@@ -871,7 +871,7 @@ For each attributed CODE_BUG:
         2. Provide guidance for another iteration
         3. Take manual control"
        ```
-     - **Autonomous mode** (`$CLAUDE_TASKS_API` is set): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "E2E fix loop exhausted after <max_iterations> iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Stage 5.
+     - **Autonomous mode** (`$AUTOCHAIN` is `true`): Accept current state. Create `[DECISION-AUTONOMOUS]` task: "E2E fix loop exhausted after <max_iterations> iterations. <N> failures remain: <list>. Proceeding to PR creation. Failures will be captured by /review_swarm_pr." Proceed to Stage 5.
 
 **4.8.7 E2E Converged**
 
@@ -928,7 +928,11 @@ Record the PR and advance pipeline state via the CLI:
 ```bash
 eigen-squared complete orchestrate_swarm --phase <phase> --epic <epic> --pr-url <pr_url> --pr-number <pr_number>
 eigen-squared commit-state --message "chore: record PR for P<phase>.E<epic> in pipeline state"
-eigen-squared schedule-next
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
 ```
 
 This is the handoff point — `/review_swarm_pr` reads `swarm_execution` from the integration branch to detect the PR and track review iterations. Both commands run on the same branch.
@@ -985,7 +989,7 @@ Next steps:
    - Read the last checkpoint to determine where it left off
    - Resume from that checkpoint (not start over)
 4. **If no working notes** (no progress): spawn fresh with the original prompt
-5. If the teammate crashes TWICE on the same task: create a `[BLOCKER]`. **Manual mode**: escalate to user. **Autonomous mode** (`$CLAUDE_TASKS_API` set): mark task as "failed", skip dependents, create `[DECISION-AUTONOMOUS]` task, continue
+5. If the teammate crashes TWICE on the same task: create a `[BLOCKER]`. **Manual mode**: escalate to user. **Autonomous mode** (`$AUTOCHAIN` is `true`): mark task as "failed", skip dependents, create `[DECISION-AUTONOMOUS]` task, continue
 6. Log all crashes in the final report
 
 ### Multiple Teammates Request Same File
@@ -1035,4 +1039,4 @@ Before reporting completion:
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API. No hook or external trigger is needed — the command schedules its own successor before the session ends.
+The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.

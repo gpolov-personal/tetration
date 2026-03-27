@@ -1,6 +1,6 @@
 {
   "name": "eigen-squared",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Autonomous initiative-scale development orchestration with eigen-squared CLI for deterministic state management. Self-scheduling pipeline — commands chain via schedule-next, no hooks needed. Sequential epics, typed models, convergence loops, real-dependencies testing, Docker-first E2E.",
   "author": {
     "name": "G.Polo.V",

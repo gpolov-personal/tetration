@@ -1,16 +1,17 @@
 ---
 name: eigen_start
-description: ONE-TIME launcher — validate environment and kick off a fresh autonomous eigen-squared pipeline
+description: ONE-TIME launcher — validate environment and kick off a fresh eigen-squared pipeline (autonomous or manual mode)
 ---
 
-# Eigen Start — Launch the Autonomous Pipeline
+# Eigen Start — Launch the Pipeline
 
 ## Pipeline Context
 
 ```
 eigen_start (you are here)
     │
-    ▼ [eigen-squared schedule-next chains commands]
+    ▼ [if AUTOCHAIN=true: eigen-squared schedule-next chains commands automatically]
+    │ [if AUTOCHAIN=false: user runs each command manually]
     │
     ▼
 time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
@@ -18,11 +19,11 @@ space_split ↔ deepen_space_split → [per epic: plan → create → orchestrat
 STOP at E2E Testing epic convergence
 ```
 
-This is the **ONE-TIME interactive launcher**. It validates the environment, collects configuration from the user, initializes `pipeline_state.json` via the `eigen-squared` CLI, and schedules the first command. After this, the pipeline runs autonomously — you never run `/eigen_start` again for this pipeline.
+This is the **ONE-TIME interactive launcher**. It validates the environment, collects configuration from the user, initializes `pipeline_state.json` via the `eigen-squared` CLI, and optionally schedules the first command. When `AUTOCHAIN=true`, the pipeline runs autonomously after this. When `AUTOCHAIN=false`, the user triggers each command manually. You never run `/eigen_start` again for this pipeline.
 
 ## Your Role
 
-You are a **ONE-TIME pipeline launcher**. You validate that everything is ready — environment variables, claude-tasks server, initiative documents, agent teams — and then initialize state and schedule the first command for a **fresh** autonomous pipeline. After this, the pipeline runs itself until a phase is complete.
+You are a **ONE-TIME pipeline launcher**. You validate that everything is ready — environment variables, claude-tasks server, initiative documents, agent teams — and then initialize state and optionally schedule the first command for a **fresh** pipeline. In autonomous mode (`AUTOCHAIN=true`), the pipeline runs itself until a phase is complete. In manual mode, the user triggers each command.
 
 This command is for **brand new pipelines ONLY**. If the pipeline has already started, use `/eigen_continue` instead.
 
@@ -36,7 +37,7 @@ The eigen-squared pipeline requires these env vars to be set in the project's `.
 
 ### 1.1 Check for Shell-Only Variables (ERROR condition)
 
-Check if `EIGEN_ROOT`, `EIGEN_BRANCH`, `CLAUDE_TASKS_API`, or `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` are set in the current environment BUT do NOT exist in `.claude/settings.json`:
+Check if `EIGEN_ROOT`, `EIGEN_BRANCH`, `CLAUDE_TASKS_API`, `AUTOCHAIN`, or `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` are set in the current environment BUT do NOT exist in `.claude/settings.json`:
 
 ```bash
 # Check if settings.json exists and has env block
@@ -53,7 +54,7 @@ The eigen-squared pipeline requires env vars to be set ONLY in the
 project's .claude/settings.json so each project is isolated.
 
 Please unset these shell variables and run /eigen_start again:
-  unset EIGEN_ROOT EIGEN_BRANCH CLAUDE_TASKS_API CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+  unset EIGEN_ROOT EIGEN_BRANCH CLAUDE_TASKS_API AUTOCHAIN CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
 
 /eigen_start will help you set them up in .claude/settings.json.
 ```
@@ -66,6 +67,7 @@ Verify all required vars:
 - `$EIGEN_ROOT` is set and points to an existing directory
 - `$EIGEN_BRANCH` is set and non-empty
 - `$CLAUDE_TASKS_API` is set and non-empty
+- `$AUTOCHAIN` is set (either `"true"` or `"false"`)
 - `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is `"1"`
 
 If ALL present and valid → proceed to Step 2.
@@ -81,7 +83,7 @@ If some are missing or invalid → ask the user for the missing values (same flo
 
 I need to configure this project for the eigen-squared pipeline.
 These values will be saved to .claude/settings.json so they persist
-across sessions and are used by all autonomous pipeline tasks.
+across sessions and are used by all pipeline tasks.
 ```
 
 Ask the user for each value:
@@ -136,6 +138,23 @@ Default: http://localhost:8080
 Press Enter for default, or enter a custom URL:
 ```
 
+**AUTOCHAIN:**
+```
+Enable autonomous pipeline execution?
+
+When AUTOCHAIN=true, each command automatically schedules the next one
+via claude-tasks. The pipeline runs unattended until a phase completes.
+
+When AUTOCHAIN=false, the pipeline initializes but you trigger each
+command manually. You can always run 'eigen-squared schedule-next'
+by hand, or enable AUTOCHAIN later in .claude/settings.json.
+
+Enable autonomous mode? (yes/no, default: yes):
+```
+
+- **"yes"** or Enter → `AUTOCHAIN=true`
+- **"no"** → `AUTOCHAIN=false`
+
 **EIGEN_TELEGRAM_CHAT_ID (optional):**
 ```
 Would you like Telegram notifications for pipeline progress?
@@ -169,6 +188,7 @@ Write the file:
     "EIGEN_ROOT": "<user's value>",
     "EIGEN_BRANCH": "<user's value>",
     "CLAUDE_TASKS_API": "<user's value>",
+    "AUTOCHAIN": "<true or false>",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "EIGEN_TELEGRAM_CHAT_ID": "<user's value or empty string>",
     "teammateMode": "tmux"
@@ -201,14 +221,29 @@ The settings will be loaded automatically on restart.
 curl -s $CLAUDE_TASKS_API/api/v1/health
 ```
 
-If the health check fails → **STOP.** Print:
+**If the health check succeeds** → Print: `claude-tasks: healthy at $CLAUDE_TASKS_API` and continue.
+
+**If the health check fails AND `AUTOCHAIN=true`** → **STOP.** Print:
 ```
 ERROR: claude-tasks is not responding at $CLAUDE_TASKS_API
 
+Autonomous mode (AUTOCHAIN=true) requires claude-tasks to be running.
 Start it in a separate terminal:
   claude-tasks serve
 
 Make sure it's running before re-running /eigen_start.
+```
+
+**If the health check fails AND `AUTOCHAIN=false`** → **WARNING**, continue:
+```
+WARNING: claude-tasks is not responding at $CLAUDE_TASKS_API
+
+This is not blocking because AUTOCHAIN=false (manual mode).
+However, you will need claude-tasks running if you later run
+'eigen-squared schedule-next' manually or enable AUTOCHAIN.
+
+Start it when ready:
+  claude-tasks serve
 ```
 
 ---
@@ -294,7 +329,11 @@ test -f $EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json && echo "EXISTS"
 
 ---
 
-## Step 5: Ask When to Start
+## Step 5: Ask When to Start (AUTOCHAIN=true only)
+
+**If `AUTOCHAIN=false`** → skip this step entirely. The user will trigger commands manually.
+
+**If `AUTOCHAIN=true`** → ask:
 
 ```
 When should the pipeline start?
@@ -342,7 +381,7 @@ WARNING: .claude/settings.json is in .gitignore
 
 This will cause problems in later pipeline stages — integration branches created by
 /create_issues_from_plan_swarm will NOT inherit pipeline settings
-(EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, plugin configuration).
+(EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, AUTOCHAIN, plugin configuration).
 
 There is a defensive fallback in /create_issues_from_plan_swarm that copies
 settings into each branch, but the recommended fix is to allow
@@ -382,20 +421,22 @@ Project:            $EIGEN_ROOT
 Branch:             $EIGEN_BRANCH
 claude-tasks API:   $CLAUDE_TASKS_API
 Agent Teams:        enabled
+Mode:               <autonomous (AUTOCHAIN=true) | manual (AUTOCHAIN=false)>
 
 Initiative:         <filename>
 Blackbox:           <filename>
 Pipeline State:     not started (fresh)
 
-Scheduled Start:    <resolved time — e.g., "2026-03-17 15:00:00 UTC (in 30 minutes)">
+Scheduled Start:    <resolved time if AUTOCHAIN=true, otherwise "manual — run /time_split to begin">
 
-The autonomous pipeline will run sequentially:
+Pipeline sequence:
   time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
   space_split ↔ deepen_space_split → [per epic: plan → create → orchestrate → review] →
   STOP at E2E Testing epic convergence
 
 Epics execute one at a time in dependency order.
-Each command runs ~3 minutes after the previous finishes.
+<if AUTOCHAIN=true: "Each command runs ~3 minutes after the previous finishes.">
+<if AUTOCHAIN=false: "You trigger each command manually. Use 'eigen-squared status' to see what's next.">
 ```
 
 ---
@@ -457,6 +498,7 @@ cat > $EIGEN_ROOT/.eigen/env <<EOF
 EIGEN_ROOT=$EIGEN_ROOT
 EIGEN_BRANCH=$EIGEN_BRANCH
 CLAUDE_TASKS_API=$CLAUDE_TASKS_API
+AUTOCHAIN=$AUTOCHAIN
 EIGEN_TELEGRAM_CHAT_ID=${EIGEN_TELEGRAM_CHAT_ID:-}
 EOF
 ```
@@ -481,7 +523,9 @@ eigen-squared validate
 eigen-squared status
 ```
 
-### 7.5 Schedule first command
+### 7.5 Schedule first command (AUTOCHAIN=true) or print next steps (AUTOCHAIN=false)
+
+**If `AUTOCHAIN=true`:**
 
 ```bash
 eigen-squared schedule-next
@@ -511,14 +555,33 @@ It STOPS after the E2E Testing epic converges.
 To cancel: disable the pending task in claude-tasks TUI or API.
 ```
 
+**If `AUTOCHAIN=false`:**
+
+Print:
+```
+=== Pipeline Initialized (Manual Mode) ===
+
+Pipeline controller initialized via eigen-squared CLI.
+pipeline_state.json initialized with time_split.status = "not_started"
+
+To start the pipeline, run the first command:
+  /time_split
+
+After each command completes, check what's next:
+  eigen-squared status
+
+Then run the next command manually. To switch to autonomous mode later,
+set AUTOCHAIN=true in .claude/settings.json.
+```
+
 ---
 
 ## Important Notes
 
 - **This command runs interactively** — it asks questions and validates before launching.
 - **Env vars MUST be in `.claude/settings.json`** — never in the shell. This prevents cross-project contamination.
-- **No restart needed** — `eigen-squared schedule-next` schedules `time_split` before the session ends. Env vars written to settings.json take effect when `time_split` starts its own session. Make sure claude-tasks server is running.
-- **claude-tasks must be running** in a separate terminal (`claude-tasks serve`).
+- **Two modes** — `AUTOCHAIN=true` runs the pipeline autonomously (commands auto-schedule via claude-tasks). `AUTOCHAIN=false` initializes state but the user triggers each command manually. You can switch modes at any time by editing `.claude/settings.json`.
+- **claude-tasks is always configured** — even in manual mode, `CLAUDE_TASKS_API` is set so you can run `eigen-squared schedule-next` by hand or enable AUTOCHAIN later. In autonomous mode, claude-tasks must be running (`claude-tasks serve`).
 - **One claude-tasks server, multiple projects** — each project's `working_dir` points to its own root, and each has its own `.claude/settings.json` with isolated env vars.
 - **ONE-TIME use only** — this command is for fresh pipelines. If the pipeline has already started, use `/eigen_continue` to review the completed phase and launch the next one.
-- **Pipeline controller** — the `eigen-squared` CLI handles pipeline state and command scheduling. Commands self-schedule via `eigen-squared schedule-next` for all branch management and task scheduling. Commands no longer contain auto-chain logic.
+- **Pipeline controller** — the `eigen-squared` CLI handles pipeline state and command scheduling. In autonomous mode, commands self-schedule via `eigen-squared schedule-next` (gated by `AUTOCHAIN=true`). In manual mode, the user runs commands and checks `eigen-squared status` for next steps.

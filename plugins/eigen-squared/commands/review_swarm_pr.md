@@ -403,7 +403,11 @@ Use the CLI to update pipeline state:
 eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}'
 eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "<rationale>"
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-eigen-squared schedule-next
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
 ```
 
 **If continuing (P1 or P2 findings remain):**
@@ -411,7 +415,11 @@ eigen-squared schedule-next
 eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}'
 eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-eigen-squared schedule-next
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
 ```
 
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
@@ -491,4 +499,4 @@ Next steps:
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API. No hook or external trigger is needed — the command schedules its own successor before the session ends.
+The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.

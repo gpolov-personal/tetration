@@ -113,7 +113,11 @@ eigen-squared complete plan_epic_converge --phase <N> --epic <M> --plan-file pha
 eigen-squared mark-converged plan_epic_converge --phase <N> --epic <M> --reason "<convergence rationale>"
 eigen-squared add-recommendation --from-cmd plan_epic_converge --target create_issues_from_plan_swarm --iteration <N> --text "<observation>"
 eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/,eigen_initiative/eigen_lessons/plan_phase_epic/
-eigen-squared schedule-next
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
 ```
 
 The `add-recommendation` command is OPTIONAL — only execute it if there are genuine downstream insights from the convergence process. Maximum 5 recommendations per target command. Write observations and implications, NOT action items.
@@ -846,7 +850,11 @@ eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --
 
 Schedule the next command:
 ```bash
-eigen-squared schedule-next
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
 ```
 
 ### 7.5 Team Shutdown
@@ -882,7 +890,7 @@ Findings:
 Lessons: <N> new lessons written
 Feedback: $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json
 
-Next: eigen-squared schedule-next will route to create_issues_from_plan_swarm
+Next: if AUTOCHAIN=true, eigen-squared schedule-next will route to create_issues_from_plan_swarm
 ```
 
 ---
@@ -910,7 +918,7 @@ Before writing the final plan and proceeding to On Exit, verify:
 
 ## Pipeline Continuation
 
-The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API. No hook or external trigger is needed — the command schedules its own successor before the session ends.
+The `eigen-squared schedule-next` call at the end of the On Exit section reads the updated pipeline state, determines the next command, and schedules it via the claude-tasks API — **but only when the `AUTOCHAIN` environment variable is set to `true`**. If `AUTOCHAIN` is not enabled, the command prints a notice and the pipeline stops, requiring manual invocation of `eigen-squared schedule-next` to continue.
 
 ---
 

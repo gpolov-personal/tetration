@@ -155,7 +155,11 @@ Set the phase review status to `testing` with the generated recipe:
 ```bash
 eigen-squared set-phase-review --phase <N> --status testing --testing-recipe "<generated recipe text>"
 eigen-squared commit-state --message "pipeline: phase <N> review — testing"
-eigen-squared schedule-next
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
 ```
 
 ---
@@ -193,7 +197,11 @@ Do NOT update pipeline state. Exit.
    ```bash
    eigen-squared set-phase-review --phase <N> --status approved
    eigen-squared commit-state --message "pipeline: phase <N> review — approved"
-   eigen-squared schedule-next
+   if [ "$AUTOCHAIN" = "true" ]; then
+     eigen-squared schedule-next
+   else
+     echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+   fi
    ```
 
 2. Determine next phase:
@@ -207,8 +215,9 @@ Do NOT update pipeline state. Exit.
 
    Phase <N>: approved at <timestamp>
 
-   The `eigen-squared schedule-next` call above has scheduled the next phase.
+   If AUTOCHAIN=true, `eigen-squared schedule-next` has scheduled the next phase.
    The autonomous pipeline will resume and run Phase <N+1> to completion.
+   If AUTOCHAIN is not enabled, run `eigen-squared schedule-next` manually to continue.
 
    When Phase <N+1> finishes, run /eigen_continue again.
    ```
@@ -235,4 +244,4 @@ Do NOT update pipeline state. Exit.
 - **Never skips user confirmation** — the pipeline MUST NOT cross phase boundaries without human approval.
 - **Merge order matters** — PRs should be merged in epic order (E1 first, E2E Testing last).
 - **Testing recipe is generated, not hardcoded** — it reads from `phase_e2e_config.json` and the `language-profiles` skill.
-- **Pipeline continuation** — after updating pipeline state, call `eigen-squared schedule-next` to schedule the next command. It reads the pipeline state (updated by the CLI) and schedules the next command automatically.
+- **Pipeline continuation** — after updating pipeline state, `eigen-squared schedule-next` is called to schedule the next command (only when `AUTOCHAIN=true`). It reads the pipeline state (updated by the CLI) and schedules the next command automatically. If `AUTOCHAIN` is not enabled, the pipeline stops and requires manual invocation.
