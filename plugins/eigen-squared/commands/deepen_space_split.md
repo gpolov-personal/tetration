@@ -10,12 +10,12 @@ description: Review space_split output with parallel research agents, diagnose e
 ```
 space_split ──► DEEPEN_SPACE_SPLIT ──► space_split (if CONTINUE)
                        │                      │
-                       └── (if CONVERGED) ──► plan_phase_epic
+                       └── (if CONVERGED) ──► plan_epic_converge
 ```
 
 **Role.** Review partner for `space_split`. This command takes the output of `/space_split` (epic definition files, `epic_manifest.json`, and `phase_e2e_config.json`) and subjects it to comprehensive review by parallel research and review agents. Every structural, interface, epic formation, and cross-epic consistency issue is diagnosed.
 
-`/space_split` produces epic definitions, a manifest, and epic files — it does NOT produce per-epic plans or swarm manifests. Those are created later by `/plan_phase_epic` and `/create_issues_from_plan_swarm` when each epic is ready for execution. This review command therefore validates the epic decomposition and epic file quality, not plans or manifests.
+`/space_split` produces epic definitions, a manifest, and epic files — it does NOT produce per-epic plans or swarm manifests. Those are created later by `/plan_epic_converge` and `/create_issues_from_plan_swarm` when each epic is ready for execution. This review command therefore validates the epic decomposition and epic file quality, not plans or manifests.
 
 **Convergence authority.** This command decides when `space_split` output is good enough. It sets convergence on the `space_split` stage and writes the rationale.
 
@@ -155,12 +155,12 @@ After collecting all findings, apply these convergence rules **in order**:
    - Rationale: "Oscillation detected. Accepting current state to break the cycle."
 
 4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by epic/feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same epics/features keep appearing in findings without resolution).
-   - Rationale: "Stagnation detected. The same epics/features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by plan_phase_epic's deeper analysis."
+   - Rationale: "Stagnation detected. The same epics/features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by plan_epic_converge's deeper analysis."
 
 5. **Converge if**: epic decomposition is unchanged from previous iteration AND no new high-severity or medium-severity findings.
    - Epic file stability weight: if the epic decomposition hasn't changed, favor convergence.
 
-6. **Converge if**: downstream `/plan_phase_epic` has already run on any epic in this phase.
+6. **Converge if**: downstream `/plan_epic_converge` has already run on any epic in this phase.
    - Strongly favor convergence to avoid invalidating downstream work.
    - Rationale: "Downstream plan generation has already started. Accepting current decomposition."
 
@@ -297,7 +297,7 @@ Report: epics that seem disproportionately large or small, with recommendation t
 
 ## Stage 2: Epic Quality Validation
 
-This phase validates the epic file bodies created by `/space_split`. These epic file bodies are the primary input to `/plan_phase_epic` — if they are incomplete, the downstream plans will be poor.
+This phase validates the epic file bodies created by `/space_split`. These epic file bodies are the primary input to `/plan_epic_converge` — if they are incomplete, the downstream plans will be poor.
 
 **Skip this entire stage if epic files could not be read in Stage 0.4.** Print: "Skipping epic quality checks — epic files could not be read."
 
@@ -306,7 +306,7 @@ Spawn **all agents in parallel:**
 ### 2.1 Issue Completeness Agent
 
 ```
-Prompt: "Validate that each epic file body contains all required sections for downstream /plan_phase_epic to generate a useful plan.
+Prompt: "Validate that each epic file body contains all required sections for downstream /plan_epic_converge to generate a useful plan.
 
 Required sections in each epic file body:
 1. Features table — with ID, Name, Priority, Dependencies columns
@@ -618,7 +618,7 @@ Ensure directory exists: `mkdir -p <paths_relative_to>/phases/phase_<N>/feedback
       ],
       "actionable_by": "space_split",
       "downstream_impact": {
-        "affects_commands": ["plan_phase_epic"],
+        "affects_commands": ["plan_epic_converge"],
         "impact_description": "<what breaks downstream>"
       }
     }
@@ -662,7 +662,7 @@ Apply the Convergence Decision Protocol (from the Iteration Protocol section abo
 At convergence, scan findings for cross-stage insights worth preserving for downstream commands.
 
 1. **Filter findings with downstream impact:** Only findings where `downstream_impact.affects_commands` is non-empty.
-2. **For each affected downstream command** (plan_phase_epic, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
+2. **For each affected downstream command** (plan_epic_converge, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
    - Describe the **observed condition** in space_split's output.
    - State the **implication** for the downstream command.
    - Use `"epic": <M>` for epic-specific observations, `"epic": null` for phase-wide observations.
@@ -772,6 +772,6 @@ Next steps:
     Hint: to add constraints (change epic boundaries, move features), pass your
     instructions as arguments to the next /space_split run.
   If CONVERGED:
-    Run /plan_phase_epic to generate plans for the epics.
+    Run /plan_epic_converge to generate plans for the epics.
     Run /compound_improve to apply accumulated lessons to the space_split command.
 ```

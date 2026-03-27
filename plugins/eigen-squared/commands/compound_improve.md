@@ -56,7 +56,7 @@ Example:
 1. Verify `<plugin_source_path>/commands/time_split.md` exists
 2. Verify `<plugin_source_path>/commands/bootstrap.md` exists
 3. Verify `<plugin_source_path>/commands/space_split.md` exists
-4. Verify `<plugin_source_path>/commands/plan_phase_epic.md` exists
+4. Verify `<plugin_source_path>/commands/plan_epic_converge.md` exists
 5. Verify `<plugin_source_path>/.claude-plugin/plugin.json` exists
 
 If any check fails → **STOP** with specific error.
@@ -70,7 +70,7 @@ Lessons are read from `$EIGEN_ROOT/eigen_initiative/eigen_lessons/` with one sub
 | `eigen_lessons/time_split/` | `/deepen_time_split` | `time_split.md` |
 | `eigen_lessons/bootstrap/` | `/deepen_bootstrap` | `bootstrap.md` |
 | `eigen_lessons/space_split/` | `/deepen_space_split` | `space_split.md` |
-| `eigen_lessons/plan_phase_epic/` | `/deepen_plan_phase_epic` | `plan_phase_epic.md` |
+| `eigen_lessons/plan_phase_epic/` | `/plan_epic_converge` | `plan_epic_converge.md` |
 | `eigen_lessons/review_swarm_pr/` | `/review_swarm_pr` | `review_swarm_pr.md` |
 
 ---
@@ -106,7 +106,7 @@ space_split:
   Pending: <N>  (high: <N>, medium: <N>, low: <N>)
   Already applied: <N>
 
-plan_phase_epic:
+plan_epic_converge:
   Pending: <N>  (high: <N>, medium: <N>, low: <N>)
   Already applied: <N>
 
@@ -123,7 +123,7 @@ Read each command file from the plugin source repo that has pending lessons:
 - `<plugin_source_path>/commands/time_split.md`
 - `<plugin_source_path>/commands/bootstrap.md`
 - `<plugin_source_path>/commands/space_split.md`
-- `<plugin_source_path>/commands/plan_phase_epic.md`
+- `<plugin_source_path>/commands/plan_epic_converge.md`
 - `<plugin_source_path>/commands/review_swarm_pr.md`
 
 Only read files that have pending lessons — skip commands with zero pending.
@@ -273,7 +273,7 @@ Prepend a new entry to `<plugin_source_path>/CHANGELOG.md`:
 **space_split.md:**
 - <pattern 1 title> (from <N> lessons)
 
-**plan_phase_epic.md:**
+**plan_epic_converge.md:**
 - <pattern 1 title> (from <N> lessons)
 
 **review_swarm_pr.md:**
@@ -310,7 +310,7 @@ Changes:
   time_split.md:       <N> patterns applied (<M> lines changed)
   bootstrap.md:        <N> patterns applied (<M> lines changed)
   space_split.md:      <N> patterns applied (<M> lines changed)
-  plan_phase_epic.md:  <N> patterns applied (<M> lines changed)
+  plan_epic_converge.md:  <N> patterns applied (<M> lines changed)
   review_swarm_pr.md:  <N> patterns applied (<M> lines changed)
 
 Version bumped: <old> → <new>

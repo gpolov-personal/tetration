@@ -71,8 +71,10 @@ MAIN_TO_DEEPEN = {
     "time_split": "deepen_time_split",
     "bootstrap": "deepen_bootstrap",
     "space_split": "deepen_space_split",
-    "plan_phase_epic": "deepen_plan_phase_epic",
 }
+
+# Commands that self-converge (no deepen pair)
+CONVERGE_COMMANDS = {"plan_epic_converge"}
 
 DEEPEN_TO_MAIN = {v: k for k, v in MAIN_TO_DEEPEN.items()}
 
@@ -163,7 +165,7 @@ def cmd_status(args: Namespace) -> int:
 
         for ek in sorted(phase.plans.keys(), key=lambda x: int(x)):
             ep = phase.plans[ek]
-            pconv = "converged" if ep.plan_phase_epic.convergence.converged else ep.plan_phase_epic.status
+            pconv = "converged" if ep.plan_epic_converge.convergence.converged else ep.plan_epic_converge.status
             sw = ep.swarm_execution
             sconv = "converged" if sw.convergence.converged else sw.status
             print(f"  P{pk}.E{ek} plan       {pconv:12s}  swarm: {sconv:12s}  review_iter: {sw.review_iteration}")
@@ -390,37 +392,12 @@ def cmd_get_context(args: Namespace) -> int:
             ms = ph.space_split
             ds = ph.deepen_space_split
         elif cmd == "plan_phase_epic":
-            if epic is None:
-                print("ERROR: --epic required for plan_phase_epic", file=sys.stderr)
-                return 1
-            ek = str(epic)
-            if ek not in ph.plans:
-                # First run for this epic — plan entry doesn't exist yet
-                context["is_first_run"] = True
-                context["iteration"] = 1
-                context["current_iteration"] = 0
-                context["should_process_feedback"] = False
-                context["output_paths"] = {}
-                context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-                recs = [
-                    r.to_dict() if hasattr(r, "to_dict") else r
-                    for r in state.recommendations.get(cmd, [])
-                    if (
-                        (isinstance(r, dict) and r.get("phase") in (phase, None) and r.get("epic") in (epic, None))
-                        or (hasattr(r, "phase") and r.phase in (phase, None) and getattr(r, "epic", None) in (epic, None))
-                    )
-                ]
-                context["recommendations"] = recs
-                if getattr(args, "as_json", False):
-                    print(json.dumps(context, indent=2))
-                else:
-                    for k, v in context.items():
-                        print(f"  {k}: {v}")
-                return 0
-            ms = ph.plans[ek].plan_phase_epic
-            ds = ph.plans[ek].deepen_plan_phase_epic
+            # Legacy: redirect to plan_epic_converge
+            print("ERROR: plan_phase_epic has been replaced by plan_epic_converge. "
+                  "Use /plan_epic_converge instead.", file=sys.stderr)
+            return 1
 
-        # --- Standard flow for all main commands (bootstrap, space_split, plan_phase_epic) ---
+        # --- Standard flow for main commands with deepen pairs (bootstrap, space_split) ---
 
         if ms.convergence.converged:
             print(
@@ -502,15 +479,10 @@ def cmd_get_context(args: Namespace) -> int:
             ms = ph.space_split
             ds = ph.deepen_space_split
         elif cmd == "deepen_plan_phase_epic":
-            if epic is None:
-                print("ERROR: --epic required for deepen_plan_phase_epic", file=sys.stderr)
-                return 1
-            ek = str(epic)
-            if ek not in ph.plans:
-                print(f"ERROR: Plan P{phase}.E{epic} not found", file=sys.stderr)
-                return 1
-            ms = ph.plans[ek].plan_phase_epic
-            ds = ph.plans[ek].deepen_plan_phase_epic
+            # Legacy: redirect to plan_epic_converge
+            print("ERROR: deepen_plan_phase_epic has been replaced by plan_epic_converge. "
+                  "Use /plan_epic_converge instead.", file=sys.stderr)
+            return 1
 
         if ms.convergence.converged:
             print(
@@ -565,6 +537,68 @@ def cmd_get_context(args: Namespace) -> int:
             context["previous_feedback_exists"] = False
             context["previous_feedback_path"] = None
 
+    elif cmd == "plan_epic_converge":
+        if epic is None:
+            print("ERROR: --epic required for plan_epic_converge", file=sys.stderr)
+            return 1
+        pk, ek = str(phase), str(epic)
+        if pk not in state.phases:
+            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
+            return 1
+        ph = state.phases[pk]
+
+        if ek not in ph.plans:
+            # First run for this epic — plan entry doesn't exist yet
+            context["is_first_run"] = True
+            context["iteration"] = 1
+            context["current_iteration"] = 0
+            context["output_paths"] = {}
+            context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+            context["lessons_dir"] = "eigen_lessons/plan_phase_epic/"
+            recs = [
+                r.to_dict() if hasattr(r, "to_dict") else r
+                for r in state.recommendations.get("plan_epic_converge", [])
+                if (
+                    (isinstance(r, dict) and r.get("phase") in (phase, None) and r.get("epic") in (epic, None))
+                    or (hasattr(r, "phase") and r.phase in (phase, None) and getattr(r, "epic", None) in (epic, None))
+                )
+            ]
+            context["recommendations"] = recs
+            if getattr(args, "as_json", False):
+                print(json.dumps(context, indent=2))
+            else:
+                for k, v in context.items():
+                    print(f"  {k}: {v}")
+            return 0
+
+        pec = ph.plans[ek].plan_epic_converge
+        if pec.convergence.converged:
+            print(
+                f"ERROR: plan_epic_converge P{phase}.E{epic} already converged "
+                f"(decided at {pec.convergence.decided_at}: {pec.convergence.reason}). "
+                f"No re-run needed.",
+                file=sys.stderr,
+            )
+            return 1
+
+        context["iteration"] = pec.iteration + 1
+        context["current_iteration"] = pec.iteration
+        context["is_first_run"] = pec.iteration == 0
+        context["output_paths"] = pec.output_paths
+        context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+        context["lessons_dir"] = "eigen_lessons/plan_phase_epic/"
+        recs = [
+            r.to_dict() if hasattr(r, "to_dict") else r
+            for r in state.recommendations.get("plan_epic_converge", [])
+            if (
+                (isinstance(r, dict) and r.get("phase") in (phase, None)
+                 and r.get("epic") in (epic, None))
+                or (hasattr(r, "phase") and r.phase in (phase, None)
+                    and getattr(r, "epic", None) in (epic, None))
+            )
+        ]
+        context["recommendations"] = recs
+
     elif cmd in ("create_issues_from_plan_swarm", "orchestrate_swarm", "review_swarm_pr"):
         if phase is None or epic is None:
             print(f"ERROR: --phase and --epic required for {cmd}", file=sys.stderr)
@@ -578,10 +612,10 @@ def cmd_get_context(args: Namespace) -> int:
 
         if cmd == "create_issues_from_plan_swarm":
             # Guard: plan must be converged
-            if not ep.plan_phase_epic.convergence.converged:
+            if not ep.plan_epic_converge.convergence.converged:
                 print(
                     f"ERROR: Plan P{phase}.E{epic} has not converged yet. "
-                    f"Run /plan_phase_epic and /deepen_plan_phase_epic until converged.",
+                    f"Run /plan_epic_converge first.",
                     file=sys.stderr,
                 )
                 return 1
@@ -594,7 +628,7 @@ def cmd_get_context(args: Namespace) -> int:
                 )
                 return 1
             context["branch"] = git_ops.integration_branch_name(phase, epic)
-            context["plan_file"] = ep.plan_phase_epic.output_paths.get("plan_file", f"phases/phase_{phase}/epic_{epic}/plan.md")
+            context["plan_file"] = ep.plan_epic_converge.output_paths.get("plan_file", f"phases/phase_{phase}/epic_{epic}/plan.md")
             context["epic_file"] = f"phases/phase_{phase}/epic_{epic}/epic.md"
             context["phase_e2e_config"] = f"phases/phase_{phase}/phase_e2e_config.json"
             context["bootstrap_report"] = f"phases/phase_{phase}/bootstrap-report.json"
@@ -681,15 +715,9 @@ def cmd_complete(args: Namespace) -> int:
             ms, ds = ph.bootstrap, ph.deepen_bootstrap
         elif cmd == "space_split":
             ms, ds = ph.space_split, ph.deepen_space_split
-        elif cmd == "plan_phase_epic":
-            if epic is None:
-                print("ERROR: --epic required", file=sys.stderr)
-                return 1
-            ek = str(epic)
-            if ek not in ph.plans:
-                ph.plans[ek] = EpicPlan()
-            ms = ph.plans[ek].plan_phase_epic
-            ds = ph.plans[ek].deepen_plan_phase_epic
+        else:
+            print(f"ERROR: Unknown main command: {cmd}", file=sys.stderr)
+            return 1
 
         ms.status = "completed"
         ms.iteration += 1
@@ -707,8 +735,6 @@ def cmd_complete(args: Namespace) -> int:
                 ms.output_paths["phase_e2e_config"] = args.e2e_config
             if args.epic_ids:
                 ms.output_paths["epic_ids"] = json.loads(args.epic_ids)
-        elif cmd == "plan_phase_epic" and args.plan_file:
-            ms.output_paths["plan_file"] = args.plan_file
 
     elif cmd in DEEPEN_COMMANDS and phase is not None:
         pk = str(phase)
@@ -722,16 +748,9 @@ def cmd_complete(args: Namespace) -> int:
             ms, ds = ph.bootstrap, ph.deepen_bootstrap
         elif cmd == "deepen_space_split":
             ms, ds = ph.space_split, ph.deepen_space_split
-        elif cmd == "deepen_plan_phase_epic":
-            if epic is None:
-                print("ERROR: --epic required", file=sys.stderr)
-                return 1
-            ek = str(epic)
-            if ek not in ph.plans:
-                print(f"ERROR: Plan P{phase}.E{epic} not found", file=sys.stderr)
-                return 1
-            ms = ph.plans[ek].plan_phase_epic
-            ds = ph.plans[ek].deepen_plan_phase_epic
+        else:
+            print(f"ERROR: Unknown deepen command: {cmd}", file=sys.stderr)
+            return 1
 
         ds.status = "completed"
         ds.iteration += 1
@@ -746,6 +765,29 @@ def cmd_complete(args: Namespace) -> int:
             from ..models import FindingsSummary
             fs = json.loads(args.findings_summary)
             ds.findings_summary = FindingsSummary.from_dict(fs)
+
+    elif cmd == "plan_epic_converge":
+        if phase is None or epic is None:
+            print("ERROR: --phase and --epic required", file=sys.stderr)
+            return 1
+        pk, ek = str(phase), str(epic)
+        if pk not in state.phases:
+            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
+            return 1
+        if ek not in state.phases[pk].plans:
+            state.phases[pk].plans[ek] = EpicPlan()
+        pec = state.phases[pk].plans[ek].plan_epic_converge
+        pec.status = "completed"
+        pec.iteration += 1
+        pec.last_run_at = now
+        if args.plan_file:
+            pec.output_paths["plan_file"] = args.plan_file
+        if args.feedback_path:
+            pec.output_paths["feedback_file"] = args.feedback_path
+        if args.findings_summary:
+            from ..models import FindingsSummary
+            fs = json.loads(args.findings_summary)
+            pec.findings_summary = FindingsSummary.from_dict(fs)
 
     elif cmd == "create_issues_from_plan_swarm":
         if phase is None or epic is None:
@@ -819,9 +861,9 @@ def cmd_mark_converged(args: Namespace) -> int:
     elif cmd == "space_split" and phase is not None:
         caller = "deepen_space_split"
         target = state.phases[str(phase)].space_split
-    elif cmd == "plan_phase_epic" and phase is not None and epic is not None:
-        caller = "deepen_plan_phase_epic"
-        target = state.phases[str(phase)].plans[str(epic)].plan_phase_epic
+    elif cmd == "plan_epic_converge" and phase is not None and epic is not None:
+        caller = "plan_epic_converge"
+        target = state.phases[str(phase)].plans[str(epic)].plan_epic_converge
     elif cmd == "swarm_execution" and phase is not None and epic is not None:
         caller = "review_swarm_pr"
         sw = state.phases[str(phase)].plans[str(epic)].swarm_execution

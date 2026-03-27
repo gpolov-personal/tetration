@@ -626,7 +626,7 @@ If the project is in a specific domain (fintech, healthtech, emergency managemen
 - **Don't over-engineer** — pipeline-ready is the goal, not perfect. Good enough to start iterating is better than endlessly polishing.
 - **Preserve user's intent** — when improving documents, keep the user's original vision and language. Add structure, don't rewrite.
 - **Tech stack and deployment go in the initiative** — this is the canonical place, consumed by all downstream commands.
-- **Scope boundaries matter** — clear exclusions prevent scope creep in time_split and plan_phase_epic.
+- **Scope boundaries matter** — clear exclusions prevent scope creep in time_split and plan_epic_converge.
 - **Success criteria guide phases** — the minimum success criterion should be achievable in Phase 1. Complete criteria span all phases.
 - **Container parity for server projects** — recommend a containerization feature in the Feature Summary Table. Bootstrap creates Docker artifacts, E2E tests run against the containerized stack.
 - **Epics are sequential** — when explaining the pipeline to the user, note that epics within a phase run one after another (not in parallel). This simplifies their mental model — no need to think about which features can be parallelized.

@@ -67,8 +67,7 @@ class TestRoundTrip:
 
     def test_epic_plan(self):
         e = EpicPlan(
-            plan_phase_epic=MainCommandState(status="completed", iteration=2),
-            deepen_plan_phase_epic=DeepenCommandState(status="completed"),
+            plan_epic_converge=MainCommandState(status="completed", iteration=2),
             swarm_execution=SwarmExecution(status="pr_created"),
         )
         assert EpicPlan.from_dict(e.to_dict()) == e

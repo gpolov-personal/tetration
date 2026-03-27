@@ -8,7 +8,7 @@ description: Orchestrate parallel swarm execution of a development plan across a
 ## Pipeline Context
 
 ```
-eigen_start → space_split → plan_phase_epic → create_issues_from_plan_swarm
+eigen_start → space_split → plan_epic_converge → create_issues_from_plan_swarm
   → orchestrate_swarm ↔ review_swarm_pr → …
         ▲ YOU ARE HERE
 ```
@@ -97,7 +97,7 @@ Each phase has a mandatory **E2E Testing epic** (created by `/space_split`) as t
 - Has no features — its scope is writing and running full phase-level E2E tests
 - Is blocked by all other feature epics in the phase
 - Includes an **Infrastructure Requirements** section describing what the E2E tests need (Docker, emulators, dev servers, etc.)
-- Goes through the normal pipeline: `plan_phase_epic → create_issues_from_plan_swarm → orchestrate_swarm`
+- Goes through the normal pipeline: `plan_epic_converge → create_issues_from_plan_swarm → orchestrate_swarm`
 
 When orchestrate_swarm runs for the E2E Testing epic, it operates exactly like any other epic — workers create tasks (infrastructure setup, E2E test files) and the integration step wires them together. There is no special E2E step inside the orchestrator.
 

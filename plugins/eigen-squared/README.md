@@ -20,7 +20,7 @@ Initiative Documents (feature tables + specs)
         |
     For each epic (one at a time):
         |
-        plan_phase_epic ↔ deepen_plan      Strategic implementation plan
+        plan_epic_converge                  Strategic implementation plan (self-converging)
         |
         create_issues_from_plan_swarm      Plan → task files + swarm manifest
         |
@@ -137,7 +137,7 @@ On Exit:
 
 ### Convergence loops
 
-Main commands (time_split, bootstrap, space_split, plan_phase_epic) produce output. Deepen commands review it with parallel agents and decide:
+Main commands (time_split, bootstrap, space_split, plan_epic_converge) produce output. Deepen commands review it with parallel agents and decide:
 
 - **Continue**: Write feedback file, signal fresh feedback available. The CLI schedules the main command to iterate.
 - **Converge**: Set convergence flag, optionally write downstream recommendations. The CLI advances to the next stage.
@@ -158,9 +158,9 @@ Creates the project foundation: directory structure, entity stubs, API/message c
 
 Decomposes a phase into **sequential epics**. Each epic is a focused unit of work with clear boundaries. Output: epic definition files, `epic_manifest.json` with execution order, `phase_e2e_config.json` with test scenarios. The last epic is always the E2E Testing epic.
 
-### Stage 4: plan_phase_epic (per epic)
+### Stage 4: plan_epic_converge (per epic)
 
-Creates a strategic development plan from the epic definition. Includes a Parallelization Strategy — how to decompose the epic into parallel tasks for the swarm. No code, only architecture and strategy.
+Creates a strategic development plan from the epic definition. Self-converging: generates the plan and reviews it with parallel research agents in a single command, iterating until quality is sufficient. Includes a Parallelization Strategy — how to decompose the epic into parallel tasks for the swarm. No code, only architecture and strategy.
 
 ### Stage 5: create_issues_from_plan_swarm (per epic)
 
@@ -208,7 +208,7 @@ $EIGEN_ROOT/
       time_split/
       bootstrap/
       space_split/
-      plan_phase_epic/
+      plan_phase_epic/                    # (kept for backward compat)
       review_swarm_pr/
   .eigen/
     env                               # Pipeline environment variables

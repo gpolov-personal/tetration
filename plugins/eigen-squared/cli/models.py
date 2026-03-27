@@ -125,7 +125,7 @@ class Recommendation:
 
 @dataclass
 class MainCommandState:
-    """State for a main command (time_split, bootstrap, space_split, plan_phase_epic)."""
+    """State for a main command (time_split, bootstrap, space_split, plan_epic_converge)."""
 
     status: str = "not_started"  # not_started | completed | iterating
     iteration: int = 0
@@ -135,6 +135,8 @@ class MainCommandState:
     convergence: Convergence = field(default_factory=Convergence)
     # time_split only:
     phase_count: Optional[int] = None
+    # converge commands only (plan_epic_converge):
+    findings_summary: Optional[FindingsSummary] = None
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {
@@ -147,6 +149,8 @@ class MainCommandState:
         }
         if self.phase_count is not None:
             d["phase_count"] = self.phase_count
+        if self.findings_summary is not None:
+            d["findings_summary"] = self.findings_summary.to_dict()
         return d
 
     @classmethod
@@ -160,6 +164,8 @@ class MainCommandState:
                 phase_count = int(phase_count_raw)
             except (ValueError, TypeError):
                 pass
+        findings_raw = d.get("findings_summary")
+        findings_summary = FindingsSummary.from_dict(findings_raw) if findings_raw else None
         return cls(
             status=d.get("status", "not_started"),
             iteration=int(d.get("iteration", 0)),
@@ -168,6 +174,7 @@ class MainCommandState:
             feedback_consumed=bool(d.get("feedback_consumed", False)),
             convergence=Convergence.from_dict(d.get("convergence")),
             phase_count=phase_count,
+            findings_summary=findings_summary,
         )
 
 
@@ -267,16 +274,12 @@ class SwarmExecution:
 
 @dataclass
 class EpicPlan:
-    plan_phase_epic: MainCommandState = field(default_factory=MainCommandState)
-    deepen_plan_phase_epic: DeepenCommandState = field(
-        default_factory=DeepenCommandState
-    )
+    plan_epic_converge: MainCommandState = field(default_factory=MainCommandState)
     swarm_execution: SwarmExecution = field(default_factory=SwarmExecution)
 
     def to_dict(self) -> dict:
         return {
-            "plan_phase_epic": self.plan_phase_epic.to_dict(),
-            "deepen_plan_phase_epic": self.deepen_plan_phase_epic.to_dict(),
+            "plan_epic_converge": self.plan_epic_converge.to_dict(),
             "swarm_execution": self.swarm_execution.to_dict(),
         }
 
@@ -284,11 +287,27 @@ class EpicPlan:
     def from_dict(cls, d: dict | None) -> EpicPlan:
         if not d:
             return cls()
+        # Backward compatibility: migrate legacy format
+        if "plan_phase_epic" in d and "plan_epic_converge" not in d:
+            return cls._from_legacy_dict(d)
         return cls(
-            plan_phase_epic=MainCommandState.from_dict(d.get("plan_phase_epic")),
-            deepen_plan_phase_epic=DeepenCommandState.from_dict(
-                d.get("deepen_plan_phase_epic")
-            ),
+            plan_epic_converge=MainCommandState.from_dict(d.get("plan_epic_converge")),
+            swarm_execution=SwarmExecution.from_dict(d.get("swarm_execution")),
+        )
+
+    @classmethod
+    def _from_legacy_dict(cls, d: dict) -> EpicPlan:
+        """Migrate from plan_phase_epic + deepen_plan_phase_epic to plan_epic_converge."""
+        main = MainCommandState.from_dict(d.get("plan_phase_epic"))
+        deepen = DeepenCommandState.from_dict(d.get("deepen_plan_phase_epic"))
+        # Merge deepen state into main
+        if deepen.findings_summary:
+            main.findings_summary = deepen.findings_summary
+        # If deepen had a feedback_path, store it in output_paths
+        if deepen.feedback_path:
+            main.output_paths["feedback_file"] = deepen.feedback_path
+        return cls(
+            plan_epic_converge=main,
             swarm_execution=SwarmExecution.from_dict(d.get("swarm_execution")),
         )
 
@@ -411,10 +430,10 @@ VALID_SWARM_STATUSES = {"not_started", "pr_created", "iterating", "converged"}
 VALID_PHASE_REVIEW_STATUSES = {"not_started", "testing", "approved"}
 
 RECOMMENDATION_MATRIX: dict[str, set[str]] = {
-    "deepen_time_split": {"bootstrap", "space_split", "plan_phase_epic", "create_issues_from_plan_swarm"},
-    "deepen_bootstrap": {"space_split", "plan_phase_epic", "create_issues_from_plan_swarm"},
-    "deepen_space_split": {"plan_phase_epic", "create_issues_from_plan_swarm"},
-    "deepen_plan_phase_epic": {"create_issues_from_plan_swarm"},
+    "deepen_time_split": {"bootstrap", "space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
+    "deepen_bootstrap": {"space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
+    "deepen_space_split": {"plan_epic_converge", "create_issues_from_plan_swarm"},
+    "plan_epic_converge": {"create_issues_from_plan_swarm"},
 }
 
 MAX_RECOMMENDATIONS_PER_PAIR = 5
@@ -422,6 +441,6 @@ MAX_RECOMMENDATIONS_PER_PAIR = 5
 DEFAULT_RECOMMENDATIONS = {
     "bootstrap": [],
     "space_split": [],
-    "plan_phase_epic": [],
+    "plan_epic_converge": [],
     "create_issues_from_plan_swarm": [],
 }

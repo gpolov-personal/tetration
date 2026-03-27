@@ -114,15 +114,10 @@ def validate_state(state: PipelineState) -> list[str]:
 
         for epic_key, epic_plan in phase.plans.items():
             eprefix = f"{prefix}.plans[{epic_key}]"
-            if epic_plan.plan_phase_epic.status not in VALID_MAIN_STATUSES:
+            if epic_plan.plan_epic_converge.status not in VALID_MAIN_STATUSES:
                 errors.append(
-                    f"{eprefix}.plan_phase_epic.status invalid: "
-                    f"{epic_plan.plan_phase_epic.status!r}"
-                )
-            if epic_plan.deepen_plan_phase_epic.status not in VALID_DEEPEN_STATUSES:
-                errors.append(
-                    f"{eprefix}.deepen_plan_phase_epic.status invalid: "
-                    f"{epic_plan.deepen_plan_phase_epic.status!r}"
+                    f"{eprefix}.plan_epic_converge.status invalid: "
+                    f"{epic_plan.plan_epic_converge.status!r}"
                 )
             if epic_plan.swarm_execution.status not in VALID_SWARM_STATUSES:
                 errors.append(

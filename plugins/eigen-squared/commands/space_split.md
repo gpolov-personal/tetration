@@ -8,18 +8,18 @@ description: Decompose a phase manifest into sequentially ordered epics, each re
 ## Pipeline Context
 
 ```
-  time_split ↔ deepen → bootstrap ↔ deepen → [ space_split ↔ deepen_space_split ] → plan_phase_epic → ...
+  time_split ↔ deepen → bootstrap ↔ deepen → [ space_split ↔ deepen_space_split ] → plan_epic_converge → ...
                                                 ^^^^^^^^^^^^^
                                                 YOU ARE HERE
 ```
 
-**Role — Epic Architect.** You operate at **per-phase scope**. You decompose a single phase (produced by `/time_split`) into sequentially ordered epics that can each be planned and executed by their own swarm. Epics are numbered E1, E2, ..., EN with E2E Testing always last. Each epic completes fully before the next one starts. You build the epic ordering, define what each epic outputs for downstream epics, and create one epic definition file per epic with sufficient context for downstream `/plan_phase_epic`.
+**Role — Epic Architect.** You operate at **per-phase scope**. You decompose a single phase (produced by `/time_split`) into sequentially ordered epics that can each be planned and executed by their own swarm. Epics are numbered E1, E2, ..., EN with E2E Testing always last. Each epic completes fully before the next one starts. You build the epic ordering, define what each epic outputs for downstream epics, and create one epic definition file per epic with sufficient context for downstream `/plan_epic_converge`.
 
 **Convergence partner:** `/deepen_space_split` reviews your output and produces structured feedback. You iterate space_split <-> deepen_space_split until converged.
 
-**Language note:** These instructions are **language-agnostic** at the splitting level — they operate on phase manifests and produce epic definitions, an epic manifest, and epic definition files. Downstream commands (`/plan_phase_epic`, `/create_issues_from_plan_swarm`, `/orchestrate_swarm`) handle language-specific planning and execution.
+**Language note:** These instructions are **language-agnostic** at the splitting level — they operate on phase manifests and produce epic definitions, an epic manifest, and epic definition files. Downstream commands (`/plan_epic_converge`, `/create_issues_from_plan_swarm`, `/orchestrate_swarm`) handle language-specific planning and execution.
 
-You do NOT generate plans or swarm manifests — that is the job of `/plan_phase_epic` and `/create_issues_from_plan_swarm` respectively. Your output is the epic decomposition, the manifest, and the epic definition files.
+You do NOT generate plans or swarm manifests — that is the job of `/plan_epic_converge` and `/create_issues_from_plan_swarm` respectively. Your output is the epic decomposition, the manifest, and the epic definition files.
 
 ---
 
@@ -70,7 +70,7 @@ You will:
 1. Ingest the phase manifest and bootstrap report
 2. Build a local dependency DAG and form epics from clusters + domain groupings
 3. Order epics sequentially so dependencies point forward; define what each epic outputs for later epics
-4. Create epic definition files (one `epic.md` per epic) defining the scope — which features belong, their specs, interfaces, and validation criteria. These are NOT plans; `/plan_phase_epic` generates the implementation strategy later.
+4. Create epic definition files (one `epic.md` per epic) defining the scope — which features belong, their specs, interfaces, and validation criteria. These are NOT plans; `/plan_epic_converge` generates the implementation strategy later.
 5. Generate phase-level artifacts (epic manifest, phase E2E config)
 
 ---
@@ -95,7 +95,7 @@ Epic numbers (M) are sequential within the phase, starting at 1. The last epic i
 - Every epic must have clear **validation criteria** — what can be verified after the epic's swarm completes. This is not a full E2E test (that happens at phase level), but a description of what components work and what tests pass.
 - Cross-phase dependencies are treated as **already available** — they are inputs from completed prior phases.
 - **Bootstrap must be converged** before running this command. The bootstrap report provides concrete entity paths and project structure.
-- You NEVER write application code, plans, or swarm manifests. You produce epic decompositions (scope and feature assignments), the epic manifest, epic definition files, and phase-level E2E configs only. The epic.md files define *what* belongs to each epic; `/plan_phase_epic` later defines *how* to implement it.
+- You NEVER write application code, plans, or swarm manifests. You produce epic decompositions (scope and feature assignments), the epic manifest, epic definition files, and phase-level E2E configs only. The epic.md files define *what* belongs to each epic; `/plan_epic_converge` later defines *how* to implement it.
 - **Feedback files are owned by deepen commands.** You NEVER delete, overwrite, or recreate files under `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/`. On iteration, you only update your own outputs (epic_manifest.json, phase_e2e_config.json, epic files).
 
 ---
@@ -438,7 +438,7 @@ updated_at: "<ISO 8601>"
 
 ### Blackbox Feature Specifications
 
-<For each feature in this epic, include the FULL verbatim blackbox spec (Inputs, Outputs, Behavior, Acceptance Criteria) from the phase manifest. This is critical — plan_phase_epic needs complete specs to generate a useful plan.>
+<For each feature in this epic, include the FULL verbatim blackbox spec (Inputs, Outputs, Behavior, Acceptance Criteria) from the phase manifest. This is critical — plan_epic_converge needs complete specs to generate a useful plan.>
 
 #### <feature_id>: <feature_name>
 
@@ -487,7 +487,7 @@ updated_at: "<ISO 8601>"
 
   **If bootstrap did NOT create Docker artifacts**: set `test_environment` to `"external_services"`. The E2E Testing epic sets up its own infrastructure. Leave `compose_file`, `startup_command`, `health_check`, and `teardown_command` empty.
 
-  This section informs `/plan_phase_epic` when it plans the E2E Testing epic — it will know what infrastructure to use.
+  This section informs `/plan_epic_converge` when it plans the E2E Testing epic — it will know what infrastructure to use.
 
 ### 2.3 Update Epic Cross-References
 
@@ -691,7 +691,7 @@ Next steps:
      Iterate space_split ↔ deepen_space_split until converged.
      Hint: to adjust the split (change epic boundaries, move features),
      pass your instructions to the next /space_split iteration.
-  2. Once converged, run /plan_phase_epic for each epic (auto-detected).
+  2. Once converged, run /plan_epic_converge for each epic (auto-detected).
   3. Then /create_issues_from_plan_swarm → /orchestrate_swarm → /review_swarm_pr
 ```
 

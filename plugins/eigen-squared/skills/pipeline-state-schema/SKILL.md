@@ -7,7 +7,7 @@ description: "Pipeline state schema reference for eigen-squared. Use when any co
 
 This is the **single source of truth** for iteration tracking across all eigen-squared pipeline commands. Every command reads this file on entry and updates it on exit.
 
-Created by `time_split` on first run. Read and updated by all 11 initiative-scale commands: `time_split`, `deepen_time_split`, `bootstrap`, `deepen_bootstrap`, `space_split`, `deepen_space_split`, `plan_phase_epic`, `deepen_plan_phase_epic`, `create_issues_from_plan_swarm`, `orchestrate_swarm`, `review_swarm_pr`.
+Created by `time_split` on first run. Read and updated by all 10 initiative-scale commands: `time_split`, `deepen_time_split`, `bootstrap`, `deepen_bootstrap`, `space_split`, `deepen_space_split`, `plan_epic_converge`, `create_issues_from_plan_swarm`, `orchestrate_swarm`, `review_swarm_pr`.
 
 ---
 
@@ -51,7 +51,7 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
         "scope": "per_phase",
         "description": "Decompose phase into parallel epics with DAG ordering, create local epic files",
         "produces": ["phases/phase_N/epic_dag.json", "phases/phase_N/phase_e2e_config.json", "phases/phase_N/epic_M/epic.md"],
-        "consumed_by": ["plan_phase_epic", "deepen_space_split"]
+        "consumed_by": ["plan_epic_converge", "deepen_space_split"]
       },
       "deepen_space_split": {
         "scope": "per_phase",
@@ -59,17 +59,11 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
         "produces": ["phases/phase_N/feedback/deepen_space_split_feedback.json"],
         "consumed_by": ["space_split"]
       },
-      "plan_phase_epic": {
+      "plan_epic_converge": {
         "scope": "per_epic",
-        "description": "Generate strategic plan for an epic within a phase, reading from local epic file",
-        "produces": ["phases/phase_N/epic_M/plan.md"],
-        "consumed_by": ["create_issues_from_plan_swarm", "deepen_plan_phase_epic"]
-      },
-      "deepen_plan_phase_epic": {
-        "scope": "per_epic",
-        "description": "Review plan_phase_epic output, produce iteration feedback with plan change guidance",
-        "produces": ["phases/phase_N/epic_M/feedback/deepen_plan_phase_epic_feedback.json"],
-        "consumed_by": ["plan_phase_epic"]
+        "description": "Self-converging command that generates and iteratively refines a strategic plan for an epic within a phase using an internal agent team",
+        "produces": ["phases/phase_N/epic_M/plan.md", "phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json"],
+        "consumed_by": ["create_issues_from_plan_swarm"]
       },
       "create_issues_from_plan_swarm": {
         "scope": "per_epic",
@@ -90,7 +84,7 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
         "consumed_by": ["orchestrate_swarm"]
       }
     },
-    "chain_order": ["time_split", "bootstrap", "space_split", "plan_phase_epic", "create_issues_from_plan_swarm", "orchestrate_swarm", "review_swarm_pr"]
+    "chain_order": ["time_split", "bootstrap", "space_split", "plan_epic_converge", "create_issues_from_plan_swarm", "orchestrate_swarm", "review_swarm_pr"]
   },
 
   "state": {
@@ -125,7 +119,7 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
   "recommendations": {
     "bootstrap": [],
     "space_split": [],
-    "plan_phase_epic": [],
+    "plan_epic_converge": [],
     "create_issues_from_plan_swarm": []
   }
 }
@@ -206,7 +200,7 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
 
 ```json
 {
-  "plan_phase_epic": {
+  "plan_epic_converge": {
     "status": "not_started|completed|iterating",
     "iteration": 0,
     "last_run_at": null,
@@ -219,14 +213,7 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
       "decided_by": null,
       "decided_at": null,
       "reason": null
-    }
-  },
-  "deepen_plan_phase_epic": {
-    "status": "not_started|completed",
-    "iteration": 0,
-    "last_run_at": null,
-    "feedback_path": null,
-    "feedback_consumed": false,
+    },
     "findings_summary": { "high": 0, "medium": 0, "low": 0 }
   },
   "swarm_execution": {
@@ -249,7 +236,7 @@ Created by `time_split` on first run. Read and updated by all 11 initiative-scal
 }
 ```
 
-`plan_phase_epic` and `deepen_plan_phase_epic` follow the same feedback lifecycle and convergence protocol as the other main/deepen pairs — see Feedback Lifecycle and Convergence sections below.
+`plan_epic_converge` is a self-converging command that manages its own iteration cycle internally via an agent team. Unlike the other main/deepen pairs, it does NOT use separate main and deepen commands. It produces both `plan.md` and a feedback JSON, and decides convergence on its own. See Convergence section below.
 
 `swarm_execution` tracks the full lifecycle of a swarm epic:
 - Set to `"pr_created"` by `orchestrate_swarm` after creating the PR (includes `pr_url`, `pr_number`, `integration_branch`, `manifest_path`).
@@ -293,18 +280,18 @@ Each recommendation targets the **next command(s) in the chain** (never the pair
     }
   ],
   "space_split": [],
-  "plan_phase_epic": [],
+  "plan_epic_converge": [],
   "create_issues_from_plan_swarm": []
 }
 ```
 
-Valid target keys: `bootstrap`, `space_split`, `plan_phase_epic`, `create_issues_from_plan_swarm`.
+Valid target keys: `bootstrap`, `space_split`, `plan_epic_converge`, `create_issues_from_plan_swarm`.
 
 ### Field Definitions
 
 | Field | Type | Description |
 |---|---|---|
-| `from` | string | Which deepen command wrote this (e.g., `"deepen_time_split"`) |
+| `from` | string | Which deepen/converge command wrote this (e.g., `"deepen_time_split"`, `"plan_epic_converge"`) |
 | `at_iteration` | integer >= 1 | Which iteration of the source deepen command produced this |
 | `phase` | integer >= 1 or null | Phase number this applies to (null = initiative-level) |
 | `epic` | integer >= 1 or null | Epic number this applies to (null = all epics in the phase) |
@@ -312,18 +299,19 @@ Valid target keys: `bootstrap`, `space_split`, `plan_phase_epic`, `create_issues
 
 ### Valid Source → Target Pairs
 
-| Source (deepen command) | Can write to |
+| Source (deepen/converge command) | Can write to |
 |---|---|
-| `deepen_time_split` | bootstrap, space_split, plan_phase_epic, create_issues_from_plan_swarm |
-| `deepen_bootstrap` | space_split, plan_phase_epic, create_issues_from_plan_swarm |
-| `deepen_space_split` | plan_phase_epic, create_issues_from_plan_swarm |
-| `deepen_plan_phase_epic` | create_issues_from_plan_swarm |
+| `deepen_time_split` | bootstrap, space_split, plan_epic_converge, create_issues_from_plan_swarm |
+| `deepen_bootstrap` | space_split, plan_epic_converge, create_issues_from_plan_swarm |
+| `deepen_space_split` | plan_epic_converge, create_issues_from_plan_swarm |
+| `plan_epic_converge` | create_issues_from_plan_swarm |
 
 ### Ownership Rules
 
-- **Deepen commands own their entries**: on each run, a deepen command replaces all entries where `from` matches its command name. It preserves entries written by other commands.
+- **Deepen/converge commands own their entries**: on each run, a deepen or self-converging command replaces all entries where `from` matches its command name. It preserves entries written by other commands.
 - **Produce commands are read-only**: they read `recommendations[my_name]` but never modify the dictionary.
 - **Deepen commands also read** `recommendations[their_produce_command]` as review context — this gives them awareness of upstream observations when reviewing their paired produce command's output.
+- **Self-converging commands** (`plan_epic_converge`) both read `recommendations[plan_epic_converge]` and write to downstream targets (e.g., `create_issues_from_plan_swarm`).
 
 ### Limits
 
@@ -332,9 +320,9 @@ Valid target keys: `bootstrap`, `space_split`, `plan_phase_epic`, `create_issues
 ### Behavioral Notes
 
 - Recommendations are **advisory, never blocking**. Downstream commands may follow or disregard them based on their own analysis.
-- Recommendations are written **only at convergence** — when a deepen command decides the current stage is good enough. Findings that warrant another iteration belong in the feedback file, not here.
+- Recommendations are written **only at convergence** — when a deepen or self-converging command decides the current stage is good enough. Findings that warrant another iteration belong in the feedback file, not here.
 - Only **low-severity findings** should become recommendations. High and medium findings must be resolved through the feedback/iteration cycle before convergence.
-- On each run, a deepen command replaces all entries where `from` matches its name (full replacement, not append). Entries from other sources are left untouched.
+- On each run, a deepen or self-converging command replaces all entries where `from` matches its name (full replacement, not append). Entries from other sources are left untouched.
 - **Initial state**: all four arrays are empty. Initialized by `time_split` when creating `pipeline_state.json` for the first time.
 
 ---
@@ -400,32 +388,37 @@ Located on the **deepen command's** state entry (e.g., `state.deepen_time_split.
 
 ### On Entry Guards (using feedback_consumed)
 
-**Main commands** (time_split, bootstrap, space_split, plan_phase_epic):
+**Main commands** (time_split, bootstrap, space_split):
 - `iteration >= 1` AND feedback file exists AND `feedback_consumed == false` → proceed to Iteration Protocol (process the feedback)
 - `iteration >= 1` AND feedback file exists AND `feedback_consumed == true` → STOP ("feedback already processed, run deepen again for fresh review")
 - `iteration >= 1` AND no feedback file → STOP ("run deepen first")
 
-**Deepen commands** (deepen_time_split, deepen_bootstrap, deepen_space_split, deepen_plan_phase_epic):
+**Deepen commands** (deepen_time_split, deepen_bootstrap, deepen_space_split):
 - Main command `status == "not_started"` → STOP ("run main command first")
 - Main command `convergence.converged == true` → STOP ("already converged")
 - Deepen's own `feedback_consumed == false` AND main command's `feedback_consumed == false` → feedback exists that main command hasn't used yet; warn user but proceed with re-analysis
+
+**Self-converging commands** (`plan_epic_converge`):
+- `plan_epic_converge` does NOT follow the main/deepen feedback pattern. It manages its own iteration cycle internally via an agent team, producing both plan output and feedback in a single invocation. The `feedback_consumed` field on its state entry is managed internally and does not require an external deepen command.
 
 ---
 
 ## Convergence
 
-Convergence is **decided by deepen commands only**. When a deepen command decides to converge:
+Convergence is **decided by deepen commands** for main/deepen pairs, and **internally** by self-converging commands. When convergence is decided:
 
 ```json
 {
   "converged": true,
-  "decided_by": "deepen_time_split|deepen_bootstrap|deepen_space_split|deepen_plan_phase_epic",
+  "decided_by": "deepen_time_split|deepen_bootstrap|deepen_space_split|plan_epic_converge",
   "decided_at": "<ISO 8601>",
   "reason": "<rationale>"
 }
 ```
 
-Once converged, both the main command and deepen command will STOP on entry with a convergence message. The next command in the chain can proceed.
+For main/deepen pairs: once converged, both the main command and deepen command will STOP on entry with a convergence message. The next command in the chain can proceed.
+
+For `plan_epic_converge`: convergence is managed internally by its agent team. The `decided_by` field is set to `"plan_epic_converge"` itself. Once converged, re-running `plan_epic_converge` will STOP on entry with a convergence message.
 
 ---
 
@@ -449,19 +442,19 @@ $EIGEN_ROOT/eigen_initiative/
         deepen_space_split_feedback.json       # Owned by deepen_space_split
       epic_1/                                  # Created by space_split
         epic.md                                # Epic content (space_split output)
-        plan.md                                # Plan (plan_phase_epic output)
+        plan.md                                # Plan (plan_epic_converge output)
         feedback/                              # Epic-level feedback
-          deepen_plan_phase_epic_feedback.json  # Owned by deepen_plan_phase_epic
+          plan_epic_converge_feedback.json  # Owned by plan_epic_converge
       epic_2/
         epic.md
         plan.md
         feedback/
-          deepen_plan_phase_epic_feedback.json
+          plan_epic_converge_feedback.json
     phase_2/
       ...same structure...
   eigen_lessons/                               # Lesson extraction by deepen commands
     time_split/                                # Lessons from deepen_time_split
     bootstrap/                                 # Lessons from deepen_bootstrap
     space_split/                               # Lessons from deepen_space_split
-    plan_phase_epic/                           # Lessons from deepen_plan_phase_epic
+    plan_phase_epic/                           # Lessons from plan_epic_converge (dir name kept for backward compat)
 ```

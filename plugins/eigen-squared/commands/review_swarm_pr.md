@@ -10,7 +10,7 @@ description: Scope-aware post-swarm PR review that spawns review agents, triages
 ```
                         eigen-squared pipeline
                         ~~~~~~~~~~~~~~~~~~~~~~
-  plan_phase_epic ──► orchestrate_swarm ◄──► review_swarm_pr
+  plan_epic_converge ──► orchestrate_swarm ◄──► review_swarm_pr
                                          ▲
                                          │
                                     YOU ARE HERE
@@ -435,7 +435,7 @@ git branch -d feat/P<N>.E<M> 2>/dev/null
 This ensures:
 1. The PR is merged automatically — no manual step needed
 2. `$EIGEN_BRANCH` has the latest code including this epic's changes
-3. The next epic's `/plan_phase_epic` reads the correct pipeline state
+3. The next epic's `/plan_epic_converge` reads the correct pipeline state
 4. The integration branch is cleaned up (both remote and local)
 
 ### 7.3 Report

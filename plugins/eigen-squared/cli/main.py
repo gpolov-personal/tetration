@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--epic-manifest", help="Epic manifest path (space_split)")
     p.add_argument("--e2e-config", help="E2E config path (space_split)")
     p.add_argument("--epic-ids", help="JSON list of epic IDs (space_split)")
-    p.add_argument("--plan-file", help="Plan file path (plan_phase_epic)")
+    p.add_argument("--plan-file", help="Plan file path (plan_epic_converge)")
 
     # ── mark-converged ──
     p = sub.add_parser("mark-converged", help="Set convergence for a step")

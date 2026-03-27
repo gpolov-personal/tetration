@@ -3,7 +3,8 @@
 This test walks through the entire pipeline lifecycle:
   init → complete time_split → complete deepen_time_split → mark-converged →
   complete bootstrap → complete deepen_bootstrap → mark-converged →
-  complete space_split → ... → all phases approved
+  complete space_split → ... → complete plan_epic_converge → mark-converged →
+  ... → all phases approved
 """
 
 import json
@@ -135,14 +136,13 @@ class TestFullPipelineWalk:
         run(["complete", "deepen_space_split", "--phase", "1", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "space_split", "--phase", "1", "--reason", "clean"])
 
-        # plan_phase_epic
+        # plan_epic_converge
         result = run_json(["next", "--json"])
-        assert result["command"] == "plan_phase_epic"
+        assert result["command"] == "plan_epic_converge"
         assert result["context"]["epic"] == 1
         run(["init-plan", "--phase", "1", "--epic", "1"])
-        run(["complete", "plan_phase_epic", "--phase", "1", "--epic", "1", "--plan-file", "plan.md"])
-        run(["complete", "deepen_plan_phase_epic", "--phase", "1", "--epic", "1", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "plan_phase_epic", "--phase", "1", "--epic", "1", "--reason", "clean"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1", "--plan-file", "plan.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1", "--reason", "clean"])
 
         # create_issues_from_plan_swarm
         assert run_json(["next", "--json"])["command"] == "create_issues_from_plan_swarm"
@@ -249,14 +249,12 @@ class TestFullPipelineWalk:
 
         # Epic P1.E1
         result = run_json(["next", "--json"])
-        assert result["command"] == "plan_phase_epic"
+        assert result["command"] == "plan_epic_converge"
         assert result["context"]["epic"] == 1
 
         run(["init-plan", "--phase", "1", "--epic", "1"])
-        run(["complete", "plan_phase_epic", "--phase", "1", "--epic", "1", "--plan-file", "p.md"])
-        run(["complete", "deepen_plan_phase_epic", "--phase", "1", "--epic", "1",
-             "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "plan_phase_epic", "--phase", "1", "--epic", "1", "--reason", "clean"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1", "--plan-file", "p.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1", "--reason", "clean"])
         run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
              "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
         run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
@@ -296,10 +294,8 @@ class TestFullPipelineWalk:
 
         # Epic P2.E1
         run(["init-plan", "--phase", "2", "--epic", "1"])
-        run(["complete", "plan_phase_epic", "--phase", "2", "--epic", "1", "--plan-file", "p.md"])
-        run(["complete", "deepen_plan_phase_epic", "--phase", "2", "--epic", "1",
-             "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "plan_phase_epic", "--phase", "2", "--epic", "1", "--reason", "clean"])
+        run(["complete", "plan_epic_converge", "--phase", "2", "--epic", "1", "--plan-file", "p.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "2", "--epic", "1", "--reason", "clean"])
         run(["complete", "create_issues_from_plan_swarm", "--phase", "2", "--epic", "1",
              "--manifest-path", "m.json", "--integration-branch", "feat/P2.E1"])
         run(["complete", "orchestrate_swarm", "--phase", "2", "--epic", "1",

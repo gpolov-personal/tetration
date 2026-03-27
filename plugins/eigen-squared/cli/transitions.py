@@ -160,30 +160,21 @@ def determine_next(
             # No plan entry → this epic needs planning
             if plan is None:
                 return (
-                    "plan_phase_epic",
+                    "plan_epic_converge",
                     {"scope": "epic", "phase": phase_num, "epic": epic_num},
                 )
 
-            # ── Plan ↔ deepen_plan ──
-            ppe = plan.get("plan_phase_epic")
-            dppe = plan.get("deepen_plan_phase_epic")
-            if not ppe:
+            # ── Plan (single converge command, no pair) ──
+            pec = plan.get("plan_epic_converge")
+            if not pec or pec.get("status") == "not_started":
                 return (
-                    "plan_phase_epic",
+                    "plan_epic_converge",
                     {"scope": "epic", "phase": phase_num, "epic": epic_num},
                 )
-            if not dppe:
-                dppe = {"status": "not_started", "feedback_consumed": False}
-
-            result = next_for_convergence_pair(ppe, dppe)
-            if result[0] == "run_main":
+            pec_converged = pec.get("convergence", {}).get("converged", False)
+            if not pec_converged:
                 return (
-                    "plan_phase_epic",
-                    {"scope": "epic", "phase": phase_num, "epic": epic_num},
-                )
-            if result[0] == "run_deepen":
-                return (
-                    "deepen_plan_phase_epic",
+                    "plan_epic_converge",
                     {"scope": "epic", "phase": phase_num, "epic": epic_num},
                 )
 

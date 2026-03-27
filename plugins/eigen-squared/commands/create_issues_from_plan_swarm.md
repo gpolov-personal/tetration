@@ -8,7 +8,7 @@ description: Decompose a development plan into file-disjoint task files and gene
 ## Pipeline Context
 
 ```
-eigen_start ──► space_split ──► plan_phase_epic
+eigen_start ──► space_split ──► plan_epic_converge
                                       │
                               ┌───────┘
                               ▼
@@ -132,7 +132,7 @@ All file paths from the CLI context. Prepend `$EIGEN_ROOT/eigen_initiative/` to 
 
 ### 0.1 Read Plan File
 
-1. Read `plan_file` (from CLI context). If not found → **STOP.** Print: "No plan found. Run `/plan_phase_epic` first."
+1. Read `plan_file` (from CLI context). If not found → **STOP.** Print: "No plan found. Run `/plan_epic_converge` first."
 2. Extract the full plan content, including the Parallelization Strategy section.
 3. If no Parallelization Strategy section exists, derive one from the plan before proceeding (identify independent components, shared files, and interfaces).
 

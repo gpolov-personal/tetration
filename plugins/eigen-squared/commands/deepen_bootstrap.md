@@ -648,7 +648,7 @@ Apply the Convergence Decision Protocol (from the Iteration Protocol section abo
 At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands.
 
 1. **Filter findings with downstream impact:** Only low-severity findings where `downstream_impact.affects_commands` is non-empty.
-2. **For each affected downstream command** (space_split, plan_phase_epic, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
+2. **For each affected downstream command** (space_split, plan_epic_converge, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
    - Describe the **observed condition** in bootstrap's output.
    - State the **implication** for the downstream command.
 3. **Write recommendations via CLI** — for each observation:

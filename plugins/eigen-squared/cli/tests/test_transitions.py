@@ -65,8 +65,6 @@ def make_epic_plan(
     plan_status="not_started",
     plan_converged=False,
     plan_fc=False,
-    deepen_status="not_started",
-    deepen_fc=False,
     swarm_status="not_started",
     swarm_converged=False,
     swarm_review_iteration=0,
@@ -74,15 +72,10 @@ def make_epic_plan(
     manifest_path=None,
 ):
     return {
-        "plan_phase_epic": {
+        "plan_epic_converge": {
             "status": plan_status,
             "feedback_consumed": plan_fc,
             "convergence": {"converged": plan_converged},
-            "iteration": 0,
-        },
-        "deepen_plan_phase_epic": {
-            "status": deepen_status,
-            "feedback_consumed": deepen_fc,
             "iteration": 0,
         },
         "swarm_execution": make_swarm_state(
@@ -330,7 +323,7 @@ class TestDetermineNext:
         with patch("cli.transitions.load_epic_order", return_value=[1]):
             result = determine_next(state)
         assert result is not None
-        assert result[0] == "plan_phase_epic"
+        assert result[0] == "plan_epic_converge"
         assert result[1]["epic"] == 1
 
     def test_sequential_epics_first_unplanned_gets_scheduled(self):
@@ -340,7 +333,7 @@ class TestDetermineNext:
         with patch("cli.transitions.load_epic_order", return_value=[1, 2]):
             result = determine_next(state)
         assert result is not None
-        assert result[0] == "plan_phase_epic"
+        assert result[0] == "plan_epic_converge"
         assert result[1]["epic"] == 1  # First epic, not second
 
     def test_bug6_create_issues_inferred(self):
@@ -380,13 +373,13 @@ class TestDetermineNext:
         assert result[0] == "space_split"
 
     def test_missing_plan_sub_keys_no_crash(self):
-        """Sequential: plan entry exists but no plan_phase_epic sub-key → plan it."""
+        """Sequential: plan entry exists but no plan_epic_converge sub-key → plan it."""
         phase = make_phase(plans={"1": {"swarm_execution": make_swarm_state()}})
         state = make_pipeline_state(phases={"1": phase})
         with patch("cli.transitions.load_epic_order", return_value=[1]):
             result = determine_next(state)
         assert result is not None
-        assert result[0] == "plan_phase_epic"
+        assert result[0] == "plan_epic_converge"
 
     def test_phase_count_as_string(self):
         state = make_pipeline_state(time_split_converged=True, phase_count=1)
@@ -435,7 +428,7 @@ class TestResolveBranch:
         with patch("cli.transitions.load_epic_order", return_value=[1]):
             assert resolve_branch(state) == "feat/P1.E2"
 
-    def test_plan_phase_epic_resolves_to_eigen_branch(self):
+    def test_plan_epic_converge_resolves_to_eigen_branch(self):
         phase = make_phase(plans={})
         state = make_pipeline_state(phases={"1": phase})
         with patch("cli.transitions.load_epic_order", return_value=[1]):
