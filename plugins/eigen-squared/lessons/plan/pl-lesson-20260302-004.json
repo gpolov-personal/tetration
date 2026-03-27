@@ -5,15 +5,15 @@
   "status": "pending",
   "category": "parallelization_error",
   "severity": "high",
-  "title": "Plan introduced new files not tracked in epic_dag.json file_ownership_map",
-  "description": "plan_phase_epic created 4 new files (visibility.py, middleware.py, logging_config.py, health.py) in the Parallelization Strategy but did not note that these need to be added to epic_dag.json's file_ownership_map. The file_ownership_map is the authoritative source for cross-epic file conflict prevention during swarm execution.",
-  "root_cause": "plan_phase_epic does not cross-reference its estimated_files against the epic_dag.json file_ownership_map. New files introduced by the plan are not validated against the ownership registry.",
-  "recommendation": "After generating the Parallelization Strategy, plan_phase_epic should compare all estimated_files against epic_dag.json's file_ownership_map. Any new files should be flagged with a note: 'New file — add to epic_dag.json epic_N_owns'. Alternatively, the plan should include a 'File Ownership Updates' section that lists additions to the ownership map.",
+  "title": "Plan introduced new files not tracked in epic_manifest.json file_ownership_map",
+  "description": "plan_phase_epic created 4 new files (visibility.py, middleware.py, logging_config.py, health.py) in the Parallelization Strategy but did not note that these need to be added to epic_manifest.json's file_ownership_map. The file_ownership_map is the authoritative source for cross-epic file conflict prevention during swarm execution.",
+  "root_cause": "plan_phase_epic does not cross-reference its estimated_files against the epic_manifest.json file_ownership_map. New files introduced by the plan are not validated against the ownership registry.",
+  "recommendation": "After generating the Parallelization Strategy, plan_phase_epic should compare all estimated_files against epic_manifest.json's file_ownership_map. Any new files should be flagged with a note: 'New file — add to epic_manifest.json epic_N_owns'. Alternatively, the plan should include a 'File Ownership Updates' section that lists additions to the ownership map.",
   "affected_section": "Parallelization Strategy generation in plan_phase_epic.md — file list generation.",
   "evidence": {
     "plan_sections_involved": ["Parallelization Strategy / Independent Components"],
     "agent_source": "parallelization-strategy-reviewer"
   },
-  "plan_context": "Epic with 12 owned files in epic_dag.json, plan introduces 4 additional new files",
-  "tags": ["file-ownership", "epic-dag", "parallelization", "new-files"]
+  "plan_context": "Epic with 12 owned files in epic_manifest.json, plan introduces 4 additional new files",
+  "tags": ["file-ownership", "epic-manifest", "parallelization", "new-files"]
 }

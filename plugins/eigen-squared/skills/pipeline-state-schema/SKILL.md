@@ -50,7 +50,7 @@ Created by `time_split` on first run. Read and updated by all 10 initiative-scal
       "space_split": {
         "scope": "per_phase",
         "description": "Decompose phase into parallel epics with DAG ordering, create local epic files",
-        "produces": ["phases/phase_N/epic_dag.json", "phases/phase_N/phase_e2e_config.json", "phases/phase_N/epic_M/epic.md"],
+        "produces": ["phases/phase_N/epic_manifest.json", "phases/phase_N/phase_e2e_config.json", "phases/phase_N/epic_M/epic.md"],
         "consumed_by": ["plan_epic_converge", "deepen_space_split"]
       },
       "deepen_space_split": {
@@ -164,7 +164,7 @@ Created by `time_split` on first run. Read and updated by all 10 initiative-scal
     "iteration": 0,
     "last_run_at": null,
     "output_paths": {
-      "epic_dag": null,
+      "epic_manifest": null,
       "phase_e2e_config": null,
       "github_issues": []
     },
@@ -459,7 +459,7 @@ $EIGEN_ROOT/eigen_initiative/
       deepen_time_split_feedback.json          # Owned by deepen_time_split
     phase_1/                                   # Per-phase outputs
       bootstrap-report.json                    # bootstrap output
-      epic_dag.json                            # space_split output
+      epic_manifest.json                       # space_split output
       phase_e2e_config.json                    # space_split output
       feedback/                                # Phase-level feedback
         deepen_bootstrap_feedback.json         # Owned by deepen_bootstrap

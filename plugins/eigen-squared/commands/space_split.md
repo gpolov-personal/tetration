@@ -121,7 +121,7 @@ If the CLI exits with an error (non-zero), **STOP** and display the error messag
   "is_first_run": false,
   "should_process_feedback": true,
   "feedback_path": "phases/phase_1/feedback/deepen_space_split_feedback.json",
-  "output_paths": {"epic_dag": "phases/phase_1/epic_manifest.json", "phase_e2e_config": "phases/phase_1/phase_e2e_config.json"},
+  "output_paths": {"epic_manifest": "phases/phase_1/epic_manifest.json", "phase_e2e_config": "phases/phase_1/phase_e2e_config.json"},
   "phase_manifest": "phases/phase_1_manifest.md",
   "recommendations": [...]
 }
