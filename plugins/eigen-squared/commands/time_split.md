@@ -132,27 +132,24 @@ If the CLI exits with an error (non-zero), **STOP** and display the error messag
 
 ## On Exit
 
-After successfully generating outputs (Stage 2), signal completion to the CLI:
+After successfully generating outputs (Stage 2), run ALL of the following in a **single** Bash call:
 
-**First run** (creates pipeline_state.json):
+**First run** (include `init` before `complete`):
 ```bash
 eigen-squared init --initiative "<initiative name>" --phase-count <N>
 eigen-squared complete time_split --phase-count <N> --output-path phases/initiative_summary.json
-```
-
-**Iteration run** (updates existing state):
-```bash
-eigen-squared complete time_split --phase-count <N> --output-path phases/initiative_summary.json
-```
-
-The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), phase initialization with all required keys.
-
-Then commit pipeline artifacts:
-
-```bash
 eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
 [ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
+
+**Iteration run** (no `init` needed):
+```bash
+eigen-squared complete time_split --phase-count <N> --output-path phases/initiative_summary.json
+eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+```
+
+The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), phase initialization with all required keys.
 
 ---
 

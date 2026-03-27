@@ -82,29 +82,13 @@ If `overwrite_warning` is present, print the warning and continue.
 
 ## On Exit
 
-After completing the review and writing the feedback file:
+After completing the review and writing the feedback file, run ALL of the following in a **single** Bash call. Uncomment the `mark-converged` and `add-recommendation` lines only if convergence decision is "converged". Include `--locked-skills` only on the first iteration (when skills were discovered):
 
 ```bash
 eigen-squared complete deepen_bootstrap --phase <phase> --feedback-path <path> --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}' --locked-skills '["skill-a", "skill-b", ...]'
-```
-
-Include `--locked-skills` only when skills were discovered in this iteration (first iteration, or when `locked_skills` was not already present in CLI context). On subsequent iterations the locked skills are already persisted — omit the flag.
-
-If converging:
-
-```bash
-eigen-squared mark-converged bootstrap --phase <phase> --reason "..."
-```
-
-If adding downstream recommendations at convergence:
-
-```bash
-eigen-squared add-recommendation --from-cmd deepen_bootstrap --target <target> --iteration <main_command_iteration> --text "..."
-```
-
-Commit all artifacts:
-
-```bash
+# If CONVERGED — uncomment these:
+# eigen-squared mark-converged bootstrap --phase <phase> --reason "..."
+# eigen-squared add-recommendation --from-cmd deepen_bootstrap --target <target> --iteration <main_command_iteration> --text "..."
 eigen-squared commit-state --message "pipeline: deepen_bootstrap phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/bootstrap/
 [ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```

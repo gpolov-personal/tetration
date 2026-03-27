@@ -83,34 +83,17 @@ If `overwrite_warning` is present, print the warning and continue.
 
 ## On Exit
 
-After completing the review, writing the feedback file, and writing lessons:
+After completing the review, writing the feedback file, and writing lessons, run ALL of the following in a **single** Bash call. Uncomment the `mark-converged` and `add-recommendation` lines only if convergence decision is "converged". Include `--locked-skills` only on the first iteration:
 
 ```bash
-# Always — mark this deepen run complete
 eigen-squared complete deepen_space_split \
   --phase <phase> \
   --feedback-path <feedback_file_path> \
   --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}' \
-  --locked-skills '["skill-a", "skill-b", ...]'  # only on first iteration (when skills were discovered)
-```
-
-```bash
-# Conditional — only if convergence decision is "converged"
-eigen-squared mark-converged space_split --phase <phase> --reason "<convergence rationale>"
-```
-
-```bash
-# Conditional — only at convergence, one call per recommendation
-eigen-squared add-recommendation \
-  --from-cmd deepen_space_split \
-  --target <target_cmd> \
-  --iteration <main_command_iteration> \
-  --text "<observation>"
-```
-
-Commit all artifacts:
-
-```bash
+  --locked-skills '["skill-a", "skill-b", ...]'
+# If CONVERGED — uncomment these:
+# eigen-squared mark-converged space_split --phase <phase> --reason "<convergence rationale>"
+# eigen-squared add-recommendation --from-cmd deepen_space_split --target <target_cmd> --iteration <main_command_iteration> --text "<observation>"
 eigen-squared commit-state \
   --message "pipeline: deepen_space_split phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" \
   --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/space_split/

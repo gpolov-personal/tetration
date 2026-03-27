@@ -151,20 +151,15 @@ If the CLI exits with an error (non-zero), **STOP** and display the error messag
 
 ## On Exit
 
-After successfully generating outputs (Stage 4), signal completion to the CLI:
+After successfully generating outputs (Stage 4), run ALL of the following in a **single** Bash call:
 
 ```bash
 eigen-squared complete space_split --phase <phase> --epic-manifest phases/phase_<phase>/epic_manifest.json --e2e-config phases/phase_<phase>/phase_e2e_config.json --epic-ids '["P<phase>.E1", "P<phase>.E2", "P<phase>.E3"]'
-```
-
-The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), output paths.
-
-Then commit pipeline artifacts:
-
-```bash
 eigen-squared commit-state --message "pipeline: space_split phase <phase> — <epic_count> epics created" --additional-paths eigen_initiative/phases/phase_<phase>/
 [ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
+
+The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), output paths.
 
 ---
 

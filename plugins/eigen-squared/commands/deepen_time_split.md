@@ -83,27 +83,20 @@ Otherwise parse the returned JSON:
 
 ## On Exit
 
-After completing the review, writing the feedback file, and writing lessons:
+After completing the review, writing the feedback file, and writing lessons, run ALL of the following in a **single** Bash call. Uncomment the `mark-converged` and `add-recommendation` lines only if convergence decision is "converged":
 
 ```bash
-# Always — mark this deepen run complete
 eigen-squared complete deepen_time_split \
   --feedback-path <feedback_file_path> \
   --findings-summary '{"high": <N>, "medium": <N>, "low": <N>}' \
-  --locked-skills '["skill-a", "skill-b", ...]'  # include when skills were discovered this iteration
-```
-
-```bash
-# Conditional — only if convergence decision is "converged"
-eigen-squared mark-converged time_split --reason "<convergence rationale>"
-```
-
-```bash
-# Conditional — only at convergence, one call per recommendation
-eigen-squared add-recommendation \
-  --from-cmd deepen_time_split \
-  --target <target_cmd> \
-  --text "<observation>"
+  --locked-skills '["skill-a", "skill-b", ...]'
+# If CONVERGED — uncomment these:
+# eigen-squared mark-converged time_split --reason "<convergence rationale>"
+# eigen-squared add-recommendation --from-cmd deepen_time_split --target <target_cmd> --text "<observation>"
+eigen-squared commit-state \
+  --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
+  --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
+[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (sets own to false, sets time_split's to false to signal fresh feedback).
@@ -659,10 +652,5 @@ Next steps:
 
 ### Commit Pipeline Artifacts
 
-```bash
-eigen-squared commit-state \
-  --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
-  --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
-```
+Execute the **On Exit** section above — it includes `commit-state` and `schedule-next`.
 
