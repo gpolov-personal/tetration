@@ -96,8 +96,7 @@ After creating tasks, manifest, and integration branch:
 ```bash
 eigen-squared checkout-branch --phase <phase> --epic <epic> --create
 eigen-squared complete create_issues_from_plan_swarm --phase <phase> --epic <epic> --manifest-path eigen_initiative/phases/phase_<phase>/epic_<epic>/swarm-manifest.json --integration-branch feat/P<phase>.E<epic>
-eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/ --schedule-next
 ```
 
 ## Output

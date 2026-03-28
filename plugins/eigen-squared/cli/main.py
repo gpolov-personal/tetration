@@ -112,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--message", required=True, help="Commit message")
     p.add_argument("--additional-paths", help="Comma-separated additional paths to stage")
     p.add_argument("--branch", help="Branch to push to")
+    p.add_argument("--schedule-next", action="store_true", dest="schedule_next",
+                   help="After commit, auto-schedule the next pipeline command")
 
     # ── sync ──
     p = sub.add_parser("sync", help="Git pull latest from branch")

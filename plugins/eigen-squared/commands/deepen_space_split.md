@@ -96,8 +96,8 @@ eigen-squared complete deepen_space_split \
 # eigen-squared add-recommendation --from-cmd deepen_space_split --target <target_cmd> --iteration <main_command_iteration> --text "<observation>"
 eigen-squared commit-state \
   --message "pipeline: deepen_space_split phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" \
-  --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/space_split/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+  --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/space_split/ \
+  --schedule-next
 ```
 
 ---

@@ -155,8 +155,7 @@ After successfully generating outputs (Stage 4), run ALL of the following in a *
 
 ```bash
 eigen-squared complete space_split --phase <phase> --epic-manifest phases/phase_<phase>/epic_manifest.json --e2e-config phases/phase_<phase>/phase_e2e_config.json --epic-ids '["P<phase>.E1", "P<phase>.E2", "P<phase>.E3"]'
-eigen-squared commit-state --message "pipeline: space_split phase <phase> — <epic_count> epics created" --additional-paths eigen_initiative/phases/phase_<phase>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+eigen-squared commit-state --message "pipeline: space_split phase <phase> — <epic_count> epics created" --additional-paths eigen_initiative/phases/phase_<phase>/ --schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), output paths.

@@ -141,8 +141,7 @@ If the CLI exits with an error (non-zero), **STOP** and display the error messag
 
 ```bash
 eigen-squared complete bootstrap --phase <phase> --output-path phases/phase_<phase>/bootstrap-report.json
-eigen-squared commit-state --message "pipeline: bootstrap phase <phase> — foundation created" --additional-paths eigen_initiative/phases/phase_<phase>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+eigen-squared commit-state --message "pipeline: bootstrap phase <phase> — foundation created" --additional-paths eigen_initiative/phases/phase_<phase>/ --schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart).

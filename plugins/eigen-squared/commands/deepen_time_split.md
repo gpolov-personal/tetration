@@ -95,8 +95,8 @@ eigen-squared complete deepen_time_split \
 # eigen-squared add-recommendation --from-cmd deepen_time_split --target <target_cmd> --text "<observation>"
 eigen-squared commit-state \
   --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
-  --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+  --additional-paths eigen_initiative/phases/feedback/,eigen_initiative/eigen_lessons/time_split/ \
+  --schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (sets own to false, sets time_split's to false to signal fresh feedback).

@@ -89,8 +89,7 @@ eigen-squared complete deepen_bootstrap --phase <phase> --feedback-path <path> -
 # If CONVERGED — uncomment these:
 # eigen-squared mark-converged bootstrap --phase <phase> --reason "..."
 # eigen-squared add-recommendation --from-cmd deepen_bootstrap --target <target> --iteration <main_command_iteration> --text "..."
-eigen-squared commit-state --message "pipeline: deepen_bootstrap phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/bootstrap/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+eigen-squared commit-state --message "pipeline: deepen_bootstrap phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/bootstrap/ --schedule-next
 ```
 
 ---

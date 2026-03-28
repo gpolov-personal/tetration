@@ -402,16 +402,14 @@ Use the CLI to update pipeline state:
 ```bash
 eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}'
 eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "<rationale>"
-eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/ --schedule-next
 ```
 
 **If continuing (P1 or P2 findings remain):**
 ```bash
 eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}'
 eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
-eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/ --schedule-next
 ```
 
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)

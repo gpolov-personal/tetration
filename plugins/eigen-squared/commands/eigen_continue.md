@@ -154,8 +154,7 @@ When testing is complete, run /eigen_continue again to confirm and start Phase <
 Set the phase review status to `testing` with the generated recipe:
 ```bash
 eigen-squared set-phase-review --phase <N> --status testing --testing-recipe "<generated recipe text>"
-eigen-squared commit-state --message "pipeline: phase <N> review — testing"
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+eigen-squared commit-state --message "pipeline: phase <N> review — testing" --schedule-next
 ```
 
 ---
@@ -192,8 +191,7 @@ Do NOT update pipeline state. Exit.
 1. Update pipeline state via CLI:
    ```bash
    eigen-squared set-phase-review --phase <N> --status approved
-   eigen-squared commit-state --message "pipeline: phase <N> review — approved"
-   [ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+   eigen-squared commit-state --message "pipeline: phase <N> review — approved" --schedule-next
    ```
 
 2. Determine next phase:

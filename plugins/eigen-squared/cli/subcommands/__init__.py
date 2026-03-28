@@ -1033,11 +1033,14 @@ def cmd_commit_state(args: Namespace) -> int:
         additional_paths=additional,
         branch=args.branch or "",
     )
-    if ok:
-        print(json.dumps({"status": "committed"}))
-        return 0
-    print("ERROR: git commit/push failed", file=sys.stderr)
-    return 1
+    if not ok:
+        print("ERROR: git commit/push failed", file=sys.stderr)
+        return 1
+    print(json.dumps({"status": "committed"}))
+    # Auto-schedule next command if --schedule-next was passed
+    if getattr(args, "schedule_next", False):
+        return cmd_schedule_next(args)
+    return 0
 
 
 def cmd_sync(args: Namespace) -> int:
