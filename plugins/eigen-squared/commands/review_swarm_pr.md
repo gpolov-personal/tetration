@@ -39,6 +39,8 @@ Before proceeding, verify:
 
 If either is missing → **STOP** with a descriptive error.
 
+**Worker model**: resolve from `$WORKERS_MODEL`. If it is `"opus"` or `"sonnet"`, use that value. Otherwise default to `"opus"`. Use this resolved value when creating fixup tasks in the manifest.
+
 ---
 
 ## On Entry
@@ -320,7 +322,7 @@ Update the epic's `task_ids` array to include the new review task IDs.
 ### 4.5 Update Manifest
 
 1. Mark original tasks (from previous waves) as `"status": "completed"`
-2. Append new review tasks with `"status": "pending"` and `"model": "opus"`
+2. Append new review tasks with `"status": "pending"` and `"model": "<worker_model>"`
 3. Append new execution waves
 4. Update `e2e_config.e2e_scenarios` for P1 findings
 

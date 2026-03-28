@@ -23,6 +23,7 @@ These instructions are **language-aware** — workers create real code in the pr
 
 - `$EIGEN_ROOT` and `$EIGEN_BRANCH` must be set (CLI validates).
 - Agent teams must be enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, `teammateMode=tmux`).
+- **Worker model**: resolve from `$WORKERS_MODEL`. If it is `"opus"` or `"sonnet"`, use that value. Otherwise default to `"opus"`. Store as `<worker_model>` for use in all worker spawn prompts. This does NOT affect the integrator or any non-swarm agents — those always use opus.
 
 ---
 
@@ -247,7 +248,7 @@ Otherwise, spawn all tasks in the wave simultaneously.
 For each task, spawn a teammate:
 
 ```
-Spawn a teammate called "worker-<task.id>" using model opus with this prompt:
+Spawn a teammate called "worker-<task.id>" using model <worker_model> with this prompt:
 
 "You are a swarm worker assigned to task <task.id> under epic P<N>.E<M>.
 

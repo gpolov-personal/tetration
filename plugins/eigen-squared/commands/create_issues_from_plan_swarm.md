@@ -38,6 +38,8 @@ eigen_start ──► space_split ──► plan_epic_converge
 
 The `eigen-squared` CLI auto-detects the current phase and epic from `epic_manifest.json` and pipeline state. No manual arguments are needed.
 
+**Worker model**: resolve from `$WORKERS_MODEL`. If it is `"opus"` or `"sonnet"`, use that value. Otherwise default to `"opus"`. Use this resolved value as the `model` field for all tasks in the manifest.
+
 ### On Entry
 
 ```bash
@@ -346,7 +348,7 @@ Generate `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json
       "id": "P<N>.E<M>.T1",
       "summary": "<task title>",
       "phase": <N>,
-      "model": "opus",
+      "model": "<worker_model>",
       "blocked_by": [],
       "interface_deps": [],
       "files_owned": ["src/auth/models.py", "src/auth/service.py"],
@@ -395,7 +397,7 @@ Generate `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/swarm-manifest.json
   - `id`: task triplet ID (e.g., `P1.E2.T1`)
   - `summary`: the task title
   - `phase`: the phase number
-  - `model`: the Claude model to use for this task's teammate. Always `"opus"` for all tasks.
+  - `model`: the Claude model to use for this task's teammate. Resolved from `$WORKERS_MODEL` (valid: `"opus"`, `"sonnet"`; default: `"opus"`).
   - `blocked_by`: array of task triplet IDs that must complete before this task can start
   - `interface_deps`: array of interface dependencies satisfied by stubs (default: `[]`). Each entry:
     - `provider_id`: task triplet ID of the provider task (e.g., `P1.E2.T1`)

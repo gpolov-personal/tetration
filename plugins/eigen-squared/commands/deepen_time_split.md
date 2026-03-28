@@ -101,6 +101,19 @@ eigen-squared commit-state \
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (sets own to false, sets time_split's to false to signal fresh feedback).
 
+Commit all artifacts:
+
+```bash
+eigen-squared commit-state \
+  --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
+  --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
+if [ "$AUTOCHAIN" = "true" ]; then
+  eigen-squared schedule-next
+else
+  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
+fi
+```
+
 ---
 
 ## Iteration Protocol

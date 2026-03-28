@@ -163,6 +163,22 @@ Enable autonomous mode? (yes/no, default: yes):
 - **"yes"** or Enter → `AUTOCHAIN=true`
 - **"no"** → `AUTOCHAIN=false`
 
+**WORKERS_MODEL (optional):**
+```
+Which Claude model should swarm workers use?
+
+Valid values: "opus" (default), "sonnet"
+This affects only swarm workers spawned by /orchestrate_swarm and
+fixup workers from /review_swarm_pr. Planners, reviewers, and the
+integrator always use opus.
+
+Enter model (or press Enter for opus):
+```
+
+- **"opus"** or Enter → `WORKERS_MODEL=opus`
+- **"sonnet"** → `WORKERS_MODEL=sonnet`
+- Any other value → `WORKERS_MODEL=opus` (default)
+
 **EIGEN_TELEGRAM_CHAT_ID (optional):**
 ```
 Would you like Telegram notifications for pipeline progress?

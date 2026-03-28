@@ -14,6 +14,7 @@ from typing import Optional
 
 MAX_COMMAND_RETRIES = 3
 SCHEDULE_DELAY_MINUTES = 3
+DEDUP_WINDOW_SECONDS = 120
 
 COMMAND_TO_SKILL = {
     "time_split": "eigen-squared:time_split",
@@ -77,12 +78,35 @@ def check_retry(
     """Check if we're retrying the same command.
 
     Returns (should_proceed, attempt).
+    Deduplicates rapid-fire calls (< DEDUP_WINDOW_SECONDS) for the same
+    command+context — these are duplicate schedule-next invocations within
+    the same command execution, not genuine retries.
     """
     last = last_confirmed_entry(hook_log)
     if last is None:
         return True, 1
 
     if last.get("command") == command and last.get("context_key") == context_key:
+        # Check if this is a rapid duplicate (same execution) vs genuine retry
+        last_ts = last.get("timestamp", "")
+        try:
+            last_time = datetime.fromisoformat(last_ts)
+            elapsed = (datetime.now(timezone.utc) - last_time).total_seconds()
+            if elapsed < DEDUP_WINDOW_SECONDS:
+                log_entry(
+                    hook_log,
+                    {
+                        "action": "deduplicated",
+                        "command": command,
+                        "context_key": context_key,
+                        "status": "skipped",
+                    },
+                )
+                return False, last.get("attempt", 1)
+        except (ValueError, TypeError):
+            pass
+
+        # Genuine retry — outside dedup window
         attempt = last.get("attempt", 1) + 1
         if attempt > MAX_COMMAND_RETRIES:
             log_entry(
