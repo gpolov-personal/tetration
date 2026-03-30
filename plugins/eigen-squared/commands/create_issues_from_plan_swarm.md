@@ -46,7 +46,7 @@ The `eigen-squared` CLI auto-detects the current phase and epic from `epic_manif
 eigen-squared get-context create_issues_from_plan_swarm --json
 ```
 
-If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON:
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON. Example below:
 
 ```json
 {
@@ -99,7 +99,6 @@ After creating tasks, manifest, and integration branch:
 eigen-squared checkout-branch --phase <phase> --epic <epic> --create
 eigen-squared complete create_issues_from_plan_swarm --phase <phase> --epic <epic> --manifest-path eigen_initiative/phases/phase_<phase>/epic_<epic>/swarm-manifest.json --integration-branch feat/P<phase>.E<epic>
 eigen-squared commit-state --message "chore: add swarm manifest, tasks, and plan for P<phase>.E<epic>" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ## Output
@@ -479,7 +478,7 @@ The CLI creates `feat/P<N>.E<M>` from the latest `$EIGEN_BRANCH`, pulling first 
 
 The manifest, task files, and plan are already at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`. Since we checked out `feat/P<N>.E<M>` (which was created from `origin/$EIGEN_BRANCH`), these files are already present in the working directory — no copying needed.
 
-Execute the **On Exit** section above — it handles `checkout-branch`, `complete`, `commit-state`, and `schedule-next`.
+Execute the **On Exit** section above — it handles `checkout-branch`, `complete`, and `commit-state`.
 
 ### 5.3 Branch state
 
