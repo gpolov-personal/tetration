@@ -129,7 +129,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── schedule-next ──
     p = sub.add_parser("schedule-next", help="Determine + schedule next command")
-    p.add_argument("--delay-minutes", type=int, default=3)
+    p.add_argument("--delay-minutes", type=int, default=1)
+    p.add_argument("--extra-prompt", default="", help="Extra text appended to the task prompt")
 
     # ── validate ──
     p = sub.add_parser("validate", help="Validate pipeline_state.json")

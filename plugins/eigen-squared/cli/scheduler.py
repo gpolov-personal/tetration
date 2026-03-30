@@ -14,7 +14,7 @@ from typing import Optional
 
 MAX_COMMAND_RETRIES = 3
 SCHEDULE_DELAY_MINUTES = 3
-DEDUP_WINDOW_SECONDS = 120
+DEDUP_WINDOW_SECONDS = 30
 
 COMMAND_TO_SKILL = {
     "time_split": "eigen-squared:time_split",
@@ -132,6 +132,7 @@ def schedule_command(
     claude_tasks_api: str,
     hook_log: Path,
     delay_minutes: int = SCHEDULE_DELAY_MINUTES,
+    extra_prompt: str = "",
     telegram_chat_id: str = "",
     slack_webhook: str = "",
     discord_webhook: str = "",
@@ -160,12 +161,16 @@ def schedule_command(
     else:
         task_name = f"eigen: {command} P{phase}.E{epic}"
 
+    prompt = (
+        f'Use the Skill tool to invoke Skill("{skill}"). '
+        f"Follow all its instructions completely."
+    )
+    if extra_prompt:
+        prompt += f"\n\n{extra_prompt}"
+
     payload: dict = {
         "name": task_name,
-        "prompt": (
-            f'Use the Skill tool to invoke Skill("{skill}"). '
-            f"Follow all its instructions completely."
-        ),
+        "prompt": prompt,
         "cron_expr": "",
         "scheduled_at": scheduled_at,
         "working_dir": eigen_root,

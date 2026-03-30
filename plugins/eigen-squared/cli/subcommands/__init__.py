@@ -1117,6 +1117,7 @@ def cmd_schedule_next(args: Namespace) -> int:
         claude_tasks_api=api,
         hook_log=hook_log,
         delay_minutes=args.delay_minutes,
+        extra_prompt=getattr(args, "extra_prompt", ""),
         telegram_chat_id=os.environ.get("EIGEN_TELEGRAM_CHAT_ID", ""),
         slack_webhook=os.environ.get("EIGEN_SLACK_WEBHOOK", ""),
         discord_webhook=os.environ.get("EIGEN_DISCORD_WEBHOOK", ""),
