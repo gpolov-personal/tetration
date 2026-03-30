@@ -139,14 +139,12 @@ After successfully generating outputs (Stage 2), run ALL of the following in a *
 eigen-squared init --initiative "<initiative name>" --phase-count <N>
 eigen-squared complete time_split --phase-count <N> --output-path phases/initiative_summary.json
 eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 **Iteration run** (no `init` needed):
 ```bash
 eigen-squared complete time_split --phase-count <N> --output-path phases/initiative_summary.json
 eigen-squared commit-state --message "pipeline: time_split — <phase_count> phases generated" --additional-paths eigen_initiative/phases/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart), phase initialization with all required keys.

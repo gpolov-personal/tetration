@@ -40,7 +40,8 @@ eigen-squared get-context deepen_time_split --json
 
 If the CLI exits with an error (non-zero), **STOP** and display the error message. The CLI handles all pre-flight checks (pipeline_state existence, time_split status, convergence guard, overwrite warnings, git sync).
 
-Otherwise parse the returned JSON:
+Otherwise parse the returned JSON.
+**Example response:**
 
 ```json
 {
@@ -95,24 +96,10 @@ eigen-squared complete deepen_time_split \
 # eigen-squared add-recommendation --from-cmd deepen_time_split --target <target_cmd> --text "<observation>"
 eigen-squared commit-state \
   --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
-  --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
+  --additional-paths eigen_initiative/phases/feedback/,eigen_initiative/eigen_lessons/time_split/
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (sets own to false, sets time_split's to false to signal fresh feedback).
-
-Commit all artifacts:
-
-```bash
-eigen-squared commit-state \
-  --message "pipeline: deepen_time_split — iteration <N>, <CONVERGED|CONTINUE>" \
-  --additional-paths eigen_initiative/phases/feedback/ eigen_initiative/eigen_lessons/time_split/
-if [ "$AUTOCHAIN" = "true" ]; then
-  eigen-squared schedule-next
-else
-  echo "AUTOCHAIN is not enabled — pipeline will NOT auto-schedule the next command. Run 'eigen-squared schedule-next' manually to continue."
-fi
-```
 
 ---
 
@@ -665,5 +652,5 @@ Next steps:
 
 ### Commit Pipeline Artifacts
 
-Execute the **On Exit** section above — it includes `commit-state` and `schedule-next`.
+Execute the **On Exit** section above — it includes `complete` and `commit-state`.
 
