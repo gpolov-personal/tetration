@@ -199,14 +199,39 @@ Do NOT update pipeline state. Exit.
    - If Phase N is the LAST phase → print the completion message
    - If more phases remain → print the continuation message
 
-3. Print (if more phases remain):
+3. **If `$HUMAN_SWARM_FALLBACK` is NOT `true`** (autonomous mode) — verify the watchdog cron is installed:
+   ```bash
+   crontab -l 2>/dev/null | grep "eigen-watchdog.*$EIGEN_ROOT"
+   ```
+   - If found → the watchdog will detect the approval and schedule the next phase automatically.
+   - If NOT found → warn and offer to install:
+     ```
+     WARNING: Watchdog cron not found. The next phase won't start automatically.
+     Install it with:
+       (crontab -l 2>/dev/null; echo "*/${WATCHDOG_INTERVAL:-10} * * * * ~/.local/bin/eigen-watchdog $EIGEN_ROOT >> $EIGEN_ROOT/.eigen/watchdog.log 2>&1") | crontab -
+     ```
+
+   **If `$HUMAN_SWARM_FALLBACK` is `true`** (manual mode) — skip the cron check.
+
+4. Print (if more phases remain):
+   If autonomous mode:
    ```
    === Phase <N> Approved — Continuing to Phase <N+1> ===
 
    Phase <N>: approved at <timestamp>
 
-   The watchdog will detect the phase approval and schedule the next phase automatically.
+   The watchdog will schedule the next phase automatically.
+   When Phase <N+1> finishes, run /eigen_continue again.
+   ```
 
+   If manual mode (`$HUMAN_SWARM_FALLBACK` is `true`):
+   ```
+   === Phase <N> Approved — Continuing to Phase <N+1> ===
+
+   Phase <N>: approved at <timestamp>
+
+   Run the next command manually:
+     eigen-squared status    (to see what's next)
    When Phase <N+1> finishes, run /eigen_continue again.
    ```
 
