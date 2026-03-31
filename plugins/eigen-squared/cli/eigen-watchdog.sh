@@ -10,6 +10,8 @@
 
 set -euo pipefail
 
+export PATH="$HOME/.local/bin:$PATH"
+
 PROJECT_ROOT="${1:-}"
 [ -z "$PROJECT_ROOT" ] && exit 1
 [ -d "$PROJECT_ROOT" ] || exit 1
