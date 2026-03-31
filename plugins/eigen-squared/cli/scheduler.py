@@ -202,7 +202,7 @@ def schedule_command(
     try:
         result = subprocess.run(
             [
-                "curl", "-s", "-X", "POST",
+                "curl", "-sf", "-X", "POST",
                 f"{claude_tasks_api}/api/v1/tasks",
                 "-H", "Content-Type: application/json",
                 "-d", json.dumps(payload),

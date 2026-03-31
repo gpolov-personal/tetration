@@ -560,25 +560,25 @@ test -x ~/.local/bin/eigen-watchdog && echo "eigen-watchdog installed" || echo "
 ### 7.3 Create `.eigen/` directory
 
 ```bash
-mkdir -p $EIGEN_ROOT/.eigen
+mkdir -p "$EIGEN_ROOT/.eigen"
 ```
 
 Create the env file (used by the watchdog cron — it sources this to get project config):
 ```bash
-cat > $EIGEN_ROOT/.eigen/env <<EOF
-EIGEN_ROOT=$EIGEN_ROOT
-EIGEN_BRANCH=$EIGEN_BRANCH
-CLAUDE_TASKS_API=${CLAUDE_TASKS_API:-}
-WORKERS_MODEL=${WORKERS_MODEL:-opus}
-HUMAN_SWARM_FALLBACK=${HUMAN_SWARM_FALLBACK:-false}
-WATCHDOG_INTERVAL=${WATCHDOG_INTERVAL:-10}
-EIGEN_TELEGRAM_CHAT_ID=${EIGEN_TELEGRAM_CHAT_ID:-}
+cat > "$EIGEN_ROOT/.eigen/env" <<EOF
+EIGEN_ROOT="$EIGEN_ROOT"
+EIGEN_BRANCH="$EIGEN_BRANCH"
+CLAUDE_TASKS_API="${CLAUDE_TASKS_API:-}"
+WORKERS_MODEL="${WORKERS_MODEL:-opus}"
+HUMAN_SWARM_FALLBACK="${HUMAN_SWARM_FALLBACK:-false}"
+WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-10}"
+EIGEN_TELEGRAM_CHAT_ID="${EIGEN_TELEGRAM_CHAT_ID:-}"
 EOF
 ```
 
 Add `.eigen/` to `.gitignore` if not already present:
 ```bash
-grep -qxF '.eigen/' $EIGEN_ROOT/.gitignore 2>/dev/null || echo '.eigen/' >> $EIGEN_ROOT/.gitignore
+grep -qxF '.eigen/' "$EIGEN_ROOT/.gitignore" 2>/dev/null || echo '.eigen/' >> "$EIGEN_ROOT/.gitignore"
 ```
 
 ### 7.4 Initialize pipeline state

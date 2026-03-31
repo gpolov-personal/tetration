@@ -31,6 +31,7 @@ from ..scheduler import (
     resolve_hook_log,
     schedule_command,
     COMMAND_TO_SKILL,
+    MAX_COMMAND_RETRIES,
 )
 from .. import git_ops
 
@@ -1103,7 +1104,14 @@ def cmd_schedule_next(args: Namespace) -> int:
 
     proceed, attempt = check_retry(command, context_key, hook_log)
     if not proceed:
-        return 0
+        if attempt > MAX_COMMAND_RETRIES:
+            print(
+                json.dumps({"status": "stalled", "command": command,
+                            "context_key": context_key, "attempt": attempt}),
+                file=sys.stderr,
+            )
+            return 2  # Distinct exit code: stalled
+        return 0  # Dedup — not an error
     context["_attempt"] = attempt
 
     api = os.environ.get("CLAUDE_TASKS_API", "")

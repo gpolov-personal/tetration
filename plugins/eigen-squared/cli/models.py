@@ -1,8 +1,8 @@
 """Typed data models for pipeline_state.json.
 
-These dataclasses enforce the schema that was previously documented only in
-prose in skills/pipeline-state-schema/SKILL.md. Every field has a typed
-default, so missing keys in JSON are filled automatically.
+These dataclasses are the single source of truth for the pipeline state schema.
+Every field has a typed default, so missing keys in JSON are filled automatically.
+Commands MUST use the CLI to read/write pipeline state — never manipulate the JSON directly.
 """
 
 from __future__ import annotations
