@@ -195,6 +195,24 @@ class TestConsecutiveScheduleFailures:
         assert consecutive_schedule_failures("bootstrap", "phase:P1", hook_log) == 1
         assert consecutive_schedule_failures("time_split", "initiative", hook_log) == 1
 
+    def test_stalled_entries_count_toward_failures(self, tmp_path):
+        """Stalled entries don't reset the counter — prevents infinite cycle."""
+        hook_log = tmp_path / "hook_log.jsonl"
+        lines = [
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t1"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t2"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "stalled", "timestamp": "t3"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t4"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t5"}),
+        ]
+        hook_log.write_text("\n".join(lines) + "\n")
+        assert consecutive_schedule_failures("bootstrap", "phase:P1", hook_log) == 5
+
     def test_schedule_failure_circuit_breaker(self, tmp_path):
         """After MAX_SCHEDULE_FAILURES consecutive failures, check_retry stalls."""
         hook_log = tmp_path / "hook_log.jsonl"
@@ -224,6 +242,32 @@ class TestConsecutiveScheduleFailures:
         proceed, attempt = check_retry("bootstrap", "phase:P1", hook_log)
         assert proceed is True
         assert attempt == 1
+
+
+class TestShellEscape:
+
+    def test_escapes_double_quotes(self):
+        from cli.subcommands import _shell_escape
+        assert _shell_escape('hello"world') == 'hello\\"world'
+
+    def test_escapes_dollar_sign(self):
+        from cli.subcommands import _shell_escape
+        assert _shell_escape("$(evil)") == "\\$(evil)"
+
+    def test_escapes_backticks(self):
+        from cli.subcommands import _shell_escape
+        assert _shell_escape("`evil`") == "\\`evil\\`"
+
+    def test_escapes_backslashes(self):
+        from cli.subcommands import _shell_escape
+        assert _shell_escape("a\\b") == "a\\\\b"
+
+    def test_combined_injection_attempt(self):
+        from cli.subcommands import _shell_escape
+        malicious = 'http://host"; curl evil.com #'
+        escaped = _shell_escape(malicious)
+        assert '"' not in escaped.replace('\\"', '')
+        assert escaped == 'http://host\\"; curl evil.com #'
 
 
 class TestLogEntry:

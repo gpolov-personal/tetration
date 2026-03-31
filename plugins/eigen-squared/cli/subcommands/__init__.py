@@ -37,6 +37,11 @@ from ..scheduler import (
 from .. import git_ops
 
 
+def _shell_escape(val: str) -> str:
+    """Escape a value for safe inclusion in a double-quoted shell string."""
+    return val.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+
+
 def _eigen_root() -> str:
     return os.environ.get("EIGEN_ROOT", "")
 
@@ -1174,7 +1179,7 @@ def cmd_write_env(args: Namespace) -> int:
     # Build env lines from settings.json env block (same format as cmd_install)
     env_lines = []
     for key, val in env_vars.items():
-        env_lines.append(f'export {key}="{val}"')
+        env_lines.append(f'export {key}="{_shell_escape(str(val))}"')
 
     env_path = Path(root) / ".eigen" / "env"
     env_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1192,16 +1197,16 @@ def cmd_install(args: Namespace) -> int:
 
     # Write env file
     env_lines = [
-        f'export EIGEN_ROOT="{root}"',
-        f'export EIGEN_BRANCH="{args.branch}"',
-        f'export CLAUDE_TASKS_API="{args.tasks_api}"',
+        f'export EIGEN_ROOT="{_shell_escape(str(root))}"',
+        f'export EIGEN_BRANCH="{_shell_escape(args.branch)}"',
+        f'export CLAUDE_TASKS_API="{_shell_escape(args.tasks_api)}"',
     ]
     if args.telegram:
-        env_lines.append(f'export EIGEN_TELEGRAM_CHAT_ID="{args.telegram}"')
+        env_lines.append(f'export EIGEN_TELEGRAM_CHAT_ID="{_shell_escape(args.telegram)}"')
     if args.slack:
-        env_lines.append(f'export EIGEN_SLACK_WEBHOOK="{args.slack}"')
+        env_lines.append(f'export EIGEN_SLACK_WEBHOOK="{_shell_escape(args.slack)}"')
     if args.discord:
-        env_lines.append(f'export EIGEN_DISCORD_WEBHOOK="{args.discord}"')
+        env_lines.append(f'export EIGEN_DISCORD_WEBHOOK="{_shell_escape(args.discord)}"')
     env_file = eigen_dir / "env"
     env_file.write_text("\n".join(env_lines) + "\n")
     os.chmod(str(env_file), 0o600)

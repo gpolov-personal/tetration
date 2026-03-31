@@ -60,14 +60,13 @@ fi
 
 # 2. What's next? (HIGH-1, HIGH-2)
 NEXT_ERR=$(mktemp)
-NEXT_JSON=$(eigen-squared next --json 2>"$NEXT_ERR")
-NEXT_EXIT=$?
+trap 'rm -f "$NEXT_ERR"' EXIT
+NEXT_EXIT=0
+NEXT_JSON=$(eigen-squared next --json 2>"$NEXT_ERR") || NEXT_EXIT=$?
 if [ $NEXT_EXIT -ne 0 ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: eigen-squared next failed (exit $NEXT_EXIT): $(cat "$NEXT_ERR")"
-    rm -f "$NEXT_ERR"
     exit 1
 fi
-rm -f "$NEXT_ERR"
 
 EXPECTED_NAME=$(echo "$NEXT_JSON" | EIGEN_ROOT="$EIGEN_ROOT" python3 -c "
 import sys, json
@@ -110,13 +109,12 @@ IS_RETRY=false
 [ "$LAST_TASK_NAME" = "$EXPECTED_NAME" ] && IS_RETRY=true
 
 # 4. Schedule (HIGH-4)
+EXIT_CODE=0
 if [ "$IS_RETRY" = true ]; then
     echo "[$(date -u +%FT%TZ)] INFO: retry detected for $EXPECTED_NAME (last task name matches)"
-    eigen-squared schedule-next --extra-prompt "WARNING: This is a RE-RUN. The previous execution of this command failed or timed out. Before modifying any files: (1) read your working notes if they exist, (2) check git status for partial changes, (3) verify pipeline state. Proceed carefully."
-    EXIT_CODE=$?
+    eigen-squared schedule-next --extra-prompt "WARNING: This is a RE-RUN. The previous execution of this command failed or timed out. Before modifying any files: (1) read your working notes if they exist, (2) check git status for partial changes, (3) verify pipeline state. Proceed carefully." || EXIT_CODE=$?
 else
-    eigen-squared schedule-next
-    EXIT_CODE=$?
+    eigen-squared schedule-next || EXIT_CODE=$?
 fi
 
 if [ $EXIT_CODE -eq 2 ]; then

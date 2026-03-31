@@ -101,7 +101,7 @@ def consecutive_schedule_failures(
                 continue
             if entry.get("command") != command or entry.get("context_key") != context_key:
                 continue
-            if entry.get("status") == "failed":
+            if entry.get("status") in ("failed", "stalled"):
                 count += 1
             else:
                 break
