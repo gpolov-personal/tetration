@@ -21,11 +21,20 @@ flock -n 9 || exit 0
 
 # Load project env (created by /eigen_start)
 ENV_FILE="$PROJECT_ROOT/.eigen/env"
-[ -f "$ENV_FILE" ] || exit 1
+if [ ! -f "$ENV_FILE" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: env file not found at $ENV_FILE — run 'eigen-squared write-env' or re-run /eigen_start"
+    exit 1
+fi
 source "$ENV_FILE"
 
-[ -z "$EIGEN_ROOT" ] && exit 1
-[ -z "$CLAUDE_TASKS_API" ] && exit 1
+if [ -z "$EIGEN_ROOT" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: EIGEN_ROOT is empty in $ENV_FILE"
+    exit 1
+fi
+if [ -z "$CLAUDE_TASKS_API" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: CLAUDE_TASKS_API is empty in $ENV_FILE"
+    exit 1
+fi
 
 # Warn if env file is older than settings.json (MEDIUM-9)
 SETTINGS="$PROJECT_ROOT/.claude/settings.json"
