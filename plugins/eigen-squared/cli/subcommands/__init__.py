@@ -31,8 +31,15 @@ from ..scheduler import (
     resolve_hook_log,
     schedule_command,
     COMMAND_TO_SKILL,
+    MAX_COMMAND_RETRIES,
+    MAX_SCHEDULE_FAILURES,
 )
 from .. import git_ops
+
+
+def _shell_escape(val: str) -> str:
+    """Escape a value for safe inclusion in a double-quoted shell string."""
+    return val.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
 
 
 def _eigen_root() -> str:
@@ -104,6 +111,7 @@ def dispatch(args: Namespace) -> int:
         "schedule-next": cmd_schedule_next,
         "validate": cmd_validate,
         "install": cmd_install,
+        "write-env": cmd_write_env,
     }
     handler = handlers.get(args.command)
     if not handler:
@@ -1103,7 +1111,14 @@ def cmd_schedule_next(args: Namespace) -> int:
 
     proceed, attempt = check_retry(command, context_key, hook_log)
     if not proceed:
-        return 0
+        if attempt > MAX_COMMAND_RETRIES:
+            print(
+                json.dumps({"status": "stalled", "command": command,
+                            "context_key": context_key, "attempt": attempt}),
+                file=sys.stderr,
+            )
+            return 2  # Distinct exit code: stalled
+        return 0  # Dedup — not an error
     context["_attempt"] = attempt
 
     api = os.environ.get("CLAUDE_TASKS_API", "")
@@ -1117,6 +1132,7 @@ def cmd_schedule_next(args: Namespace) -> int:
         claude_tasks_api=api,
         hook_log=hook_log,
         delay_minutes=args.delay_minutes,
+        extra_prompt=getattr(args, "extra_prompt", ""),
         telegram_chat_id=os.environ.get("EIGEN_TELEGRAM_CHAT_ID", ""),
         slack_webhook=os.environ.get("EIGEN_SLACK_WEBHOOK", ""),
         discord_webhook=os.environ.get("EIGEN_DISCORD_WEBHOOK", ""),
@@ -1140,6 +1156,40 @@ def cmd_validate(args: Namespace) -> int:
     return 1
 
 
+def cmd_write_env(args: Namespace) -> int:
+    """Regenerate .eigen/env from .claude/settings.json."""
+    root = _eigen_root()
+    if not root:
+        print("ERROR: EIGEN_ROOT not set", file=sys.stderr)
+        return 1
+
+    settings_path = Path(root) / ".claude" / "settings.json"
+    if not settings_path.exists():
+        print(f"ERROR: {settings_path} not found", file=sys.stderr)
+        return 1
+
+    try:
+        settings = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"ERROR: Failed to read settings: {e}", file=sys.stderr)
+        return 1
+
+    env_vars = settings.get("env", {})
+
+    # Build env lines from settings.json env block (same format as cmd_install)
+    env_lines = []
+    for key, val in env_vars.items():
+        env_lines.append(f'export {key}="{_shell_escape(str(val))}"')
+
+    env_path = Path(root) / ".eigen" / "env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("\n".join(env_lines) + "\n")
+    os.chmod(str(env_path), 0o600)
+
+    print(json.dumps({"status": "written", "path": str(env_path), "keys": list(env_vars.keys())}))
+    return 0
+
+
 def cmd_install(args: Namespace) -> int:
     root = Path(args.root)
     eigen_dir = root / ".eigen"
@@ -1147,17 +1197,19 @@ def cmd_install(args: Namespace) -> int:
 
     # Write env file
     env_lines = [
-        f'export EIGEN_ROOT="{root}"',
-        f'export EIGEN_BRANCH="{args.branch}"',
-        f'export CLAUDE_TASKS_API="{args.tasks_api}"',
+        f'export EIGEN_ROOT="{_shell_escape(str(root))}"',
+        f'export EIGEN_BRANCH="{_shell_escape(args.branch)}"',
+        f'export CLAUDE_TASKS_API="{_shell_escape(args.tasks_api)}"',
     ]
     if args.telegram:
-        env_lines.append(f'export EIGEN_TELEGRAM_CHAT_ID="{args.telegram}"')
+        env_lines.append(f'export EIGEN_TELEGRAM_CHAT_ID="{_shell_escape(args.telegram)}"')
     if args.slack:
-        env_lines.append(f'export EIGEN_SLACK_WEBHOOK="{args.slack}"')
+        env_lines.append(f'export EIGEN_SLACK_WEBHOOK="{_shell_escape(args.slack)}"')
     if args.discord:
-        env_lines.append(f'export EIGEN_DISCORD_WEBHOOK="{args.discord}"')
-    (eigen_dir / "env").write_text("\n".join(env_lines) + "\n")
+        env_lines.append(f'export EIGEN_DISCORD_WEBHOOK="{_shell_escape(args.discord)}"')
+    env_file = eigen_dir / "env"
+    env_file.write_text("\n".join(env_lines) + "\n")
+    os.chmod(str(env_file), 0o600)
 
     # Add .eigen/ to .gitignore
     gitignore = root / ".gitignore"

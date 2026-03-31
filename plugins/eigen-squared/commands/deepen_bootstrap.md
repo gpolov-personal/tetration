@@ -39,7 +39,7 @@ Before starting, confirm:
 eigen-squared get-context deepen_bootstrap --json
 ```
 
-If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON:
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON. Example below:
 
 ```json
 {
@@ -90,7 +90,6 @@ eigen-squared complete deepen_bootstrap --phase <phase> --feedback-path <path> -
 # eigen-squared mark-converged bootstrap --phase <phase> --reason "..."
 # eigen-squared add-recommendation --from-cmd deepen_bootstrap --target <target> --iteration <main_command_iteration> --text "..."
 eigen-squared commit-state --message "pipeline: deepen_bootstrap phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/bootstrap/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ---

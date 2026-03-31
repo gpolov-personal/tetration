@@ -37,7 +37,7 @@ Epics within a phase execute **sequentially** (E1 fully done, then E2, then E3..
 
 ## Prerequisites
 
-### claude-tasks
+### claude-tasks (autonomous mode only)
 
 The autonomous pipeline requires [claude-tasks](https://github.com/anthropics/claude-code) — a task scheduling server that runs Claude Code sessions on a schedule or in response to events.
 
@@ -46,7 +46,9 @@ The autonomous pipeline requires [claude-tasks](https://github.com/anthropics/cl
 claude-tasks serve
 ```
 
-Each command calls `eigen-squared schedule-next` at the end of its On Exit to chain the next command.
+A cron-based watchdog (`eigen-watchdog`) polls every N minutes, checks if anything is running, and schedules the next command via claude-tasks. Commands do NOT schedule their successors — the watchdog handles all scheduling.
+
+In manual mode, claude-tasks is not required.
 
 ### Claude Code with agent teams
 
@@ -80,12 +82,32 @@ claude
 
 `eigen_start` is interactive. It:
 1. Configures environment variables in `.claude/settings.json`
-2. Verifies claude-tasks is running
-3. Checks initiative documents exist
-4. Installs the `eigen-squared` CLI globally (`~/.local/bin/eigen-squared`) — a small wrapper that sets PYTHONPATH to the plugin cache and calls `python3 -m cli`
-5. Initializes pipeline state
+2. Asks for pipeline mode (autonomous or manual)
+3. If autonomous: verifies claude-tasks, asks for watchdog interval
+4. Checks initiative documents exist
+5. Installs the `eigen-squared` CLI globally (`~/.local/bin/eigen-squared`)
+6. If autonomous: installs `eigen-watchdog` and the cron job
+7. Initializes pipeline state
 
-Each command calls `eigen-squared schedule-next` at the end of its On Exit to chain the next command. From `time_split` onward, the pipeline runs autonomously until a phase completes.
+In autonomous mode, the watchdog detects the pending `time_split` and schedules it within the configured interval. From there, the pipeline runs itself until a phase completes.
+
+In manual mode, run `/time_split` to begin, then check `eigen-squared status` after each command.
+
+## Pipeline modes
+
+### Autonomous mode (`HUMAN_SWARM_FALLBACK=false`, default)
+
+- A cron watchdog (`eigen-watchdog`) runs every N minutes (default: 10)
+- It checks claude-tasks for running tasks, and schedules the next command if nothing is running
+- The orchestrate_swarm makes autonomous decisions at escalation points and documents them in `[DECISION-AUTONOMOUS]` tasks
+- The pipeline stops at phase boundaries for human review (`/eigen_continue`)
+
+### Manual mode (`HUMAN_SWARM_FALLBACK=true`)
+
+- No cron, no claude-tasks required
+- You trigger each command manually
+- The orchestrate_swarm can escalate ambiguous decisions to you interactively
+- Check what's next: `eigen-squared status`
 
 ## Pipeline state management
 
@@ -113,7 +135,7 @@ eigen-squared commit-state --message "pipeline: bootstrap phase 1" --additional-
 eigen-squared status
 ```
 
-The CLI eliminates the class of bugs where an LLM misinterprets JSON schema or forgets to update a cross-flag. Every state transition is deterministic Python code with 91 tests.
+The CLI eliminates the class of bugs where an LLM misinterprets JSON schema or forgets to update a cross-flag. Every state transition is deterministic Python code with 98 tests.
 
 ### How commands use the CLI
 
@@ -133,16 +155,28 @@ On Exit:
   eigen-squared complete <command> --phase N [flags]
   eigen-squared commit-state --message "..." --additional-paths ...
   → CLI handles all bookkeeping: status, iteration, timestamps, feedback flags
+  → The watchdog detects the state change and schedules the next command
 ```
 
 ### Convergence loops
 
 Main commands (time_split, bootstrap, space_split, plan_epic_converge) produce output. Deepen commands review it with parallel agents and decide:
 
-- **Continue**: Write feedback file, signal fresh feedback available. The CLI schedules the main command to iterate.
-- **Converge**: Set convergence flag, optionally write downstream recommendations. The CLI advances to the next stage.
+- **Continue**: Write feedback file, signal fresh feedback available. The watchdog schedules the main command to iterate.
+- **Converge**: Set convergence flag, optionally write downstream recommendations. The watchdog advances to the next stage.
 
 The feedback lifecycle is managed entirely by the CLI — `complete` for a main command sets `feedback_consumed=true` on both itself and its deepen counterpart. `complete` for a deepen command sets `feedback_consumed=false` to signal fresh feedback. This cross-flag handshake was the #1 source of bugs before the CLI.
+
+### Watchdog scheduling
+
+In autonomous mode, a cron job runs `eigen-watchdog $EIGEN_ROOT` every N minutes:
+
+1. **Check**: Is anything running for this project? (queries claude-tasks API)
+2. **Decide**: What's next? (calls `eigen-squared next`)
+3. **Detect retry**: Is this the same command that just ran? (compares with last task in claude-tasks)
+4. **Schedule**: Calls `eigen-squared schedule-next` — with a re-run warning in the prompt if retry detected
+
+Commands do NOT schedule their successors. This eliminates the class of bugs where the LLM skips `schedule-next`, calls it twice, or the env var check fails silently.
 
 ## Pipeline stages
 
@@ -168,7 +202,7 @@ One-shot command (no deepen counterpart). Transforms the converged plan into tas
 
 ### Stage 6: orchestrate_swarm (per epic)
 
-The swarm leader. Spawns parallel agent teammates (workers), each implementing a task via TDD (design tests → write code → verify). Manages waves, handles blockers, coordinates shared files, creates the PR.
+The swarm leader. Spawns parallel agent teammates (workers), each implementing a task via TDD (design tests → write code → verify). Manages waves, handles blockers, coordinates shared files, creates the PR. Operates autonomously by default — documents decisions in `[DECISION-AUTONOMOUS]` tasks. If `$HUMAN_SWARM_FALLBACK` is `true`, can escalate to the user instead.
 
 ### Stage 7: review_swarm_pr (per epic)
 
@@ -176,7 +210,7 @@ Scope-aware code review with parallel review agents (security, architecture, sim
 
 ### Human checkpoint: eigen_continue
 
-After all epics in a phase converge (including E2E Testing), the pipeline stops. `eigen_continue` presents what was built, generates a testing recipe, and waits for human confirmation. After approval, the next phase begins.
+After all epics in a phase converge (including E2E Testing), the pipeline stops. `eigen_continue` presents what was built, generates a testing recipe, and waits for human confirmation. After approval, the watchdog resumes the next phase (or the user runs the next command in manual mode).
 
 ## File structure
 
@@ -213,6 +247,7 @@ $EIGEN_ROOT/
   .eigen/
     env                               # Pipeline environment variables
     hook_log.jsonl                    # Scheduler execution log
+    watchdog.log                      # Watchdog cron output
 ```
 
 ## CLI reference
@@ -251,8 +286,23 @@ $EIGEN_ROOT/
 
 | Command | Purpose |
 |---------|---------|
-| `eigen-squared schedule-next [--delay-minutes <N>]` | Called by every command's On Exit to chain the next command via claude-tasks |
-| `eigen-squared install --root <p> --branch <b> --tasks-api <u>` | Install pipeline environment in project |
+| `eigen-squared schedule-next [--delay-minutes <N>] [--extra-prompt <text>]` | Schedule next command via claude-tasks (called by watchdog, not by commands) |
+
+### Watchdog management
+
+```bash
+# View cron
+crontab -l | grep eigen-watchdog
+
+# Pause watchdog for a project
+crontab -l | grep -v "eigen-watchdog.*/path/to/project" | crontab -
+
+# Resume watchdog
+(crontab -l 2>/dev/null; echo "*/10 * * * * ~/.local/bin/eigen-watchdog /path/to/project >> /path/to/project/.eigen/watchdog.log 2>&1") | crontab -
+
+# Run watchdog manually (one-shot)
+eigen-watchdog /path/to/project
+```
 
 ## Notifications
 
@@ -261,7 +311,7 @@ The pipeline supports optional notifications via:
 - **Slack**: Set `EIGEN_SLACK_WEBHOOK`
 - **Discord**: Set `EIGEN_DISCORD_WEBHOOK`
 
-Configure the notification channel in claude-tasks, then set the env var. The hook passes it through to the scheduling API.
+Configure the notification channel in claude-tasks, then set the env var. The watchdog passes it through to the scheduling API.
 
 ## Development
 
@@ -272,24 +322,24 @@ cd plugins/eigen-squared
 python -m pytest cli/tests/ -v
 ```
 
-91 tests covering: state transitions, convergence pairs, swarm state machine, model serialization, backward compatibility, epic manifest loading, and a full multi-phase pipeline walk.
+98 tests covering: state transitions, convergence pairs, swarm state machine, model serialization, backward compatibility, epic manifest loading, scheduler dedup logic, and a full multi-phase pipeline walk.
 
 ### Plugin structure
 
 ```
 plugins/eigen-squared/
-  .claude-plugin/plugin.json    # Plugin metadata (v2.0.0)
+  .claude-plugin/plugin.json    # Plugin metadata (v3.1.0)
   cli/                          # Python CLI (the brain)
     models.py                   # Typed dataclasses for pipeline state
     state.py                    # Load/save/validate JSON
     transitions.py              # Pipeline state machine (determine_next)
     epic_manifest.py            # Sequential epic ordering
-    scheduler.py                # claude-tasks API scheduling
+    scheduler.py                # claude-tasks API scheduling + dedup
     git_ops.py                  # Git sync/commit/branch operations
     main.py                     # Argparse dispatch (20 subcommands)
+    eigen-watchdog.sh           # Cron-based pipeline scheduler
     subcommands/                # All subcommand implementations
-    tests/                      # 91 tests
+    tests/                      # 98 tests
   commands/                     # Pipeline command prompts (13 commands)
-  hooks/                        # (reserved)
   skills/                       # Supporting skills (language-profiles, etc.)
 ```

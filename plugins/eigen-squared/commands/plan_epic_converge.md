@@ -82,7 +82,7 @@ The epic file (`epic.md`) must exist and contain features, blackbox specs, valid
 eigen-squared get-context plan_epic_converge --json
 ```
 
-If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON:
+If the CLI exits with an error (non-zero), STOP and display the error message. Otherwise parse the returned JSON. Example below:
 
 ```json
 {
@@ -113,7 +113,6 @@ eigen-squared complete plan_epic_converge --phase <N> --epic <M> --plan-file pha
 eigen-squared mark-converged plan_epic_converge --phase <N> --epic <M> --reason "<convergence rationale>"
 eigen-squared add-recommendation --from-cmd plan_epic_converge --target create_issues_from_plan_swarm --iteration <N> --text "<observation>"
 eigen-squared commit-state --message "pipeline: plan P<N>.E<M> — converged" --additional-paths eigen_initiative/phases/phase_<N>/epic_<M>/,eigen_initiative/eigen_lessons/plan_epic_converge/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 The `add-recommendation` command is OPTIONAL — only execute it if there are genuine downstream insights from the convergence process. Maximum 5 recommendations per target command. Write observations and implications, NOT action items.
@@ -848,7 +847,7 @@ Skipped: <M> duplicates of existing lessons
 
 ### 7.4 Execute On Exit Commands
 
-Execute the **On Exit** section above. It contains the single authoritative code block with all CLI calls in order: `complete`, `mark-converged`, `add-recommendation` (optional, max 5), `commit-state`, and `schedule-next`. Do NOT run these commands individually — run the On Exit code block once.
+Execute the **On Exit** section above. It contains the single authoritative code block with all CLI calls in order: `complete`, `mark-converged`, `add-recommendation` (optional, max 5), and `commit-state`. Do NOT run these commands individually — run the On Exit code block once.
 
 ### 7.5 Team Shutdown
 
@@ -886,8 +885,6 @@ Findings:
 
 Lessons: <N> new lessons written
 Feedback: $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json
-
-Next: if AUTOCHAIN=true, eigen-squared schedule-next will route to create_issues_from_plan_swarm
 ```
 
 ---

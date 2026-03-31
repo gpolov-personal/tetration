@@ -42,7 +42,7 @@ eigen-squared get-context deepen_space_split --json
 
 If the CLI exits with an error (non-zero), **STOP** and display the error message. The CLI handles all pre-flight checks (pipeline_state existence, space_split status, convergence guard, overwrite warnings, git sync).
 
-Otherwise parse the returned JSON:
+Otherwise parse the returned JSON. Example below:
 
 ```json
 {
@@ -97,7 +97,6 @@ eigen-squared complete deepen_space_split \
 eigen-squared commit-state \
   --message "pipeline: deepen_space_split phase <phase> — iteration <N>, <CONVERGED|CONTINUE>" \
   --additional-paths eigen_initiative/phases/phase_<phase>/feedback/,eigen_initiative/eigen_lessons/space_split/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 ---

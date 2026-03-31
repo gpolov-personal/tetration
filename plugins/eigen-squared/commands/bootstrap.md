@@ -106,7 +106,7 @@ Run the CLI to get pipeline context:
 eigen-squared get-context bootstrap --json
 ```
 
-If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON:
+If the CLI exits with an error (non-zero), **STOP** and display the error message. Otherwise parse the returned JSON. Example below:
 
 ```json
 {
@@ -142,7 +142,6 @@ If the CLI exits with an error (non-zero), **STOP** and display the error messag
 ```bash
 eigen-squared complete bootstrap --phase <phase> --output-path phases/phase_<phase>/bootstrap-report.json
 eigen-squared commit-state --message "pipeline: bootstrap phase <phase> — foundation created" --additional-paths eigen_initiative/phases/phase_<phase>/
-[ "$AUTOCHAIN" = "true" ] && eigen-squared schedule-next
 ```
 
 The CLI handles all field updates atomically: status, iteration, timestamps, feedback_consumed flags (both own and deepen counterpart).
@@ -609,4 +608,4 @@ Next steps:
 
 ### 5.3 Commit Pipeline Artifacts
 
-Execute the **On Exit** section above — it handles `complete`, `commit-state`, and `schedule-next`.
+Execute the **On Exit** section above — it handles `complete` and `commit-state`.

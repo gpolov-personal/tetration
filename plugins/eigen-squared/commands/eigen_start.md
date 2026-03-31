@@ -10,8 +10,8 @@ description: ONE-TIME launcher — validate environment and kick off a fresh eig
 ```
 eigen_start (you are here)
     │
-    ▼ [if AUTOCHAIN=true: eigen-squared schedule-next chains commands automatically]
-    │ [if AUTOCHAIN=false: user runs each command manually]
+    ▼ [autonomous mode: cron watchdog schedules commands automatically]
+    │ [manual mode: user runs each command by hand]
     │
     ▼
 time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
@@ -19,11 +19,11 @@ space_split ↔ deepen_space_split → [per epic: plan → create → orchestrat
 STOP at E2E Testing epic convergence
 ```
 
-This is the **ONE-TIME interactive launcher**. It validates the environment, collects configuration from the user, initializes `pipeline_state.json` via the `eigen-squared` CLI, and optionally schedules the first command. When `AUTOCHAIN=true`, the pipeline runs autonomously after this. When `AUTOCHAIN=false`, the user triggers each command manually. You never run `/eigen_start` again for this pipeline.
+This is the **ONE-TIME interactive launcher**. It validates the environment, collects configuration from the user, initializes `pipeline_state.json` via the `eigen-squared` CLI, and optionally installs the watchdog cron for autonomous execution. You never run `/eigen_start` again for this pipeline.
 
 ## Your Role
 
-You are a **ONE-TIME pipeline launcher**. You validate that everything is ready — environment variables, claude-tasks server, initiative documents, agent teams — and then initialize state and optionally schedule the first command for a **fresh** pipeline. In autonomous mode (`AUTOCHAIN=true`), the pipeline runs itself until a phase is complete. In manual mode, the user triggers each command.
+You are a **ONE-TIME pipeline launcher**. You validate that everything is ready — environment variables, initiative documents, agent teams — then initialize state and optionally set up autonomous scheduling. In autonomous mode, a cron watchdog polls and schedules commands automatically. In manual mode, the user triggers each command.
 
 This command is for **brand new pipelines ONLY**. If the pipeline has already started, use `/eigen_continue` instead.
 
@@ -33,7 +33,7 @@ This is an **interactive command** — it asks the user for configuration values
 
 ## Flag: `--reinstall-cli-only`
 
-If the user invokes this command with `--reinstall-cli-only` (e.g., `/eigen_start --reinstall-cli-only`), **skip ALL steps** and jump directly to **Step 7.1** (Install the `eigen-squared` CLI globally). After completing Step 7.1, print the installed version and **STOP** — do not run Steps 7.2–7.5 or any other step.
+If the user invokes this command with `--reinstall-cli-only` (e.g., `/eigen_start --reinstall-cli-only`), **skip ALL steps** and jump directly to **Step 7.1** (Install the `eigen-squared` CLI globally). After completing Step 7.1, print the installed version and **STOP** — do not run Steps 7.2–7.6 or any other step.
 
 This allows updating the CLI wrapper after a plugin version change without requiring a fresh pipeline.
 
@@ -45,7 +45,7 @@ The eigen-squared pipeline requires these env vars to be set in the project's `.
 
 ### 1.1 Check for Shell-Only Variables (ERROR condition)
 
-Check if `EIGEN_ROOT`, `EIGEN_BRANCH`, `CLAUDE_TASKS_API`, `AUTOCHAIN`, or `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` are set in the current environment BUT do NOT exist in `.claude/settings.json`:
+Check if `EIGEN_ROOT`, `EIGEN_BRANCH`, `CLAUDE_TASKS_API`, or `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` are set in the current environment BUT do NOT exist in `.claude/settings.json`:
 
 ```bash
 # Check if settings.json exists and has env block
@@ -62,7 +62,7 @@ The eigen-squared pipeline requires env vars to be set ONLY in the
 project's .claude/settings.json so each project is isolated.
 
 Please unset these shell variables and run /eigen_start again:
-  unset EIGEN_ROOT EIGEN_BRANCH CLAUDE_TASKS_API AUTOCHAIN CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+  unset EIGEN_ROOT EIGEN_BRANCH CLAUDE_TASKS_API CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
 
 /eigen_start will help you set them up in .claude/settings.json.
 ```
@@ -74,11 +74,13 @@ Please unset these shell variables and run /eigen_start again:
 Verify all required vars:
 - `$EIGEN_ROOT` is set and points to an existing directory
 - `$EIGEN_BRANCH` is set and non-empty
-- `$CLAUDE_TASKS_API` is set and non-empty
-- `$AUTOCHAIN` is set (either `"true"` or `"false"`)
 - `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is `"1"`
 
-If ALL present and valid → proceed to Step 2.
+Optional vars (may or may not be present yet):
+- `$CLAUDE_TASKS_API` — required only for autonomous mode
+- `$HUMAN_SWARM_FALLBACK` — determines mode
+
+If required vars present and valid → proceed to Step 2.
 
 If some are missing or invalid → ask the user for the missing values (same flow as 1.3).
 
@@ -137,7 +139,29 @@ Would you like to:
 
 **If the branch exists** → proceed.
 
-**CLAUDE_TASKS_API:**
+**HUMAN_SWARM_FALLBACK (mode selection):**
+```
+How do you want to run the pipeline?
+
+  1. Autonomous (recommended) — a cron watchdog schedules commands
+     automatically. The pipeline runs unattended. The orchestrate_swarm
+     makes autonomous decisions and documents them in
+     [DECISION-AUTONOMOUS] tasks for your review in the PR.
+     Requires: claude-tasks server running.
+
+  2. Manual — you trigger each command yourself. The orchestrate_swarm
+     can escalate ambiguous decisions to you interactively.
+     Does not require claude-tasks.
+
+Choose mode (1/2, default: 1):
+```
+
+- **"1"** or Enter → `HUMAN_SWARM_FALLBACK=false` (autonomous)
+- **"2"** → `HUMAN_SWARM_FALLBACK=true` (manual)
+
+**CLAUDE_TASKS_API (only if autonomous mode):**
+
+If `HUMAN_SWARM_FALLBACK=false`:
 ```
 What is the claude-tasks API URL?
 (The server must be running in serve mode)
@@ -146,22 +170,25 @@ Default: http://localhost:8080
 Press Enter for default, or enter a custom URL:
 ```
 
-**AUTOCHAIN:**
+If `HUMAN_SWARM_FALLBACK=true`: set `CLAUDE_TASKS_API=""` (not needed).
+
+**WATCHDOG_INTERVAL (only if autonomous mode):**
+
+If `HUMAN_SWARM_FALLBACK=false`:
 ```
-Enable autonomous pipeline execution?
+How often should the watchdog check for work? (in minutes)
 
-When AUTOCHAIN=true, each command automatically schedules the next one
-via claude-tasks. The pipeline runs unattended until a phase completes.
+This is the interval between checks. A shorter interval means
+commands start sooner after the previous one finishes, but adds
+more cron overhead. 10 minutes is a good tradeoff.
 
-When AUTOCHAIN=false, the pipeline initializes but you trigger each
-command manually. You can always run 'eigen-squared schedule-next'
-by hand, or enable AUTOCHAIN later in .claude/settings.json.
-
-Enable autonomous mode? (yes/no, default: yes):
+Default: 10
+Enter interval in minutes (or press Enter for 10):
 ```
 
-- **"yes"** or Enter → `AUTOCHAIN=true`
-- **"no"** → `AUTOCHAIN=false`
+Store as `WATCHDOG_INTERVAL`. Default: `10`.
+
+If `HUMAN_SWARM_FALLBACK=true`: skip this question.
 
 **WORKERS_MODEL (optional):**
 ```
@@ -211,8 +238,10 @@ Write the file:
   "env": {
     "EIGEN_ROOT": "<user's value>",
     "EIGEN_BRANCH": "<user's value>",
-    "CLAUDE_TASKS_API": "<user's value>",
-    "AUTOCHAIN": "<true or false>",
+    "CLAUDE_TASKS_API": "<user's value or empty>",
+    "WORKERS_MODEL": "<user's value or opus>",
+    "HUMAN_SWARM_FALLBACK": "<true or false>",
+    "WATCHDOG_INTERVAL": "<user's value or 10>",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "EIGEN_TELEGRAM_CHAT_ID": "<user's value or empty string>",
     "teammateMode": "tmux"
@@ -239,7 +268,9 @@ The settings will be loaded automatically on restart.
 
 ---
 
-## Step 2: Verify claude-tasks is Running
+## Step 2: Verify claude-tasks is Running (autonomous mode only)
+
+**If `$HUMAN_SWARM_FALLBACK` is `true`** → skip this step entirely (manual mode, claude-tasks not needed).
 
 ```bash
 curl -s $CLAUDE_TASKS_API/api/v1/health
@@ -247,27 +278,20 @@ curl -s $CLAUDE_TASKS_API/api/v1/health
 
 **If the health check succeeds** → Print: `claude-tasks: healthy at $CLAUDE_TASKS_API` and continue.
 
-**If the health check fails AND `AUTOCHAIN=true`** → **STOP.** Print:
+**If the health check fails** → **STOP.** Print:
 ```
 ERROR: claude-tasks is not responding at $CLAUDE_TASKS_API
 
-Autonomous mode (AUTOCHAIN=true) requires claude-tasks to be running.
+Autonomous mode requires claude-tasks to be running (the watchdog
+schedules commands through it).
+
 Start it in a separate terminal:
   claude-tasks serve
 
 Make sure it's running before re-running /eigen_start.
-```
 
-**If the health check fails AND `AUTOCHAIN=false`** → **WARNING**, continue:
-```
-WARNING: claude-tasks is not responding at $CLAUDE_TASKS_API
-
-This is not blocking because AUTOCHAIN=false (manual mode).
-However, you will need claude-tasks running if you later run
-'eigen-squared schedule-next' manually or enable AUTOCHAIN.
-
-Start it when ready:
-  claude-tasks serve
+If you want to run in manual mode instead, re-run /eigen_start
+and choose option 2 (Manual).
 ```
 
 ---
@@ -353,32 +377,7 @@ test -f $EIGEN_ROOT/eigen_initiative/phases/pipeline_state.json && echo "EXISTS"
 
 ---
 
-## Step 5: Ask When to Start (AUTOCHAIN=true only)
-
-**If `AUTOCHAIN=false`** → skip this step entirely. The user will trigger commands manually.
-
-**If `AUTOCHAIN=true`** → ask:
-
-```
-When should the pipeline start?
-
-Options:
-  1. Now (starts in 1 minute)
-  2. In N minutes (e.g., "in 30 minutes", "in 2 hours")
-  3. At a specific time (e.g., "2026-03-17T15:00:00", "today at 3pm", "tomorrow at 9am")
-```
-
-Parse the user's response:
-
-- **"now"** or **option 1** → `scheduled_at` = 1 minute from now
-- **"in N minutes"** or **"in N hours"** → calculate the target time and set `scheduled_at`
-- **Specific time** → parse to ISO 8601 and set `scheduled_at`
-
-Store the resolved time as the scheduled start.
-
----
-
-## Step 5.5: Commit Settings to $EIGEN_BRANCH (if not gitignored)
+## Step 5: Commit Settings to $EIGEN_BRANCH (if not gitignored)
 
 Integration branches created by `/create_issues_from_plan_swarm` are based on `$EIGEN_BRANCH`. If `.claude/settings.json` is committed to `$EIGEN_BRANCH`, the integration branches will have the pipeline env vars automatically.
 
@@ -398,14 +397,14 @@ git push origin $EIGEN_BRANCH
 Print: `Settings committed and pushed to $EIGEN_BRANCH — integration branches will inherit pipeline configuration.`
 
 **If gitignored** (exit code 0 — git DOES ignore it):
-Do NOT force-add. **STOP and ask the user** using AskUserQuestion:
+Do NOT force-add. **STOP and ask the user**:
 
 ```
 WARNING: .claude/settings.json is in .gitignore
 
 This will cause problems in later pipeline stages — integration branches created by
 /create_issues_from_plan_swarm will NOT inherit pipeline settings
-(EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, AUTOCHAIN, plugin configuration).
+(EIGEN_ROOT, EIGEN_BRANCH, CLAUDE_TASKS_API, plugin configuration).
 
 There is a defensive fallback in /create_issues_from_plan_swarm that copies
 settings into each branch, but the recommended fix is to allow
@@ -443,29 +442,35 @@ Print: `Continuing. Settings will be available on integration branches since the
 
 Project:            $EIGEN_ROOT
 Branch:             $EIGEN_BRANCH
+Mode:               <autonomous | manual>
+Workers Model:      <WORKERS_MODEL>
+<if autonomous:>
 claude-tasks API:   $CLAUDE_TASKS_API
-Agent Teams:        enabled
-Mode:               <autonomous (AUTOCHAIN=true) | manual (AUTOCHAIN=false)>
+Watchdog interval:  every <WATCHDOG_INTERVAL> minutes
+<end if>
 
 Initiative:         <filename>
 Blackbox:           <filename>
 Pipeline State:     not started (fresh)
-
-Scheduled Start:    <resolved time if AUTOCHAIN=true, otherwise "manual — run /time_split to begin">
 
 Pipeline sequence:
   time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
   space_split ↔ deepen_space_split → [per epic: plan → create → orchestrate → review] →
   STOP at E2E Testing epic convergence
 
+<if autonomous:>
+Scheduling: cron watchdog (every <WATCHDOG_INTERVAL> minutes)
 Epics execute one at a time in dependency order.
-<if AUTOCHAIN=true: "Each command runs ~3 minutes after the previous finishes.">
-<if AUTOCHAIN=false: "You trigger each command manually. Use 'eigen-squared status' to see what's next.">
+<end if>
+<if manual:>
+You trigger each command manually.
+Check what's next: eigen-squared status
+<end if>
 ```
 
 ---
 
-## Step 7: Install CLI and Initialize Pipeline
+## Step 7: Install CLI, Initialize Pipeline, and Start Watchdog
 
 ### 7.1 Install the `eigen-squared` CLI globally
 
@@ -473,7 +478,7 @@ The eigen-squared CLI is a Python module inside this plugin. It needs to be acce
 
 **Step 1: Discover the plugin path.** Use the Glob tool to find the `cli/__main__.py` file near this command file. The plugin cache path will look like `~/.claude/plugins/cache/tetration/eigen-squared/<version>/`. Store this as `PLUGIN_PATH`.
 
-**Step 2: Read the version.** Read `$PLUGIN_PATH/.claude-plugin/plugin.json` and extract the `version` field (e.g., `2.1.0`). Store this as `NEW_VERSION`.
+**Step 2: Read the version.** Read `$PLUGIN_PATH/.claude-plugin/plugin.json` and extract the `version` field (e.g., `3.0.4`). Store this as `NEW_VERSION`.
 
 **Step 3: Check if already installed.**
 
@@ -536,29 +541,47 @@ Add this to your shell profile (~/.bashrc or ~/.zshrc):
 Then restart your terminal or run: source ~/.bashrc
 ```
 
-### 7.2 Create `.eigen/` directory
+### 7.2 Install the `eigen-watchdog` script (autonomous mode only)
+
+**If `$HUMAN_SWARM_FALLBACK` is `true`** → skip this step (manual mode).
+
+Copy the watchdog script from the plugin to `~/.local/bin/eigen-watchdog`:
 
 ```bash
-mkdir -p $EIGEN_ROOT/.eigen
+cp $PLUGIN_PATH/cli/eigen-watchdog.sh ~/.local/bin/eigen-watchdog
+chmod +x ~/.local/bin/eigen-watchdog
 ```
 
-Create the env file for logging and retry logic:
+Verify:
 ```bash
-cat > $EIGEN_ROOT/.eigen/env <<EOF
-EIGEN_ROOT=$EIGEN_ROOT
-EIGEN_BRANCH=$EIGEN_BRANCH
-CLAUDE_TASKS_API=$CLAUDE_TASKS_API
-AUTOCHAIN=$AUTOCHAIN
-EIGEN_TELEGRAM_CHAT_ID=${EIGEN_TELEGRAM_CHAT_ID:-}
+test -x ~/.local/bin/eigen-watchdog && echo "eigen-watchdog installed" || echo "ERROR: watchdog not installed"
+```
+
+### 7.3 Create `.eigen/` directory
+
+```bash
+mkdir -p "$EIGEN_ROOT/.eigen"
+```
+
+Create the env file (used by the watchdog cron — it sources this to get project config):
+```bash
+cat > "$EIGEN_ROOT/.eigen/env" <<EOF
+EIGEN_ROOT="$EIGEN_ROOT"
+EIGEN_BRANCH="$EIGEN_BRANCH"
+CLAUDE_TASKS_API="${CLAUDE_TASKS_API:-}"
+WORKERS_MODEL="${WORKERS_MODEL:-opus}"
+HUMAN_SWARM_FALLBACK="${HUMAN_SWARM_FALLBACK:-false}"
+WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-10}"
+EIGEN_TELEGRAM_CHAT_ID="${EIGEN_TELEGRAM_CHAT_ID:-}"
 EOF
 ```
 
 Add `.eigen/` to `.gitignore` if not already present:
 ```bash
-grep -qxF '.eigen/' $EIGEN_ROOT/.gitignore 2>/dev/null || echo '.eigen/' >> $EIGEN_ROOT/.gitignore
+grep -qxF '.eigen/' "$EIGEN_ROOT/.gitignore" 2>/dev/null || echo '.eigen/' >> "$EIGEN_ROOT/.gitignore"
 ```
 
-### 7.3 Initialize pipeline state
+### 7.4 Initialize pipeline state
 
 ```bash
 eigen-squared init --initiative "<initiative name from Step 3>" --phase-count 0
@@ -566,53 +589,74 @@ eigen-squared init --initiative "<initiative name from Step 3>" --phase-count 0
 
 Phase count is 0 because time_split hasn't run yet. The CLI creates `pipeline_state.json` with `time_split.status = "not_started"`.
 
-### 7.4 Verify installation
+### 7.5 Verify installation
 
 ```bash
 eigen-squared validate
 eigen-squared status
 ```
 
-### 7.5 Schedule first command (AUTOCHAIN=true) or print next steps (AUTOCHAIN=false)
+### 7.6 Start the pipeline
 
-**If `AUTOCHAIN=true`:**
+**If autonomous mode** (`$HUMAN_SWARM_FALLBACK` is `false`):
+
+Check if a cron entry already exists for this project:
 
 ```bash
-eigen-squared schedule-next
+crontab -l 2>/dev/null | grep "eigen-watchdog.*$EIGEN_ROOT"
 ```
 
-This reads pipeline state, sees `time_split.status = "not_started"`, and schedules `/time_split` via claude-tasks.
+**If already exists** → print: `Watchdog cron already installed for this project — skipping.`
+
+**If not found** → install it (use `$WATCHDOG_INTERVAL` for the cron schedule):
+
+```bash
+(crontab -l 2>/dev/null; echo "*/$WATCHDOG_INTERVAL * * * * ~/.local/bin/eigen-watchdog $EIGEN_ROOT >> $EIGEN_ROOT/.eigen/watchdog.log 2>&1") | crontab -
+```
+
+Verify:
+```bash
+crontab -l | grep "eigen-watchdog.*$EIGEN_ROOT"
+```
 
 Print:
 ```
-=== Pipeline Launched! ===
+=== Pipeline Launched (Autonomous Mode) ===
 
-Pipeline controller initialized via eigen-squared CLI.
-pipeline_state.json initialized with time_split.status = "not_started"
-schedule-next has scheduled /time_split.
+Pipeline initialized via eigen-squared CLI.
+pipeline_state.json created with time_split.status = "not_started"
 
-IMPORTANT: Make sure claude-tasks server is running:
-  claude-tasks serve
+Watchdog cron installed — checks every <WATCHDOG_INTERVAL> minutes.
+The watchdog will detect the pending time_split and schedule it automatically.
+
+IMPORTANT: Make sure these are running:
+  1. claude-tasks server:  claude-tasks serve
+  2. cron daemon:          service cron status (or systemctl status cron)
 
 Monitor progress:
-  - eigen-squared status
-  - eigen-squared log
-  - Hook log: cat $EIGEN_ROOT/.eigen/hook_log.jsonl
+  - Pipeline state:   eigen-squared status
+  - Watchdog log:     tail -f $EIGEN_ROOT/.eigen/watchdog.log
+  - Hook log:         cat $EIGEN_ROOT/.eigen/hook_log.jsonl
 
 The pipeline runs autonomously until the phase is complete.
 It STOPS after the E2E Testing epic converges.
+Run /eigen_continue to review and approve the phase.
 
-To cancel: disable the pending task in claude-tasks TUI or API.
+Handy watchdog management commands:
+  - View cron:        crontab -l | grep eigen-watchdog
+  - Pause watchdog:   crontab -l | grep -v "eigen-watchdog.*$EIGEN_ROOT" | crontab -
+  - Resume watchdog:  (crontab -l 2>/dev/null; echo "*/$WATCHDOG_INTERVAL * * * * ~/.local/bin/eigen-watchdog $EIGEN_ROOT >> $EIGEN_ROOT/.eigen/watchdog.log 2>&1") | crontab -
+  - Run manually:     eigen-watchdog $EIGEN_ROOT
 ```
 
-**If `AUTOCHAIN=false`:**
+**If manual mode** (`$HUMAN_SWARM_FALLBACK` is `true`):
 
 Print:
 ```
 === Pipeline Initialized (Manual Mode) ===
 
-Pipeline controller initialized via eigen-squared CLI.
-pipeline_state.json initialized with time_split.status = "not_started"
+Pipeline initialized via eigen-squared CLI.
+pipeline_state.json created with time_split.status = "not_started"
 
 To start the pipeline, run the first command:
   /time_split
@@ -621,7 +665,8 @@ After each command completes, check what's next:
   eigen-squared status
 
 Then run the next command manually. To switch to autonomous mode later,
-set AUTOCHAIN=true in .claude/settings.json.
+set HUMAN_SWARM_FALLBACK=false in .claude/settings.json and run:
+  (crontab -l 2>/dev/null; echo "*/10 * * * * ~/.local/bin/eigen-watchdog $EIGEN_ROOT >> $EIGEN_ROOT/.eigen/watchdog.log 2>&1") | crontab -
 ```
 
 ---
@@ -630,8 +675,9 @@ set AUTOCHAIN=true in .claude/settings.json.
 
 - **This command runs interactively** — it asks questions and validates before launching.
 - **Env vars MUST be in `.claude/settings.json`** — never in the shell. This prevents cross-project contamination.
-- **Two modes** — `AUTOCHAIN=true` runs the pipeline autonomously (commands auto-schedule via claude-tasks). `AUTOCHAIN=false` initializes state but the user triggers each command manually. You can switch modes at any time by editing `.claude/settings.json`.
-- **claude-tasks is always configured** — even in manual mode, `CLAUDE_TASKS_API` is set so you can run `eigen-squared schedule-next` by hand or enable AUTOCHAIN later. In autonomous mode, claude-tasks must be running (`claude-tasks serve`).
-- **One claude-tasks server, multiple projects** — each project's `working_dir` points to its own root, and each has its own `.claude/settings.json` with isolated env vars.
+- **Two modes**:
+  - **Autonomous** (`HUMAN_SWARM_FALLBACK=false`, default): a cron watchdog (`eigen-watchdog`) runs every N minutes, checks if anything is running, and schedules the next command via claude-tasks. The orchestrate_swarm makes autonomous decisions.
+  - **Manual** (`HUMAN_SWARM_FALLBACK=true`): no cron, no claude-tasks. User runs commands manually. The orchestrate_swarm can escalate to the user.
+- **Commands do NOT schedule their successors** — in autonomous mode, the watchdog handles all scheduling. In manual mode, the user does.
+- **One cron per project** — each project gets its own cron entry with its own `$EIGEN_ROOT`. Multiple projects run independently.
 - **ONE-TIME use only** — this command is for fresh pipelines. If the pipeline has already started, use `/eigen_continue` to review the completed phase and launch the next one.
-- **Pipeline controller** — the `eigen-squared` CLI handles pipeline state and command scheduling. In autonomous mode, commands self-schedule via `eigen-squared schedule-next` (gated by `AUTOCHAIN=true`). In manual mode, the user runs commands and checks `eigen-squared status` for next steps.
