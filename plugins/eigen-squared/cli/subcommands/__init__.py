@@ -32,6 +32,7 @@ from ..scheduler import (
     schedule_command,
     COMMAND_TO_SKILL,
     MAX_COMMAND_RETRIES,
+    MAX_SCHEDULE_FAILURES,
 )
 from .. import git_ops
 
@@ -105,6 +106,7 @@ def dispatch(args: Namespace) -> int:
         "schedule-next": cmd_schedule_next,
         "validate": cmd_validate,
         "install": cmd_install,
+        "write-env": cmd_write_env,
     }
     handler = handlers.get(args.command)
     if not handler:
@@ -1149,6 +1151,40 @@ def cmd_validate(args: Namespace) -> int:
     return 1
 
 
+def cmd_write_env(args: Namespace) -> int:
+    """Regenerate .eigen/env from .claude/settings.json."""
+    root = _eigen_root()
+    if not root:
+        print("ERROR: EIGEN_ROOT not set", file=sys.stderr)
+        return 1
+
+    settings_path = Path(root) / ".claude" / "settings.json"
+    if not settings_path.exists():
+        print(f"ERROR: {settings_path} not found", file=sys.stderr)
+        return 1
+
+    try:
+        settings = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"ERROR: Failed to read settings: {e}", file=sys.stderr)
+        return 1
+
+    env_vars = settings.get("env", {})
+
+    # Build env lines from settings.json env block (same format as cmd_install)
+    env_lines = []
+    for key, val in env_vars.items():
+        env_lines.append(f'export {key}="{val}"')
+
+    env_path = Path(root) / ".eigen" / "env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("\n".join(env_lines) + "\n")
+    os.chmod(str(env_path), 0o600)
+
+    print(json.dumps({"status": "written", "path": str(env_path), "keys": list(env_vars.keys())}))
+    return 0
+
+
 def cmd_install(args: Namespace) -> int:
     root = Path(args.root)
     eigen_dir = root / ".eigen"
@@ -1166,7 +1202,9 @@ def cmd_install(args: Namespace) -> int:
         env_lines.append(f'export EIGEN_SLACK_WEBHOOK="{args.slack}"')
     if args.discord:
         env_lines.append(f'export EIGEN_DISCORD_WEBHOOK="{args.discord}"')
-    (eigen_dir / "env").write_text("\n".join(env_lines) + "\n")
+    env_file = eigen_dir / "env"
+    env_file.write_text("\n".join(env_lines) + "\n")
+    os.chmod(str(env_file), 0o600)
 
     # Add .eigen/ to .gitignore
     gitignore = root / ".gitignore"

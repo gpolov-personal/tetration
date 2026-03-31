@@ -13,6 +13,7 @@ from typing import Optional
 
 
 MAX_COMMAND_RETRIES = 3
+MAX_SCHEDULE_FAILURES = 10
 SCHEDULE_DELAY_MINUTES = 3
 DEDUP_WINDOW_SECONDS = 30
 
@@ -72,6 +73,43 @@ def last_confirmed_entry(hook_log: Path) -> Optional[dict]:
     return None
 
 
+def consecutive_schedule_failures(
+    command: str, context_key: str, hook_log: Path
+) -> int:
+    """Count consecutive scheduling failures for a command+context.
+
+    Reads the tail of hook_log and counts 'failed' entries in reverse
+    until a non-failed entry (confirmed, skipped, stalled, noop) is found.
+    """
+    if not hook_log.exists():
+        return 0
+    count = 0
+    try:
+        file_size = hook_log.stat().st_size
+        with open(hook_log, "r") as f:
+            read_from = max(0, file_size - 16384)
+            f.seek(read_from)
+            if read_from > 0:
+                f.readline()
+            tail = f.read()
+        for line in reversed(tail.strip().split("\n")):
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("command") != command or entry.get("context_key") != context_key:
+                continue
+            if entry.get("status") == "failed":
+                count += 1
+            else:
+                break
+    except OSError:
+        pass
+    return count
+
+
 def check_retry(
     command: str, context_key: str, hook_log: Path
 ) -> tuple[bool, int]:
@@ -81,7 +119,27 @@ def check_retry(
     Deduplicates rapid-fire calls (< DEDUP_WINDOW_SECONDS) for the same
     command+context — these are duplicate schedule-next invocations within
     the same command execution, not genuine retries.
+
+    Also checks for consecutive scheduling failures (API unreachable etc.)
+    separately from task-execution retries. Scheduling failures use a higher
+    threshold (MAX_SCHEDULE_FAILURES=10) since they're often transient.
     """
+    # Check consecutive scheduling failures first
+    sched_failures = consecutive_schedule_failures(command, context_key, hook_log)
+    if sched_failures >= MAX_SCHEDULE_FAILURES:
+        log_entry(
+            hook_log,
+            {
+                "action": "stalled",
+                "command": command,
+                "context_key": context_key,
+                "status": "stalled",
+                "reason": f"scheduling failed {sched_failures} consecutive times",
+                "consecutive_schedule_failures": sched_failures,
+            },
+        )
+        return False, sched_failures
+
     last = last_confirmed_entry(hook_log)
     if last is None:
         return True, 1
@@ -116,6 +174,7 @@ def check_retry(
                     "command": command,
                     "context_key": context_key,
                     "status": "stalled",
+                    "reason": f"task execution failed {attempt - 1} times (max {MAX_COMMAND_RETRIES})",
                 },
             )
             return False, attempt
@@ -229,6 +288,7 @@ def schedule_command(
             },
         )
     else:
+        fail_count = consecutive_schedule_failures(command, context_key, hook_log) + 1
         log_entry(
             hook_log,
             {
@@ -236,6 +296,9 @@ def schedule_command(
                 "command": command,
                 "context_key": context_key,
                 "status": "failed",
+                "consecutive_failures": fail_count,
+                "max_schedule_failures": MAX_SCHEDULE_FAILURES,
+                "task_name": task_name,
             },
         )
 

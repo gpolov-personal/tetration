@@ -50,7 +50,7 @@ try:
     print('no')
 except Exception:
     print('error')
-" 2>/dev/null)
+" 2>/dev/null || true)
 
 if [ "$RUNNING" = "error" ] || [ -z "$RUNNING" ]; then
     echo "[$(date -u +%FT%TZ)] WARN: claude-tasks API unreachable at $CLAUDE_TASKS_API"
@@ -59,12 +59,15 @@ fi
 [ "$RUNNING" = "yes" ] && exit 0
 
 # 2. What's next? (HIGH-1, HIGH-2)
-NEXT_JSON=$(eigen-squared next --json 2>&1)
+NEXT_ERR=$(mktemp)
+NEXT_JSON=$(eigen-squared next --json 2>"$NEXT_ERR")
 NEXT_EXIT=$?
 if [ $NEXT_EXIT -ne 0 ]; then
-    echo "[$(date -u +%FT%TZ)] ERROR: eigen-squared next failed (exit $NEXT_EXIT): $NEXT_JSON"
+    echo "[$(date -u +%FT%TZ)] ERROR: eigen-squared next failed (exit $NEXT_EXIT): $(cat "$NEXT_ERR")"
+    rm -f "$NEXT_ERR"
     exit 1
 fi
+rm -f "$NEXT_ERR"
 
 EXPECTED_NAME=$(echo "$NEXT_JSON" | EIGEN_ROOT="$EIGEN_ROOT" python3 -c "
 import sys, json
@@ -101,15 +104,14 @@ try:
         print(last.get('name', ''))
 except Exception:
     pass
-" 2>/dev/null)
+" 2>/dev/null || true)
 
-EXTRA_PROMPT_FLAG=""
-if [ "$LAST_TASK_NAME" = "$EXPECTED_NAME" ]; then
-    EXTRA_PROMPT_FLAG='--extra-prompt WARNING: This is a RE-RUN. The previous execution of this command failed or timed out. Before modifying any files: (1) read your working notes if they exist, (2) check git status for partial changes, (3) verify pipeline state. Proceed carefully.'
-fi
+IS_RETRY=false
+[ "$LAST_TASK_NAME" = "$EXPECTED_NAME" ] && IS_RETRY=true
 
 # 4. Schedule (HIGH-4)
-if [ -n "$EXTRA_PROMPT_FLAG" ]; then
+if [ "$IS_RETRY" = true ]; then
+    echo "[$(date -u +%FT%TZ)] INFO: retry detected for $EXPECTED_NAME (last task name matches)"
     eigen-squared schedule-next --extra-prompt "WARNING: This is a RE-RUN. The previous execution of this command failed or timed out. Before modifying any files: (1) read your working notes if they exist, (2) check git status for partial changes, (3) verify pipeline state. Proceed carefully."
     EXIT_CODE=$?
 else
@@ -119,12 +121,19 @@ fi
 
 if [ $EXIT_CODE -eq 2 ]; then
     echo "[$(date -u +%FT%TZ)] STALLED: pipeline stalled after max retries for $EXPECTED_NAME"
+    # Notify via telegram if configured
+    if [ -n "${EIGEN_TELEGRAM_CHAT_ID:-}" ]; then
+        curl -sf "$CLAUDE_TASKS_API/api/v1/notify" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\": \"$EIGEN_TELEGRAM_CHAT_ID\", \"message\": \"eigen-squared STALLED: $EXPECTED_NAME after max retries. Manual intervention required.\"}" \
+            2>/dev/null || true
+    fi
     exit 2
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: eigen-squared schedule-next failed (exit $EXIT_CODE)"
     exit 1
 else
-    IS_RETRY=""
-    [ "$LAST_TASK_NAME" = "$EXPECTED_NAME" ] && IS_RETRY=" (RE-RUN)"
-    echo "[$(date -u +%FT%TZ)] SCHEDULED: $EXPECTED_NAME$IS_RETRY"
+    RETRY_LABEL=""
+    [ "$IS_RETRY" = true ] && RETRY_LABEL=" (RE-RUN)"
+    echo "[$(date -u +%FT%TZ)] SCHEDULED: $EXPECTED_NAME$RETRY_LABEL"
 fi

@@ -145,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--slack", help="Slack webhook URL")
     p.add_argument("--discord", help="Discord webhook URL")
 
+    # ── write-env ──
+    sub.add_parser("write-env", help="Regenerate .eigen/env from .claude/settings.json")
+
     args = parser.parse_args(argv)
 
     if not args.command:

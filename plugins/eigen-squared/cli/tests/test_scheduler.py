@@ -7,10 +7,12 @@ import pytest
 
 from cli.scheduler import (
     check_retry,
+    consecutive_schedule_failures,
     last_confirmed_entry,
     log_entry,
     DEDUP_WINDOW_SECONDS,
     MAX_COMMAND_RETRIES,
+    MAX_SCHEDULE_FAILURES,
 )
 
 
@@ -142,6 +144,86 @@ class TestLastConfirmedEntry:
     def test_nonexistent_file(self, tmp_path):
         hook_log = tmp_path / "nonexistent.jsonl"
         assert last_confirmed_entry(hook_log) is None
+
+
+class TestConsecutiveScheduleFailures:
+
+    def test_no_log_returns_zero(self, tmp_path):
+        hook_log = tmp_path / "hook_log.jsonl"
+        assert consecutive_schedule_failures("bootstrap", "phase:P1", hook_log) == 0
+
+    def test_counts_consecutive_failures(self, tmp_path):
+        hook_log = tmp_path / "hook_log.jsonl"
+        lines = [
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "confirmed", "attempt": 1, "timestamp": "t1"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t2"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t3"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t4"}),
+        ]
+        hook_log.write_text("\n".join(lines) + "\n")
+        assert consecutive_schedule_failures("bootstrap", "phase:P1", hook_log) == 3
+
+    def test_resets_on_confirmed(self, tmp_path):
+        """A confirmed entry breaks the consecutive failure streak."""
+        hook_log = tmp_path / "hook_log.jsonl"
+        lines = [
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t1"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "confirmed", "attempt": 1, "timestamp": "t2"}),
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t3"}),
+        ]
+        hook_log.write_text("\n".join(lines) + "\n")
+        assert consecutive_schedule_failures("bootstrap", "phase:P1", hook_log) == 1
+
+    def test_ignores_other_commands(self, tmp_path):
+        """Failures for a different command are skipped, not counted or breaking."""
+        hook_log = tmp_path / "hook_log.jsonl"
+        lines = [
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": "t1"}),
+            json.dumps({"command": "time_split", "context_key": "initiative",
+                        "status": "failed", "timestamp": "t2"}),
+        ]
+        hook_log.write_text("\n".join(lines) + "\n")
+        # bootstrap has 1 consecutive failure (the time_split entry is irrelevant)
+        assert consecutive_schedule_failures("bootstrap", "phase:P1", hook_log) == 1
+        assert consecutive_schedule_failures("time_split", "initiative", hook_log) == 1
+
+    def test_schedule_failure_circuit_breaker(self, tmp_path):
+        """After MAX_SCHEDULE_FAILURES consecutive failures, check_retry stalls."""
+        hook_log = tmp_path / "hook_log.jsonl"
+        lines = [
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": f"t{i}"})
+            for i in range(MAX_SCHEDULE_FAILURES)
+        ]
+        hook_log.write_text("\n".join(lines) + "\n")
+        proceed, _ = check_retry("bootstrap", "phase:P1", hook_log)
+        assert proceed is False
+        # Verify stall was logged
+        last_line = hook_log.read_text().strip().split("\n")[-1]
+        entry = json.loads(last_line)
+        assert entry["status"] == "stalled"
+        assert "scheduling failed" in entry["reason"]
+
+    def test_schedule_failures_below_threshold_proceed(self, tmp_path):
+        """Below MAX_SCHEDULE_FAILURES, check_retry still proceeds."""
+        hook_log = tmp_path / "hook_log.jsonl"
+        lines = [
+            json.dumps({"command": "bootstrap", "context_key": "phase:P1",
+                        "status": "failed", "timestamp": f"t{i}"})
+            for i in range(MAX_SCHEDULE_FAILURES - 1)
+        ]
+        hook_log.write_text("\n".join(lines) + "\n")
+        proceed, attempt = check_retry("bootstrap", "phase:P1", hook_log)
+        assert proceed is True
+        assert attempt == 1
 
 
 class TestLogEntry:
