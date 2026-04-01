@@ -203,6 +203,20 @@ Classification rules:
    - If still failing after 3 cycles: print the errors and proceed with warnings. Write `BOOTSTRAP_WARNINGS.md` to `$EIGEN_ROOT` documenting outstanding issues.
 4. **NEVER delete, overwrite, or recreate `$EIGEN_ROOT/eigen_initiative/phases/phase_N/feedback/` or any file inside it.**
 
+### Read Prior Phase Testing Notes (if present)
+
+If this is Phase 2 or later, check for testing notes from the previous phase:
+
+```
+$EIGEN_ROOT/eigen_initiative/phases/phase_<N-1>/testing_notes.md
+```
+
+If the file exists, read it and use as advisory context alongside recommendations. These notes capture bugs, patterns, and gotchas discovered during human testing of the prior phase — they are experiential knowledge that complements the structural knowledge in recommendations.
+
+- Treat as advisory, not requirements (same as recommendations).
+- Pay special attention to "Patterns Discovered" — these often indicate conventions that should be followed in new code.
+- "Bugs Found & Fixed" may reveal fragile areas that need extra care in this phase.
+
 ### Read Recommendations (if present)
 
 Recommendations come from the `recommendations` field in the CLI context. Use as advisory context during scaffold planning:

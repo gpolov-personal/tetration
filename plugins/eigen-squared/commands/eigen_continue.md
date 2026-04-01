@@ -188,18 +188,57 @@ Do NOT update pipeline state. Exit.
 
 **If "Yes"** →
 
-1. Update pipeline state via CLI:
+1. **Capture testing notes** — Ask the user:
+   ```
+   Before approving, would you like to record testing notes for Phase <N>?
+   These notes will be read by Phase <N+1>'s bootstrap as advisory context —
+   bug fixes, patterns discovered, gotchas, recommendations.
+
+     1. Yes — I'll write notes (opens file for review)
+     2. Auto-generate from git log (commits since phase completed)
+     3. Skip — no notes needed
+   ```
+
+   **If "Yes"** → Create `$EIGEN_ROOT/eigen_initiative/phases/phase_<N>/testing_notes.md` with this template:
+   ```markdown
+   # Phase <N> Testing Notes
+
+   ## Bugs Found & Fixed
+   - <describe bugs found during testing and how they were fixed>
+
+   ## Patterns Discovered
+   - <patterns, conventions, or constraints discovered during testing>
+
+   ## Recommendations for Phase <N+1>
+   - <specific advice for the next phase based on testing experience>
+   ```
+   Present the template to the user and let them fill it in or edit it. Commit the file:
+   ```bash
+   git add $EIGEN_ROOT/eigen_initiative/phases/phase_<N>/testing_notes.md
+   git commit -m "docs: phase <N> testing notes"
+   ```
+
+   **If "Auto-generate"** → Run:
+   ```bash
+   # Get commits since the last epic was converged (approximate: last swarm completion timestamp)
+   git log --oneline --since="<last_epic_completed_at>" $EIGEN_BRANCH -- . ':!eigen_initiative'
+   ```
+   Format the commit list into `testing_notes.md` under a "## Changes During Testing" section. Present to the user for review/editing before saving. Commit as above.
+
+   **If "Skip"** → proceed without creating notes.
+
+2. Update pipeline state via CLI:
    ```bash
    eigen-squared set-phase-review --phase <N> --status approved
    eigen-squared commit-state --message "pipeline: phase <N> review — approved"
    ```
 
-2. Determine next phase:
+3. Determine next phase:
    - Read `initiative_summary.json` for total phase count
    - If Phase N is the LAST phase → print the completion message
    - If more phases remain → print the continuation message
 
-3. **If `$HUMAN_SWARM_FALLBACK` is NOT `true`** (autonomous mode) — verify the watchdog cron is installed:
+4. **If `$HUMAN_SWARM_FALLBACK` is NOT `true`** (autonomous mode) — verify the watchdog cron is installed:
    ```bash
    crontab -l 2>/dev/null | grep "eigen-watchdog.*$EIGEN_ROOT"
    ```
@@ -213,7 +252,7 @@ Do NOT update pipeline state. Exit.
 
    **If `$HUMAN_SWARM_FALLBACK` is `true`** (manual mode) — skip the cron check.
 
-4. Print (if more phases remain):
+5. Print (if more phases remain):
    If autonomous mode:
    ```
    === Phase <N> Approved — Continuing to Phase <N+1> ===
