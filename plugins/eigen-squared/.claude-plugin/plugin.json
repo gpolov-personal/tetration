@@ -1,6 +1,6 @@
 {
   "name": "eigen-squared",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Autonomous initiative-scale development orchestration with eigen-squared CLI for deterministic state management. Watchdog-based scheduling — a cron daemon manages pipeline progression. Sequential epics, typed models, convergence loops, real-dependencies testing, Docker-first E2E.",
   "author": {
     "name": "G.Polo.V",
