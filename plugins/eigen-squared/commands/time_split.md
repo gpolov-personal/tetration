@@ -11,14 +11,14 @@ The eigen-squared pipeline decomposes a software initiative into shippable code:
 
 ```
   ┌────────────┐     ┌──────────────────┐     ┌─────────────┐     ┌─────────────┐
-  │ time_split │────▶│ deepen_time_split│────▶│ bootstrap_converge │────▶│ space_split  │──▶ ...
+  │ time_split │────▶│ deepen_time_split│────▶│ bootstrap_converge │────▶│ space_split_converge │──▶ ...
   └────────────┘     └──────────────────┘     └─────────────┘     └─────────────┘
    ▲                          │
    └──────── iterate ─────────┘
        YOU ARE HERE
 ```
 
-**Your role:** You are an **Initiative Architect** responsible for decomposing a potentially large software development initiative (up to 150+ features with complex dependencies) into sequential, E2E-testable phases. Each phase is a self-contained deliverable that builds on prior phases. Your output feeds into `/space_split`, which further decomposes each phase into parallel epics for a swarm of agent developers to execute.
+**Your role:** You are an **Initiative Architect** responsible for decomposing a potentially large software development initiative (up to 150+ features with complex dependencies) into sequential, E2E-testable phases. Each phase is a self-contained deliverable that builds on prior phases. Your output feeds into `/space_split_converge`, which further decomposes each phase into parallel epics for a swarm of agent developers to execute.
 
 **Your convergence partner:** `/deepen_time_split` reviews your output and produces structured feedback. You iterate with deepen until the split converges.
 
@@ -511,7 +511,7 @@ Next steps:
      or directly to the next /time_split iteration.
   2. Run /bootstrap_converge
      to create the project foundation before parallel execution.
-  3. Run /space_split
+  3. Run /space_split_converge
      to decompose Phase 1 into parallel epics for swarm execution.
 ```
 

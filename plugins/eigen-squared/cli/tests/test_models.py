@@ -153,8 +153,8 @@ class TestFromDictDefaults:
         assert c.converged is False
 
     def test_phase_with_missing_keys(self):
-        p = PhaseState.from_dict({"space_split": {"status": "completed"}})
-        assert p.space_split.status == "completed"
+        p = PhaseState.from_dict({"space_split_converge": {"status": "completed"}})
+        assert p.space_split_converge.status == "completed"
         assert p.bootstrap_converge.status == "not_started"  # filled with default
 
     def test_swarm_execution_string_pr_number(self):
@@ -221,7 +221,8 @@ class TestBackwardCompatibility:
         ps = PipelineState.from_dict(v1)
         assert ps.time_split.convergence.converged is True
         assert ps.phases["1"].bootstrap_converge.status == "not_started"  # default, not root
-        assert ps.phases["1"].space_split.status == "not_started"
+        # legacy space_split + deepen_space_split pair migrates to space_split_converge
+        assert ps.phases["1"].space_split_converge.status == "not_started"
 
     def test_v2_to_v3_bootstrap_pair_migrates_to_converge(self):
         """v2 → v3 migration: legacy bootstrap + deepen_bootstrap pair fuses into bootstrap_converge."""
@@ -255,6 +256,43 @@ class TestBackwardCompatibility:
         assert ph.bootstrap_converge.locked_skills == ["python-testing-patterns", "language-profiles"]
         # feedback_path stashed in output_paths["feedback_file"]
         assert ph.bootstrap_converge.output_paths["feedback_file"] == "phases/phase_1/feedback/deepen_bootstrap_feedback.json"
+
+    def test_v3_to_v4_space_split_pair_migrates_to_converge(self):
+        """v3 → v4 migration: legacy space_split + deepen_space_split pair fuses into space_split_converge."""
+        v3 = {
+            "bootstrap_converge": {"status": "completed", "convergence": {"converged": True}},
+            "space_split": {
+                "status": "completed",
+                "iteration": 3,
+                "output_paths": {
+                    "epic_manifest": "phases/phase_1/epic_manifest.json",
+                    "phase_e2e_config": "phases/phase_1/phase_e2e_config.json",
+                },
+                "convergence": {"converged": False},
+                "feedback_consumed": True,
+            },
+            "deepen_space_split": {
+                "status": "completed",
+                "iteration": 3,
+                "feedback_path": "phases/phase_1/feedback/deepen_space_split_feedback.json",
+                "findings_summary": {"high": 0, "medium": 2, "low": 5},
+                "locked_skills": ["api-design", "testing-patterns"],
+            },
+        }
+        ph = PhaseState.from_dict(v3)
+        # space_split_converge inherits status, iteration, output_paths from main
+        assert ph.space_split_converge.status == "completed"
+        assert ph.space_split_converge.iteration == 3
+        assert ph.space_split_converge.output_paths["epic_manifest"] == "phases/phase_1/epic_manifest.json"
+        assert ph.space_split_converge.output_paths["phase_e2e_config"] == "phases/phase_1/phase_e2e_config.json"
+        # findings_summary promoted from deepen
+        assert ph.space_split_converge.findings_summary is not None
+        assert ph.space_split_converge.findings_summary.medium == 2
+        assert ph.space_split_converge.findings_summary.low == 5
+        # locked_skills promoted from deepen
+        assert ph.space_split_converge.locked_skills == ["api-design", "testing-patterns"]
+        # feedback_path stashed in output_paths["feedback_file"]
+        assert ph.space_split_converge.output_paths["feedback_file"] == "phases/phase_1/feedback/deepen_space_split_feedback.json"
 
     def test_v1_state_missing_schema_version(self):
         v1 = {"initiative": "test", "state": {"time_split": {}, "deepen_time_split": {}}}

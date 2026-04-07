@@ -78,7 +78,6 @@ def _now() -> str:
 # plan_epic_converge are self-converging and live in CONVERGE_COMMANDS.
 MAIN_TO_DEEPEN = {
     "time_split": "deepen_time_split",
-    "space_split": "deepen_space_split",
 }
 
 DEEPEN_TO_MAIN = {v: k for k, v in MAIN_TO_DEEPEN.items()}
@@ -90,7 +89,7 @@ DEEPEN_COMMANDS = set(DEEPEN_TO_MAIN.keys())
 MAIN_COMMANDS = set(MAIN_TO_DEEPEN.keys())
 
 # Self-converging commands (single command, internal swarm convergence loop)
-CONVERGE_COMMANDS = {"plan_epic_converge", "bootstrap_converge"}
+CONVERGE_COMMANDS = {"plan_epic_converge", "bootstrap_converge", "space_split_converge"}
 
 
 def dispatch(args: Namespace) -> int:
@@ -163,12 +162,10 @@ def cmd_status(args: Namespace) -> int:
         print(f"Phase {pk}:")
         bc = phase.bootstrap_converge
         bconv = "converged" if bc.convergence.converged else bc.status
-        print(f"  bootstrap_converge  {bconv:12s}  iter {bc.iteration}")
-        ss = phase.space_split
-        sconv = "converged" if ss.convergence.converged else ss.status
-        print(f"  space_split         {sconv:12s}  iter {ss.iteration}")
-        dss = phase.deepen_space_split
-        print(f"  deepen_space_split  {dss.status:12s}  iter {dss.iteration}")
+        print(f"  bootstrap_converge   {bconv:12s}  iter {bc.iteration}")
+        ssc = phase.space_split_converge
+        ssconv = "converged" if ssc.convergence.converged else ssc.status
+        print(f"  space_split_converge {ssconv:12s}  iter {ssc.iteration}")
 
         for ek in sorted(phase.plans.keys(), key=lambda x: int(x)):
             ep = phase.plans[ek]
@@ -389,167 +386,15 @@ def cmd_get_context(args: Namespace) -> int:
             if dts.locked_skills is not None:
                 context["locked_skills"] = dts.locked_skills
 
-    elif cmd in ("bootstrap", "deepen_bootstrap"):
-        # Legacy: redirect to bootstrap_converge
+    elif cmd in ("bootstrap", "deepen_bootstrap", "space_split", "deepen_space_split"):
+        # Legacy: redirect to *_converge replacements
+        replacement = "bootstrap_converge" if "bootstrap" in cmd else "space_split_converge"
         print(
-            f"ERROR: {cmd} has been replaced by bootstrap_converge. "
-            "Use /bootstrap_converge instead.",
+            f"ERROR: {cmd} has been replaced by {replacement}. "
+            f"Use /{replacement} instead.",
             file=sys.stderr,
         )
         return 1
-
-    elif cmd in MAIN_COMMANDS:
-        pk = str(phase)
-        if pk not in state.phases:
-            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
-        ph = state.phases[pk]
-
-        if cmd == "space_split":
-            ms = ph.space_split
-            ds = ph.deepen_space_split
-        else:
-            print(f"ERROR: Unknown main command: {cmd}", file=sys.stderr)
-            return 1
-
-        # --- Standard flow for main commands with deepen pairs (space_split) ---
-
-        if ms.convergence.converged:
-            print(
-                f"ERROR: {cmd} phase {phase} already converged "
-                f"(decided at {ms.convergence.decided_at}: {ms.convergence.reason}). "
-                f"No re-run needed.",
-                file=sys.stderr,
-            )
-            return 1
-
-        context["iteration"] = ms.iteration + 1
-        context["current_iteration"] = ms.iteration
-        context["is_first_run"] = ms.iteration == 0
-
-        # Guard: feedback lifecycle checks (same logic as time_split)
-        if ms.iteration >= 1:
-            feedback_exists = False
-            if ds.feedback_path and root:
-                feedback_file = Path(root) / "eigen_initiative" / ds.feedback_path
-                feedback_exists = feedback_file.exists()
-
-            if ms.feedback_consumed and not feedback_exists:
-                print(
-                    f"ERROR: {cmd} phase {phase} has already run (iteration {ms.iteration}). "
-                    f"Run /deepen_{cmd} first to generate feedback before re-running.",
-                    file=sys.stderr,
-                )
-                return 1
-            if ms.feedback_consumed and feedback_exists:
-                print(
-                    f"ERROR: Feedback already processed for {cmd} phase {phase}. "
-                    f"Run /deepen_{cmd} again for fresh review before re-running.",
-                    file=sys.stderr,
-                )
-                return 1
-            if not ms.feedback_consumed and feedback_exists:
-                context["should_process_feedback"] = True
-                context["feedback_path"] = ds.feedback_path
-            elif not ms.feedback_consumed and not feedback_exists:
-                print(
-                    f"ERROR: {cmd} phase {phase} has unprocessed feedback but "
-                    f"feedback file not found at {ds.feedback_path}. "
-                    f"Run /deepen_{cmd} to generate it.",
-                    file=sys.stderr,
-                )
-                return 1
-        else:
-            context["should_process_feedback"] = False
-
-        context["output_paths"] = ms.output_paths
-
-        # Add phase-specific paths
-        context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-
-        recs = [
-            r.to_dict() if hasattr(r, "to_dict") else r
-            for r in state.recommendations.get(cmd, [])
-            if (
-                (isinstance(r, dict) and r.get("phase") in (phase, None)
-                 and (epic is None or r.get("epic") in (epic, None)))
-                or (hasattr(r, "phase") and r.phase in (phase, None)
-                    and (epic is None or getattr(r, "epic", None) in (epic, None)))
-            )
-        ]
-        context["recommendations"] = recs
-
-    elif cmd in DEEPEN_COMMANDS:
-        pk = str(phase)
-        if pk not in state.phases:
-            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
-        ph = state.phases[pk]
-        main_cmd = DEEPEN_TO_MAIN[cmd]
-
-        if cmd == "deepen_space_split":
-            ms = ph.space_split
-            ds = ph.deepen_space_split
-        else:
-            print(f"ERROR: Unknown deepen command: {cmd}", file=sys.stderr)
-            return 1
-
-        if ms.convergence.converged:
-            print(
-                f"ERROR: {main_cmd} phase {phase} already converged "
-                f"(decided at {ms.convergence.decided_at}: {ms.convergence.reason}). "
-                f"No further review needed.",
-                file=sys.stderr,
-            )
-            return 1
-        if ms.status == "not_started":
-            print(
-                f"ERROR: {main_cmd} has not run yet for phase {phase}. "
-                f"Run /{main_cmd} first.",
-                file=sys.stderr,
-            )
-            return 1
-
-        context["iteration"] = ds.iteration + 1
-        context["main_command_iteration"] = ms.iteration
-        context["lessons_dir"] = f"eigen_lessons/{main_cmd}/"
-
-        # Enrich main_command_outputs with phase-specific paths
-        outputs = dict(ms.output_paths)
-        if phase is not None:
-            outputs["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-        context["main_command_outputs"] = outputs
-
-        # Read recommendations for awareness
-        recs = [
-            r.to_dict() if hasattr(r, "to_dict") else r
-            for r in state.recommendations.get(main_cmd, [])
-            if (
-                (isinstance(r, dict) and r.get("phase") in (phase, None)
-                 and (epic is None or r.get("epic") in (epic, None)))
-                or (hasattr(r, "phase") and r.phase in (phase, None)
-                    and (epic is None or getattr(r, "epic", None) in (epic, None)))
-            )
-        ]
-        context["recommendations"] = recs
-
-        # Check if previous feedback exists on disk
-        if ds.feedback_path and root:
-            prev_file = Path(root) / "eigen_initiative" / ds.feedback_path
-            context["previous_feedback_exists"] = prev_file.exists()
-            context["previous_feedback_path"] = ds.feedback_path
-            if prev_file.exists() and not ds.feedback_consumed:
-                context["overwrite_warning"] = (
-                    f"Existing feedback has not been consumed by {main_cmd} yet. "
-                    f"Re-analyzing will overwrite it."
-                )
-        else:
-            context["previous_feedback_exists"] = False
-            context["previous_feedback_path"] = None
-
-        # Pass locked skills if they exist
-        if ds.locked_skills is not None:
-            context["locked_skills"] = ds.locked_skills
 
     elif cmd == "bootstrap_converge":
         if phase is None:
@@ -766,70 +611,46 @@ def cmd_complete(args: Namespace) -> int:
         if args.locked_skills:
             dts.locked_skills = json.loads(args.locked_skills)
 
-    elif cmd in ("bootstrap", "deepen_bootstrap"):
-        # Legacy: redirect to bootstrap_converge
+    elif cmd in ("bootstrap", "deepen_bootstrap", "space_split", "deepen_space_split"):
+        # Legacy: redirect to *_converge replacements
+        replacement = "bootstrap_converge" if "bootstrap" in cmd else "space_split_converge"
         print(
-            f"ERROR: {cmd} has been replaced by bootstrap_converge. "
-            "Use /bootstrap_converge instead.",
+            f"ERROR: {cmd} has been replaced by {replacement}. "
+            f"Use /{replacement} instead.",
             file=sys.stderr,
         )
         return 1
 
-    elif cmd in MAIN_COMMANDS and phase is not None:
+    elif cmd == "space_split_converge":
+        if phase is None:
+            print("ERROR: --phase required for space_split_converge", file=sys.stderr)
+            return 1
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
             return 1
-        ph = state.phases[pk]
-
-        if cmd == "space_split":
-            ms, ds = ph.space_split, ph.deepen_space_split
-        else:
-            print(f"ERROR: Unknown main command: {cmd}", file=sys.stderr)
-            return 1
-
-        ms.status = "completed"
-        ms.iteration += 1
-        ms.last_run_at = now
-        ms.feedback_consumed = True
-        ds.feedback_consumed = True
-
-        if cmd == "space_split":
-            if args.epic_manifest:
-                ms.output_paths["epic_manifest"] = args.epic_manifest
-            if args.e2e_config:
-                ms.output_paths["phase_e2e_config"] = args.e2e_config
-            if args.epic_ids:
-                ms.output_paths["epic_ids"] = json.loads(args.epic_ids)
-
-    elif cmd in DEEPEN_COMMANDS and phase is not None:
-        pk = str(phase)
-        if pk not in state.phases:
-            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
-        ph = state.phases[pk]
-
-        if cmd == "deepen_space_split":
-            ms, ds = ph.space_split, ph.deepen_space_split
-        else:
-            print(f"ERROR: Unknown deepen command: {cmd}", file=sys.stderr)
-            return 1
-
-        ds.status = "completed"
-        ds.iteration += 1
-        ds.last_run_at = now
-        ds.feedback_consumed = False
-        ms.feedback_consumed = False
-        ms.status = "iterating"  # signal main command needs re-run
-
+        ssc = state.phases[pk].space_split_converge
+        ssc.status = "completed"
+        ssc.iteration += 1
+        ssc.last_run_at = now
+        # Self-converging: feedback_consumed is NOT toggled by the CLI.
+        # The internal swarm loop manages all feedback state.
+        if args.epic_manifest:
+            ssc.output_paths["epic_manifest"] = args.epic_manifest
+        if args.e2e_config:
+            ssc.output_paths["phase_e2e_config"] = args.e2e_config
+        if args.epic_ids:
+            ssc.output_paths["epic_ids"] = json.loads(args.epic_ids)
+        if args.output_path:
+            ssc.output_paths["space_split_report"] = args.output_path
         if args.feedback_path:
-            ds.feedback_path = args.feedback_path
+            ssc.output_paths["feedback_file"] = args.feedback_path
         if args.findings_summary:
             from ..models import FindingsSummary
             fs = json.loads(args.findings_summary)
-            ds.findings_summary = FindingsSummary.from_dict(fs)
+            ssc.findings_summary = FindingsSummary.from_dict(fs)
         if args.locked_skills:
-            ds.locked_skills = json.loads(args.locked_skills)
+            ssc.locked_skills = json.loads(args.locked_skills)
 
     elif cmd == "bootstrap_converge":
         if phase is None:
@@ -957,9 +778,17 @@ def cmd_mark_converged(args: Namespace) -> int:
     elif cmd == "bootstrap_converge" and phase is not None:
         caller = "bootstrap_converge"  # self-marking, like plan_epic_converge
         target = state.phases[str(phase)].bootstrap_converge
-    elif cmd == "space_split" and phase is not None:
-        caller = "deepen_space_split"
-        target = state.phases[str(phase)].space_split
+    elif cmd in ("space_split", "deepen_space_split") and phase is not None:
+        # Legacy: redirect to space_split_converge
+        print(
+            f"ERROR: {cmd} has been replaced by space_split_converge. "
+            "Use `eigen-squared mark-converged space_split_converge --phase N` instead.",
+            file=sys.stderr,
+        )
+        return 1
+    elif cmd == "space_split_converge" and phase is not None:
+        caller = "space_split_converge"  # self-marking, like bootstrap_converge
+        target = state.phases[str(phase)].space_split_converge
     elif cmd == "plan_epic_converge" and phase is not None and epic is not None:
         caller = "plan_epic_converge"
         target = state.phases[str(phase)].plans[str(epic)].plan_epic_converge

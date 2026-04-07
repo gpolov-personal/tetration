@@ -8,7 +8,7 @@ description: Team-based plan generation and convergence for an epic — replaces
 ## Pipeline Context
 
 ```
-space_split ──► plan_epic_converge ──► create_issues_from_plan_swarm
+space_split_converge ──► plan_epic_converge ──► create_issues_from_plan_swarm
                      │
                      └── generates plan.md via internal team convergence loop
 ```
@@ -57,7 +57,7 @@ All paths are relative to `$EIGEN_ROOT/eigen_initiative/`:
 - **Feedback file**: `phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json`
 - **Lessons directory**: `eigen_lessons/plan_epic_converge/`
 
-The epic file (`epic.md`) must exist and contain features, blackbox specs, validation criteria, inter-epic interfaces, and bootstrap context produced by `/space_split`.
+The epic file (`epic.md`) must exist and contain features, blackbox specs, validation criteria, inter-epic interfaces, and bootstrap context produced by `/space_split_converge`.
 
 ## Output
 
@@ -68,7 +68,7 @@ The epic file (`epic.md`) must exist and contain features, blackbox specs, valid
 ## Constraints
 
 - You NEVER write code. You produce a strategic plan document only.
-- You NEVER modify `epic.md`. It is owned by `/space_split` and is read-only input.
+- You NEVER modify `epic.md`. It is owned by `/space_split_converge` and is read-only input.
 - **Parallelization Strategy is a protected machine-parseable block** — maintain its structured format for consumption by `/create_issues_from_plan_swarm`.
 - **pipeline_state.json is the single source of truth** — per-epic plan state lives at `state.phases[N].plans[M]`.
 - **Feedback files are owned by this command** — no other command writes to the feedback path.
@@ -325,7 +325,7 @@ COMMUNICATION:
 
 ### 2.1 Read Epic and Context
 
-1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`. If it does not exist, STOP. Print: "Epic file not found. Run `/space_split` first."
+1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`. If it does not exist, STOP. Print: "Epic file not found. Run `/space_split_converge` first."
 2. Parse the YAML frontmatter to extract `id`, `phase`, `epic_number`, `feature_count`, `features`.
 3. Read the full markdown body (features table, validation criteria, inter-epic interfaces, blackbox specs, whitebox guidance, bootstrap context).
 4. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N_manifest.md` — the phase manifest for broader context.
@@ -912,7 +912,7 @@ Before writing the final plan and proceeding to On Exit, verify:
 
 ## Key Rules
 
-1. **NEVER modify epic.md** — it is owned by `/space_split` and is read-only input.
+1. **NEVER modify epic.md** — it is owned by `/space_split_converge` and is read-only input.
 2. **Plan.md is written by the planner teammate, managed by the coordinator** — the coordinator writes it to disk, the planner generates and updates the content.
 3. **Feedback JSON is written at convergence** — it records the convergence rationale, findings history, and round count for auditability.
 4. **The CLI is the single source of truth for pipeline state** — all pipeline state reads and writes go through `eigen-squared` CLI commands, never through direct file manipulation of pipeline state.

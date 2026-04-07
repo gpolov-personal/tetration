@@ -130,24 +130,21 @@ def determine_next(
         if not bc.get("convergence", {}).get("converged", False):
             return ("bootstrap_converge", {"scope": "phase", "phase": phase_num})
 
-        # ── Space_split ↔ deepen_space_split ──
-        ss = phase.get("space_split")
-        dss = phase.get("deepen_space_split")
-        if not ss:
-            return None
-        if not dss:
-            dss = {"status": "not_started", "feedback_consumed": False}
-
-        result = next_for_convergence_pair(ss, dss)
-        if result[0] == "run_main":
-            return ("space_split", {"scope": "phase", "phase": phase_num})
-        if result[0] == "run_deepen":
-            return ("deepen_space_split", {"scope": "phase", "phase": phase_num})
+        # ── Space split converge (single self-converging command) ──
+        # The space_split_converge slot MUST exist — it is created by
+        # eigen-squared init. Missing key is a data integrity error.
+        ssc = phase.get("space_split_converge")
+        if not ssc:
+            return None  # Data integrity error — cannot proceed without space_split_converge state
+        if ssc.get("status") == "not_started":
+            return ("space_split_converge", {"scope": "phase", "phase": phase_num})
+        if not ssc.get("convergence", {}).get("converged", False):
+            return ("space_split_converge", {"scope": "phase", "phase": phase_num})
 
         # ── Per-epic stages (sequential: process in order, no dependency checks) ──
         epic_order = load_epic_order(phase_num, eigen_root)
         if not epic_order:
-            return ("space_split", {"scope": "phase", "phase": phase_num})
+            return ("space_split_converge", {"scope": "phase", "phase": phase_num})
 
         all_epics_converged = True
 

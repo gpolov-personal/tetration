@@ -8,7 +8,7 @@ description: Orchestrate parallel swarm execution of a development plan across a
 ## Pipeline Context
 
 ```
-eigen_start → space_split → plan_epic_converge → create_issues_from_plan_swarm
+eigen_start → space_split_converge → plan_epic_converge → create_issues_from_plan_swarm
   → orchestrate_swarm ↔ review_swarm_pr → …
         ▲ YOU ARE HERE
 ```
@@ -94,7 +94,7 @@ This principle applies to ALL epics — feature epics and the E2E Testing epic a
 
 ### E2E Testing Epic Awareness
 
-Each phase has a mandatory **E2E Testing epic** (created by `/space_split`) as the last epic in the DAG. This epic:
+Each phase has a mandatory **E2E Testing epic** (created by `/space_split_converge`) as the last epic in the DAG. This epic:
 - Has no features — its scope is writing and running full phase-level E2E tests
 - Is blocked by all other feature epics in the phase
 - Includes an **Infrastructure Requirements** section describing what the E2E tests need (Docker, emulators, dev servers, etc.)

@@ -3,7 +3,8 @@
 This test walks through the entire pipeline lifecycle:
   init → complete time_split → complete deepen_time_split → mark-converged →
   complete bootstrap_converge → mark-converged →
-  complete space_split → ... → complete plan_epic_converge → mark-converged →
+  complete space_split_converge → mark-converged →
+  complete plan_epic_converge → mark-converged →
   ... → all phases approved
 """
 
@@ -127,12 +128,12 @@ class TestFullPipelineWalk:
         run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "report.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
 
-        # space_split cycle
-        assert run_json(["next", "--json"])["command"] == "space_split"
-        run(["complete", "space_split", "--phase", "1", "--epic-manifest", "dag.json", "--e2e-config", "e2e.json"])
-        assert run_json(["next", "--json"])["command"] == "deepen_space_split"
-        run(["complete", "deepen_space_split", "--phase", "1", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "space_split", "--phase", "1", "--reason", "clean"])
+        # space_split_converge (self-converging, single command)
+        assert run_json(["next", "--json"])["command"] == "space_split_converge"
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
 
         # plan_epic_converge
         result = run_json(["next", "--json"])
@@ -237,11 +238,11 @@ class TestFullPipelineWalk:
         run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
 
-        # Space_split P1
-        run(["complete", "space_split", "--phase", "1", "--epic-manifest", "m.json", "--e2e-config", "e.json"])
-        run(["complete", "deepen_space_split", "--phase", "1", "--feedback-path", "f",
+        # Space_split_converge P1 (self-converging)
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "m.json", "--e2e-config", "e.json",
              "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "space_split", "--phase", "1", "--reason", "clean"])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
 
         # Epic P1.E1
         result = run_json(["next", "--json"])
@@ -280,11 +281,11 @@ class TestFullPipelineWalk:
         run(["complete", "bootstrap_converge", "--phase", "2", "--output-path", "r.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "2", "--reason", "clean"])
 
-        # Space_split P2
-        run(["complete", "space_split", "--phase", "2", "--epic-manifest", "m.json", "--e2e-config", "e.json"])
-        run(["complete", "deepen_space_split", "--phase", "2", "--feedback-path", "f",
+        # Space_split_converge P2 (self-converging)
+        run(["complete", "space_split_converge", "--phase", "2",
+             "--epic-manifest", "m.json", "--e2e-config", "e.json",
              "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "space_split", "--phase", "2", "--reason", "clean"])
+        run(["mark-converged", "space_split_converge", "--phase", "2", "--reason", "clean"])
 
         # Epic P2.E1
         run(["init-plan", "--phase", "2", "--epic", "1"])

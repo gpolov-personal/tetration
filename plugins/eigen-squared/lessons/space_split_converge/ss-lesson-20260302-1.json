@@ -1,21 +1,39 @@
 {
   "id": "ss-lesson-20260302-1",
   "created_at": "2026-03-02T19:45:00Z",
-  "command": "space_split",
-  "status": "pending",
+  "command": "space_split_converge",
+  "status": "applied",
   "category": "epic_formation_error",
   "severity": "medium",
   "title": "Epics with overlapping infrastructure files should be merged or given explicit file ownership",
   "description": "Epic 1 (Infrastructure Foundation) and Epic 2 (Tech Stack Standards) both modify Dockerfiles, docker-compose files, CI workflows, and pyproject.toml configs. The phase manifest itself recommended merging them. Running separate agent teams on these epics will produce guaranteed merge conflicts on shared files.",
   "root_cause": "Phase 1.2 (Form Epic Candidates) treats Infrastructure and Tech Stack as separate domains and forms separate epics, even when the manifest suggests merging. The command does not check for file-level overlap between candidate epics based on whitebox/bootstrap context.",
   "recommendation": "In Phase 1.2, after forming epic candidates, add a file-overlap detection step: for each pair of candidate epics, check if their features reference the same infrastructure files (Dockerfiles, docker-compose, CI workflows, pyproject.toml). If overlap exceeds a threshold (e.g., 3+ shared files), recommend merging or require explicit file ownership boundaries before proceeding.",
-  "affected_phase": "Phase 1.2 — Form Epic Candidates",
+  "affected_phase": "Phase 1.2 \u2014 Form Epic Candidates",
   "evidence": {
-    "epics_involved": ["epic_1", "epic_2"],
-    "features_involved": ["INFRA-1", "TECH-5", "TECH-6"],
-    "github_issues_involved": [98, 99],
+    "epics_involved": [
+      "epic_1",
+      "epic_2"
+    ],
+    "features_involved": [
+      "INFRA-1",
+      "TECH-5",
+      "TECH-6"
+    ],
+    "github_issues_involved": [
+      98,
+      99
+    ],
     "agent_source": "architecture-strategist + code-simplicity-reviewer"
   },
   "initiative_context": "Janus Communication Surveillance Platform, Phase 1, 35 features, 5 epics",
-  "tags": ["file-overlap", "epic-merge", "infrastructure", "merge-conflicts"]
+  "tags": [
+    "file-overlap",
+    "epic-merge",
+    "infrastructure",
+    "merge-conflicts"
+  ],
+  "applied_at": "2026-04-07T12:13:57.745475+00:00",
+  "applied_in_version": "3.4.0",
+  "migration_note": "Migrated from lessons/space_split during space_split_converge merge. Existing lesson informed the new prompt design via analysis pass; marked applied to prevent re-application."
 }

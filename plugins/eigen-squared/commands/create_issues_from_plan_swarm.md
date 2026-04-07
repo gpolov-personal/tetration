@@ -8,7 +8,7 @@ description: Decompose a development plan into file-disjoint task files and gene
 ## Pipeline Context
 
 ```
-eigen_start ──► space_split ──► plan_epic_converge
+eigen_start ──► space_split_converge ──► plan_epic_converge
                                       │
                               ┌───────┘
                               ▼

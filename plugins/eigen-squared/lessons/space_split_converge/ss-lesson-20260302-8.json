@@ -1,21 +1,39 @@
 {
   "id": "ss-lesson-20260302-8",
   "created_at": "2026-03-02T19:45:00Z",
-  "command": "space_split",
-  "status": "pending",
+  "command": "space_split_converge",
+  "status": "applied",
   "category": "strategic_concern",
   "severity": "low",
   "title": "Cross-cutting concerns (audit trail, logging) placed in one epic should have explicit interface documentation for consuming epics",
   "description": "AC-13 (Audit Trail) is placed in Epic 4 but records events from Admin actions (Epic 4), pipeline processing (Epic 3), and role/data-role changes (Epic 5). The IAuditRepository interface exists in janus_core but the inter-epic consumption is not documented in the DAG or GitHub issues.",
   "root_cause": "Phase 1.4 (Define Inter-Epic Interfaces) only creates interfaces for feature-level blocked_by dependencies. Cross-cutting concerns (audit, logging, error handling) that are consumed by multiple epics at the implementation level but not expressed as feature dependencies are not captured. The command relies on the shared library (janus_core) to implicitly provide these contracts.",
   "recommendation": "In Phase 1.4, add a cross-cutting concern detection step: identify features that provide system-wide services (audit, logging, caching, error handling) by checking if their blackbox specs describe recording/tracking events from multiple domains. For each cross-cutting feature, document it as a 'cross_cutting_interface' in the epic_manifest.json, listing the provider epic and all consumer epics. Include this in the GitHub issue Inter-Epic Interfaces section with a note: 'This epic provides the <interface> implementation consumed by Epics X, Y, Z.'",
-  "affected_phase": "Phase 1.4 — Define Inter-Epic Interfaces",
+  "affected_phase": "Phase 1.4 \u2014 Define Inter-Epic Interfaces",
   "evidence": {
-    "epics_involved": ["epic_3", "epic_4", "epic_5"],
-    "features_involved": ["AC-13"],
-    "github_issues_involved": [100, 101, 102],
+    "epics_involved": [
+      "epic_3",
+      "epic_4",
+      "epic_5"
+    ],
+    "features_involved": [
+      "AC-13"
+    ],
+    "github_issues_involved": [
+      100,
+      101,
+      102
+    ],
     "agent_source": "architecture-strategist"
   },
   "initiative_context": "Janus Communication Surveillance Platform, Phase 1, 35 features, 5 epics",
-  "tags": ["cross-cutting-concerns", "audit-trail", "inter-epic-interfaces", "shared-services"]
+  "tags": [
+    "cross-cutting-concerns",
+    "audit-trail",
+    "inter-epic-interfaces",
+    "shared-services"
+  ],
+  "applied_at": "2026-04-07T12:13:57.745475+00:00",
+  "applied_in_version": "3.4.0",
+  "migration_note": "Migrated from lessons/space_split during space_split_converge merge. Existing lesson informed the new prompt design via analysis pass; marked applied to prevent re-application."
 }

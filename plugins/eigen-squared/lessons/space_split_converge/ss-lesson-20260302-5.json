@@ -1,21 +1,40 @@
 {
   "id": "ss-lesson-20260302-5",
   "created_at": "2026-03-02T19:45:00Z",
-  "command": "space_split",
-  "status": "pending",
+  "command": "space_split_converge",
+  "status": "applied",
   "category": "e2e_coverage_gap",
   "severity": "low",
   "title": "Phase integration scenario should include acceptance criteria for tech stack compliance epics",
   "description": "The phase_1_full_flow integration scenario listed all 5 epics in epics_involved but had no acceptance criterion validating tech stack compliance (linting, formatting, frontend build). Epic 2's compliance was only implicitly validated by services running successfully.",
   "root_cause": "Phase 3.2 (Generate Phase E2E Config) generates integration scenario acceptance criteria focused on functional behavior (data flow, user actions) but does not include quality-gate criteria for standards/compliance epics. When an epic's primary output is tooling standards rather than functional features, its contribution to the integration scenario is unclear.",
   "recommendation": "In Phase 3.2, when generating phase_integration_scenarios, check if any epic is primarily about standards/compliance (e.g., all features are TECH-* or quality-related). For such epics, add explicit quality-gate acceptance criteria: 'All backend services pass <linter> with zero errors', 'Frontend builds with zero TypeScript errors', 'All tests pass'. These criteria are derived from the epic's blackbox specs and make the integration scenario explicitly verify compliance.",
-  "affected_phase": "Phase 3.2 — Generate Phase E2E Config",
+  "affected_phase": "Phase 3.2 \u2014 Generate Phase E2E Config",
   "evidence": {
-    "epics_involved": ["epic_2"],
-    "features_involved": ["TECH-1", "TECH-2", "TECH-3", "TECH-4", "TECH-5", "TECH-6"],
-    "github_issues_involved": [99],
+    "epics_involved": [
+      "epic_2"
+    ],
+    "features_involved": [
+      "TECH-1",
+      "TECH-2",
+      "TECH-3",
+      "TECH-4",
+      "TECH-5",
+      "TECH-6"
+    ],
+    "github_issues_involved": [
+      99
+    ],
     "agent_source": "e2e-coverage-validator"
   },
   "initiative_context": "Janus Communication Surveillance Platform, Phase 1, 35 features, 5 epics",
-  "tags": ["e2e-coverage", "integration-scenario", "tech-stack-compliance", "quality-gates"]
+  "tags": [
+    "e2e-coverage",
+    "integration-scenario",
+    "tech-stack-compliance",
+    "quality-gates"
+  ],
+  "applied_at": "2026-04-07T12:13:57.745475+00:00",
+  "applied_in_version": "3.4.0",
+  "migration_note": "Migrated from lessons/space_split during space_split_converge merge. Existing lesson informed the new prompt design via analysis pass; marked applied to prevent re-application."
 }

@@ -125,7 +125,7 @@ class Recommendation:
 
 @dataclass
 class MainCommandState:
-    """State for a main command (time_split, bootstrap_converge, space_split, plan_epic_converge)."""
+    """State for a main command (time_split, bootstrap_converge, space_split_converge, plan_epic_converge)."""
 
     status: str = "not_started"  # not_started | completed | iterating
     iteration: int = 0
@@ -185,7 +185,7 @@ class MainCommandState:
 
 @dataclass
 class DeepenCommandState:
-    """State for a deepen command (deepen_time_split, deepen_space_split)."""
+    """State for a deepen command (deepen_time_split)."""
 
     status: str = "not_started"  # not_started | completed
     iteration: int = 0
@@ -310,16 +310,14 @@ class EpicPlan:
 @dataclass
 class PhaseState:
     bootstrap_converge: MainCommandState = field(default_factory=MainCommandState)
-    space_split: MainCommandState = field(default_factory=MainCommandState)
-    deepen_space_split: DeepenCommandState = field(default_factory=DeepenCommandState)
+    space_split_converge: MainCommandState = field(default_factory=MainCommandState)
     phase_review: PhaseReview = field(default_factory=PhaseReview)
     plans: dict[str, EpicPlan] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
             "bootstrap_converge": self.bootstrap_converge.to_dict(),
-            "space_split": self.space_split.to_dict(),
-            "deepen_space_split": self.deepen_space_split.to_dict(),
+            "space_split_converge": self.space_split_converge.to_dict(),
             "phase_review": self.phase_review.to_dict(),
             "plans": {k: v.to_dict() for k, v in self.plans.items()},
         }
@@ -357,12 +355,30 @@ class PhaseState:
         else:
             bootstrap_converge = MainCommandState.from_dict(bc_raw)
 
+        # Migration shim: legacy "space_split" + "deepen_space_split" pair
+        # → unified "space_split_converge". Same pattern as bootstrap shim above.
+        # Short-lived; permanent error guards in subcommands catch stale clients.
+        ssc_raw = d.get("space_split_converge")
+        if ssc_raw is None and "space_split" in d:
+            legacy_main = MainCommandState.from_dict(d.get("space_split"))
+            legacy_deepen = DeepenCommandState.from_dict(d.get("deepen_space_split"))
+            if legacy_deepen.findings_summary and (
+                legacy_deepen.findings_summary.high
+                or legacy_deepen.findings_summary.medium
+                or legacy_deepen.findings_summary.low
+            ):
+                legacy_main.findings_summary = legacy_deepen.findings_summary
+            if legacy_deepen.locked_skills:
+                legacy_main.locked_skills = legacy_deepen.locked_skills
+            if legacy_deepen.feedback_path:
+                legacy_main.output_paths["feedback_file"] = legacy_deepen.feedback_path
+            space_split_converge = legacy_main
+        else:
+            space_split_converge = MainCommandState.from_dict(ssc_raw)
+
         return cls(
             bootstrap_converge=bootstrap_converge,
-            space_split=MainCommandState.from_dict(d.get("space_split")),
-            deepen_space_split=DeepenCommandState.from_dict(
-                d.get("deepen_space_split")
-            ),
+            space_split_converge=space_split_converge,
             phase_review=PhaseReview.from_dict(d.get("phase_review")),
             plans=plans,
         )
@@ -445,9 +461,9 @@ VALID_SWARM_STATUSES = {"not_started", "pr_created", "iterating", "converged"}
 VALID_PHASE_REVIEW_STATUSES = {"not_started", "testing", "approved"}
 
 RECOMMENDATION_MATRIX: dict[str, set[str]] = {
-    "deepen_time_split": {"bootstrap_converge", "space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
-    "bootstrap_converge": {"space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
-    "deepen_space_split": {"plan_epic_converge", "create_issues_from_plan_swarm"},
+    "deepen_time_split": {"bootstrap_converge", "space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},
+    "bootstrap_converge": {"space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},
+    "space_split_converge": {"plan_epic_converge", "create_issues_from_plan_swarm"},
     "plan_epic_converge": {"create_issues_from_plan_swarm"},
 }
 
@@ -455,7 +471,7 @@ MAX_RECOMMENDATIONS_PER_PAIR = 5
 
 DEFAULT_RECOMMENDATIONS = {
     "bootstrap_converge": [],
-    "space_split": [],
+    "space_split_converge": [],
     "plan_epic_converge": [],
     "create_issues_from_plan_swarm": [],
 }

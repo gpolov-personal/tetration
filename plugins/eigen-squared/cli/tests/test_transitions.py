@@ -94,17 +94,9 @@ def make_phase(
     phase_review_status="not_started",
     plans=None,
     include_bootstrap=True,
+    include_space_split=True,
 ):
     phase = {
-        "space_split": {
-            "status": "completed",
-            "feedback_consumed": True,
-            "convergence": {"converged": space_split_converged},
-        },
-        "deepen_space_split": {
-            "status": "completed",
-            "feedback_consumed": False,
-        },
         "phase_review": {"status": phase_review_status},
         "plans": plans or {},
     }
@@ -113,6 +105,13 @@ def make_phase(
             "status": "completed",
             "feedback_consumed": True,
             "convergence": {"converged": bootstrap_converged},
+            "iteration": 1,
+        }
+    if include_space_split:
+        phase["space_split_converge"] = {
+            "status": "completed",
+            "feedback_consumed": True,
+            "convergence": {"converged": space_split_converged},
             "iteration": 1,
         }
     return phase
@@ -308,10 +307,43 @@ class TestDetermineNext:
     def test_phase_without_bootstrap_keys_returns_none(self):
         """Missing bootstrap_converge key is a data integrity error — pipeline stops."""
         phase = make_phase(include_bootstrap=False, space_split_converged=False)
-        phase["space_split"]["status"] = "not_started"
+        phase["space_split_converge"]["status"] = "not_started"
         state = make_pipeline_state(phases={"1": phase})
         result = determine_next(state)
-        assert result is None  # Data integrity error, not fallback to space_split
+        assert result is None  # Data integrity error, not fallback to space_split_converge
+
+    def test_bootstrap_converged_goes_to_space_split_converge(self):
+        phase = make_phase(space_split_converged=False)
+        phase["space_split_converge"]["status"] = "not_started"
+        state = make_pipeline_state(phases={"1": phase})
+        result = determine_next(state)
+        assert result is not None
+        assert result[0] == "space_split_converge"
+        assert result[1]["phase"] == 1
+
+    def test_space_split_converge_completed_not_converged_returns_self(self):
+        """If status=completed but convergence=False, run space_split_converge again."""
+        phase = make_phase(space_split_converged=False)
+        # status stays "completed" by default fixture
+        state = make_pipeline_state(phases={"1": phase})
+        result = determine_next(state)
+        assert result is not None
+        assert result[0] == "space_split_converge"
+
+    def test_space_split_converge_converged_advances_to_plan_epic_converge(self):
+        phase = make_phase(space_split_converged=True, plans={})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch("cli.transitions.load_epic_order", return_value=[1]):
+            result = determine_next(state)
+        assert result is not None
+        assert result[0] == "plan_epic_converge"
+
+    def test_phase_without_space_split_converge_returns_none(self):
+        """Missing space_split_converge key is a data integrity error — pipeline stops."""
+        phase = make_phase(include_space_split=False)
+        state = make_pipeline_state(phases={"1": phase})
+        result = determine_next(state)
+        assert result is None
 
     def test_bug5_missing_plan_schedules_plan(self):
         """Sequential: first non-converged epic gets planned immediately."""
@@ -359,15 +391,13 @@ class TestDetermineNext:
         result = determine_next({"state": {}})
         assert result is None
 
-    def test_missing_deepen_space_split_no_crash(self):
-        phase = make_phase()
-        del phase["deepen_space_split"]
-        phase["space_split"]["status"] = "not_started"
-        phase["space_split"]["convergence"]["converged"] = False
+    def test_space_split_converge_not_started_returns_self(self):
+        phase = make_phase(space_split_converged=False)
+        phase["space_split_converge"]["status"] = "not_started"
         state = make_pipeline_state(phases={"1": phase})
         result = determine_next(state)
         assert result is not None
-        assert result[0] == "space_split"
+        assert result[0] == "space_split_converge"
 
     def test_missing_plan_sub_keys_no_crash(self):
         """Sequential: plan entry exists but no plan_epic_converge sub-key → plan it."""

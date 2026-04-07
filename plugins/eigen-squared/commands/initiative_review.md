@@ -622,7 +622,7 @@ If the project is in a specific domain (fintech, healthtech, emergency managemen
 
 - **This is the ONLY command that creates/modifies initiative documents** — all other commands treat them as read-only input.
 - **Ask questions** — this is interactive by design. Don't guess when you can ask.
-- **Be pipeline-aware** — every question and suggestion should be informed by what `time_split`, `bootstrap`, and `space_split` need downstream.
+- **Be pipeline-aware** — every question and suggestion should be informed by what `time_split`, `bootstrap_converge`, and `space_split_converge` need downstream.
 - **Don't over-engineer** — pipeline-ready is the goal, not perfect. Good enough to start iterating is better than endlessly polishing.
 - **Preserve user's intent** — when improving documents, keep the user's original vision and language. Add structure, don't rewrite.
 - **Tech stack and deployment go in the initiative** — this is the canonical place, consumed by all downstream commands.

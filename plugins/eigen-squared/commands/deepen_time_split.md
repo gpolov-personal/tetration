@@ -165,7 +165,7 @@ After collecting all findings (Stage 5), apply these convergence rules **in orde
    - Set `convergence.iteration_limit_reached` to `true` in the feedback file.
 
 4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same features keep appearing in findings across iterations without resolution).
-   - Rationale: "Stagnation detected. The same features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by downstream commands (bootstrap_converge, space_split)."
+   - Rationale: "Stagnation detected. The same features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by downstream commands (bootstrap_converge, space_split_converge)."
 
 5. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Oscillation = a finding was fixed in iteration N, reappeared in N+1, fixed again in N+2 (or a finding alternates between accept/reject across iterations).
@@ -178,7 +178,7 @@ After collecting all findings (Stage 5), apply these convergence rules **in orde
 ### Downstream Impact Assessment
 
 For each finding, assess its downstream impact on later pipeline commands:
-- Document which downstream commands (bootstrap, space_split, etc.) would be affected in `findings[].downstream_impact`.
+- Document which downstream commands (bootstrap_converge, space_split_converge, etc.) would be affected in `findings[].downstream_impact`.
 - Downstream impact informs recommendations at convergence — findings with downstream impact that are low-severity become candidates for the `recommendations` channel.
 
 ---
@@ -448,7 +448,7 @@ For each finding, assign:
   - `structural_error` — DAG violation, cluster split, missing dependency
   - `balance_issue` — phase too large/small, priority misordering, bottleneck placement
   - `content_gap` — missing blackbox spec, irrelevant/missing whitebox section
-  - `e2e_gap` — phase doesn't enable progressive E2E testing (phase-level; distinct from `e2e_coverage_gap` used by deepen_space_split for epic-level gaps)
+  - `e2e_gap` — phase doesn't enable progressive E2E testing (phase-level; distinct from `e2e_coverage_gap` used by space_split_converge for epic-level gaps)
   - `strategic_concern` — risk concentration, architectural ordering issue
   - `cross_phase_dep_error` — missing or incorrect cross-phase dependency
   - `false_positive` — agent flagged something that's actually correct upon analysis
@@ -523,7 +523,7 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/feedback/
       ],
       "actionable_by": "time_split",
       "downstream_impact": {
-        "affects_commands": ["bootstrap", "space_split"],
+        "affects_commands": ["bootstrap_converge", "space_split_converge"],
         "impact_description": "<what breaks downstream if this is not fixed>"
       }
     }
@@ -545,7 +545,7 @@ Apply the Convergence Decision Protocol (from the Iteration Protocol section abo
 At convergence, scan low-severity findings for cross-stage insights worth preserving for downstream commands.
 
 1. **Filter findings with downstream impact:** Only low-severity findings where `downstream_impact.affects_commands` is non-empty.
-2. **For each affected downstream command** (bootstrap, space_split, plan_epic_converge, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
+2. **For each affected downstream command** (bootstrap_converge, space_split_converge, plan_epic_converge, create_issues_from_plan_swarm), draft a 1-2 sentence observation:
    - Describe the **observed condition** in the time_split output.
    - State the **implication** for the downstream command.
 3. **Write recommendations via CLI** — one call per recommendation:

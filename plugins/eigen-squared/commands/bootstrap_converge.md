@@ -8,7 +8,7 @@ description: Team-based foundation creation and convergence for a phase — repl
 ## Pipeline Context
 
 ```
-time_split ↔ deepen_time_split → bootstrap_converge → space_split → ...
+time_split ↔ deepen_time_split → bootstrap_converge → space_split_converge → ...
                                   ^^^^^^^^^^^^^^^^^^
                                   YOU ARE HERE
 ```
@@ -29,7 +29,7 @@ You are the **coordinator** of a foundation-building team. You spawn a `bootstra
   2. Whitebox database schema section (if present)
   3. Blackbox specs (greenfield case)
 - **Incremental by design**: bootstrapper scans `$EIGEN_ROOT` FIRST, computes a delta, prints it, THEN applies. On rounds 2+ it applies surgical fixes from `code_change_guidance` — never re-scaffolds.
-- **bootstrap-report.json schema is invariant** — `space_split`, `deepen_space_split`, `create_issues_from_plan_swarm`, and `plan_epic_converge` consume it. Path is always `phases/phase_N/bootstrap-report.json` and the schema must match the legacy bootstrap output (delta_applied, entities_created, contracts_created, verification, tooling_decisions, commits, languages, server_project_detected, dockerfile_created, etc.).
+- **bootstrap-report.json schema is invariant** — `space_split_converge`, `create_issues_from_plan_swarm`, and `plan_epic_converge` consume it. Path is always `phases/phase_N/bootstrap-report.json` and the schema must match the legacy bootstrap output (delta_applied, entities_created, contracts_created, verification, tooling_decisions, commits, languages, server_project_detected, dockerfile_created, etc.).
 - **pipeline_state.json is the single source of truth** — per-phase converge state lives at `state.phases[N].bootstrap_converge`.
 - **Feedback file**: `phases/phase_N/feedback/bootstrap_converge_feedback.json` — owned by this command, no other command writes to it.
 
@@ -107,7 +107,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 ```bash
 eigen-squared complete bootstrap_converge --phase <N> --output-path phases/phase_<N>/bootstrap-report.json --feedback-path phases/phase_<N>/feedback/bootstrap_converge_feedback.json --findings-summary '{"high": 0, "medium": 0, "low": <count>}' --locked-skills '["skill-a", "skill-b", ...]'
 eigen-squared mark-converged bootstrap_converge --phase <N> --reason "<convergence rationale>"
-eigen-squared add-recommendation --from-cmd bootstrap_converge --target space_split --phase <N> --iteration <N> --text "<observation>"
+eigen-squared add-recommendation --from-cmd bootstrap_converge --target space_split_converge --phase <N> --iteration <N> --text "<observation>"
 eigen-squared commit-state --message "pipeline: bootstrap_converge phase <N> — converged" --additional-paths eigen_initiative/phases/phase_<N>/,eigen_initiative/eigen_lessons/bootstrap_converge/
 ```
 
@@ -641,7 +641,7 @@ The coordinator is the SOLE authority on severity. Reviewers only propose.
 
 | Severity | Definition | Concrete examples |
 |---|---|---|
-| **high** | Blocks `space_split` or downstream swarms | Build does not compile; entity referenced by 2+ features does not exist; contract has invalid types; critical dependency missing; **`verification_failure` is ALWAYS high** |
+| **high** | Blocks `space_split_converge` or downstream swarms | Build does not compile; entity referenced by 2+ features does not exist; contract has invalid types; critical dependency missing; **`verification_failure` is ALWAYS high** |
 | **medium** | Functional but suboptimal | Lint warnings legacy; config incomplete for future extension; entity has fields that will be needed in phase N+1; Docker healthcheck missing in server project |
 | **low** | Minor / stylistic | Inconsistent naming; missing comments; import ordering |
 
@@ -823,7 +823,7 @@ Write to `phases/phase_<N>/feedback/bootstrap_converge_feedback.json`:
       "source_reviewer": "<foundation|fidelity|strategic|skills|merged>",
       "source_checklist": "<id>",
       "downstream_impact": {
-        "affects_commands": ["space_split"],
+        "affects_commands": ["space_split_converge"],
         "impact_description": "<what would break downstream>"
       }
     }
@@ -933,7 +933,7 @@ Bootstrap report: $EIGEN_ROOT/eigen_initiative/phases/phase_<N>/bootstrap-report
 Feedback: $EIGEN_ROOT/eigen_initiative/phases/phase_<N>/feedback/bootstrap_converge_feedback.json
 
 Next steps:
-  1. Run /space_split to decompose Phase <N> into parallel epics for swarm execution.
+  1. Run /space_split_converge to decompose Phase <N> into parallel epics for swarm execution.
   2. Run /compound_improve to apply accumulated lessons to bootstrap_converge.md.
 ```
 
@@ -957,7 +957,7 @@ Before writing the final bootstrap-report.json and proceeding to On Exit, verify
 
 ## Key Rules
 
-1. **Bootstrap-report.json schema is invariant** — `space_split`, `deepen_space_split`, `create_issues_from_plan_swarm`, `plan_epic_converge` consume it. Do not change the schema.
+1. **Bootstrap-report.json schema is invariant** — `space_split_converge`, `create_issues_from_plan_swarm`, `plan_epic_converge` consume it. Do not change the schema.
 2. **Bootstrapper writes files; coordinator writes pipeline artifacts** — the bootstrapper makes commits in $EIGEN_ROOT, the coordinator writes bootstrap-report.json, feedback file, lessons, and pipeline_state.json updates via the CLI.
 3. **No git rollback / no --amend** — fix-forward only. Mistakes are corrected by new commits in the next round.
 4. **Verification failures are always high severity** — they block oscillation-based convergence.

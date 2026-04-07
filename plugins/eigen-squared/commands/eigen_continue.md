@@ -8,7 +8,7 @@ description: Phase transition checkpoint — summarize completed phase, provide 
 ## Pipeline Context
 
 ```
-eigen_start → space_split → plan_epic_converge → create_issues_from_plan_swarm
+eigen_start → space_split_converge → plan_epic_converge → create_issues_from_plan_swarm
   → orchestrate_swarm ↔ review_swarm_pr → eigen_continue → (next phase)
                                                ▲ YOU ARE HERE
 ```

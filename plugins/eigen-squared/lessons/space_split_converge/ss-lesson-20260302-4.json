@@ -1,21 +1,35 @@
 {
   "id": "ss-lesson-20260302-4",
   "created_at": "2026-03-02T19:45:00Z",
-  "command": "space_split",
-  "status": "pending",
+  "command": "space_split_converge",
+  "status": "applied",
   "category": "spec_fidelity_error",
   "severity": "low",
   "title": "Blackbox specs in GitHub issues should use definitive tooling choices from bootstrap report, not original alternatives",
   "description": "TECH-2 spec in issue #99 listed 'Ant Design or MUI' as UI library options, but the bootstrap report confirms MUI 7 is the chosen library. The spec should be definitive to avoid ambiguity in downstream planning.",
   "root_cause": "Phase 2.3 (Create One Issue Per Epic) copies blackbox specs verbatim from the phase manifest. The manifest preserves the original initiative document's language which may list alternatives. The command does not cross-reference tooling decisions from the bootstrap report to resolve ambiguities in blackbox specs.",
   "recommendation": "In Phase 2.3, when building the issue body's Blackbox Feature Specifications section, add a post-processing step: for each spec, check if it references technology alternatives (patterns like 'X or Y', 'either A or B'). If the bootstrap report has resolved these alternatives (in tooling_decisions), replace the alternatives with the definitive choice. Log the substitution in a comment within the issue body.",
-  "affected_phase": "Phase 2.3 — Create One Issue Per Epic",
+  "affected_phase": "Phase 2.3 \u2014 Create One Issue Per Epic",
   "evidence": {
-    "epics_involved": ["epic_2"],
-    "features_involved": ["TECH-2"],
-    "github_issues_involved": [99],
+    "epics_involved": [
+      "epic_2"
+    ],
+    "features_involved": [
+      "TECH-2"
+    ],
+    "github_issues_involved": [
+      99
+    ],
     "agent_source": "issue-quality-validator"
   },
   "initiative_context": "Janus Communication Surveillance Platform, Phase 1, 35 features, 5 epics",
-  "tags": ["spec-fidelity", "tooling-decisions", "bootstrap-cross-reference", "ambiguity"]
+  "tags": [
+    "spec-fidelity",
+    "tooling-decisions",
+    "bootstrap-cross-reference",
+    "ambiguity"
+  ],
+  "applied_at": "2026-04-07T12:13:57.745475+00:00",
+  "applied_in_version": "3.4.0",
+  "migration_note": "Migrated from lessons/space_split during space_split_converge merge. Existing lesson informed the new prompt design via analysis pass; marked applied to prevent re-application."
 }

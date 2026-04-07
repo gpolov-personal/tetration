@@ -16,7 +16,7 @@ Initiative Documents (feature tables + specs)
         |
     bootstrap_converge                      Create project foundation (per phase, self-converging)
         |
-    space_split ↔ deepen_space_split       Decompose phase into sequential epics
+    space_split_converge                    Decompose phase into sequential epics (self-converging)
         |
     For each epic (one at a time):
         |
@@ -160,7 +160,7 @@ On Exit:
 
 ### Convergence loops
 
-Main commands with deepen pairs (time_split, space_split) produce output and their deepen counterparts review it with parallel agents. Self-converging commands (bootstrap_converge, plan_epic_converge) instead spawn an internal swarm of teammates (one builder + multiple reviewers) and iterate within a single command invocation. Both patterns decide:
+Main commands with deepen pairs (time_split) produce output and their deepen counterparts review it with parallel agents. Self-converging commands (bootstrap_converge, space_split_converge, plan_epic_converge) instead spawn an internal swarm of teammates (one builder + multiple reviewers) and iterate within a single command invocation. Both patterns decide:
 
 - **Continue**: Write feedback file, signal fresh feedback available. The watchdog schedules the main command to iterate.
 - **Converge**: Set convergence flag, optionally write downstream recommendations. The watchdog advances to the next stage.
@@ -188,9 +188,9 @@ Decomposes the initiative into **sequential, E2E-testable phases**. Each phase i
 
 Creates the project foundation: directory structure, entity stubs, API/message contracts, package manifests, quality config, basic CI, and Docker artifacts for server projects. Incremental — scans what exists before creating. Self-converging: a single command spawns a 5-teammate swarm (bootstrapper + foundation/fidelity/strategic/skills reviewers) that iterates internally until convergence, with no external main↔deepen feedback loop.
 
-### Stage 3: space_split (per phase)
+### Stage 3: space_split_converge (per phase)
 
-Decomposes a phase into **sequential epics**. Each epic is a focused unit of work with clear boundaries. Output: epic definition files, `epic_manifest.json` with execution order, `phase_e2e_config.json` with test scenarios. The last epic is always the E2E Testing epic.
+Decomposes a phase into **sequential epics**. Each epic is a focused unit of work with clear boundaries. Output: epic definition files, `epic_manifest.json` with execution order, `phase_e2e_config.json` with test scenarios. The last epic is always the E2E Testing epic. Self-converging: a single command spawns an internal swarm (decomposer + reviewers) that iterates until convergence, with no external main↔deepen feedback loop.
 
 ### Stage 4: plan_epic_converge (per epic)
 
@@ -241,7 +241,7 @@ $EIGEN_ROOT/
     eigen_lessons/                    # Lessons for compound_improve
       time_split/
       bootstrap_converge/
-      space_split/
+      space_split_converge/
       plan_epic_converge/
       review_swarm_pr/
   .eigen/
