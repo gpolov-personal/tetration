@@ -55,7 +55,7 @@ def create_initial_state(
     """Create a fresh PipelineState with all phases initialized.
 
     This replaces the 40+ lines of initialization logic in time_split.
-    Every phase gets bootstrap, deepen_bootstrap, space_split,
+    Every phase gets bootstrap_converge, space_split,
     deepen_space_split, phase_review, and empty plans.
     """
     now = datetime.now(timezone.utc).isoformat()
@@ -88,14 +88,10 @@ def validate_state(state: PipelineState) -> list[str]:
     for phase_key, phase in state.phases.items():
         prefix = f"phases[{phase_key}]"
 
-        if phase.bootstrap.status not in VALID_MAIN_STATUSES:
+        if phase.bootstrap_converge.status not in VALID_MAIN_STATUSES:
             errors.append(
-                f"{prefix}.bootstrap.status invalid: {phase.bootstrap.status!r}"
-            )
-        if phase.deepen_bootstrap.status not in VALID_DEEPEN_STATUSES:
-            errors.append(
-                f"{prefix}.deepen_bootstrap.status invalid: "
-                f"{phase.deepen_bootstrap.status!r}"
+                f"{prefix}.bootstrap_converge.status invalid: "
+                f"{phase.bootstrap_converge.status!r}"
             )
         if phase.space_split.status not in VALID_MAIN_STATUSES:
             errors.append(

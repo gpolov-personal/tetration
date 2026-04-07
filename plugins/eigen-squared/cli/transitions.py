@@ -119,18 +119,16 @@ def determine_next(
         if phase_review.get("status") == "approved":
             continue
 
-        # ── Bootstrap ↔ deepen_bootstrap ──
-        # Bootstrap keys MUST exist — they are created by eigen-squared init.
-        # Missing keys is a data integrity error, not a "skip bootstrap" signal.
-        bs = phase.get("bootstrap")
-        dbs = phase.get("deepen_bootstrap")
-        if not bs or not dbs:
-            return None  # Data integrity error — cannot proceed without bootstrap state
-        result = next_for_convergence_pair(bs, dbs)
-        if result[0] == "run_main":
-            return ("bootstrap", {"scope": "phase", "phase": phase_num})
-        if result[0] == "run_deepen":
-            return ("deepen_bootstrap", {"scope": "phase", "phase": phase_num})
+        # ── Bootstrap converge (single self-converging command) ──
+        # The bootstrap_converge slot MUST exist — it is created by
+        # eigen-squared init. Missing key is a data integrity error.
+        bc = phase.get("bootstrap_converge")
+        if not bc:
+            return None  # Data integrity error — cannot proceed without bootstrap_converge state
+        if bc.get("status") == "not_started":
+            return ("bootstrap_converge", {"scope": "phase", "phase": phase_num})
+        if not bc.get("convergence", {}).get("converged", False):
+            return ("bootstrap_converge", {"scope": "phase", "phase": phase_num})
 
         # ── Space_split ↔ deepen_space_split ──
         ss = phase.get("space_split")

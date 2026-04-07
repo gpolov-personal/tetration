@@ -14,7 +14,7 @@ Initiative Documents (feature tables + specs)
         |
     time_split ↔ deepen_time_split         Split initiative into sequential phases
         |
-    bootstrap ↔ deepen_bootstrap           Create project foundation (per phase)
+    bootstrap_converge                      Create project foundation (per phase, self-converging)
         |
     space_split ↔ deepen_space_split       Decompose phase into sequential epics
         |
@@ -120,16 +120,16 @@ All pipeline state is managed by a Python CLI (`cli/`) that commands call via ba
 eigen-squared next --json
 
 # Get context for a command (syncs, auto-detects phase/epic, runs guards)
-eigen-squared get-context bootstrap --json
+eigen-squared get-context bootstrap_converge --json
 
 # Record command completion (sets all fields atomically)
-eigen-squared complete bootstrap --phase 1 --output-path report.json
+eigen-squared complete bootstrap_converge --phase 1 --output-path report.json
 
-# Mark convergence (only called by deepen commands)
-eigen-squared mark-converged bootstrap --phase 1 --reason "Zero high/medium findings"
+# Mark convergence (self-marking for converge commands)
+eigen-squared mark-converged bootstrap_converge --phase 1 --reason "Zero high/medium findings"
 
 # Commit state + artifacts to git
-eigen-squared commit-state --message "pipeline: bootstrap phase 1" --additional-paths eigen_initiative/phases/phase_1/
+eigen-squared commit-state --message "pipeline: bootstrap_converge phase 1" --additional-paths eigen_initiative/phases/phase_1/
 
 # Human-readable status
 eigen-squared status
@@ -160,7 +160,7 @@ On Exit:
 
 ### Convergence loops
 
-Main commands (time_split, bootstrap, space_split, plan_epic_converge) produce output. Deepen commands review it with parallel agents and decide:
+Main commands with deepen pairs (time_split, space_split) produce output and their deepen counterparts review it with parallel agents. Self-converging commands (bootstrap_converge, plan_epic_converge) instead spawn an internal swarm of teammates (one builder + multiple reviewers) and iterate within a single command invocation. Both patterns decide:
 
 - **Continue**: Write feedback file, signal fresh feedback available. The watchdog schedules the main command to iterate.
 - **Converge**: Set convergence flag, optionally write downstream recommendations. The watchdog advances to the next stage.
@@ -184,9 +184,9 @@ Commands do NOT schedule their successors. This eliminates the class of bugs whe
 
 Decomposes the initiative into **sequential, E2E-testable phases**. Each phase is a self-contained deliverable. Output: phase manifests with feature tables, dependency graphs, blackbox specs.
 
-### Stage 2: bootstrap (per phase)
+### Stage 2: bootstrap_converge (per phase)
 
-Creates the project foundation: directory structure, entity stubs, API/message contracts, package manifests, quality config, basic CI, and Docker artifacts for server projects. Incremental — scans what exists before creating.
+Creates the project foundation: directory structure, entity stubs, API/message contracts, package manifests, quality config, basic CI, and Docker artifacts for server projects. Incremental — scans what exists before creating. Self-converging: a single command spawns a 5-teammate swarm (bootstrapper + foundation/fidelity/strategic/skills reviewers) that iterates internally until convergence, with no external main↔deepen feedback loop.
 
 ### Stage 3: space_split (per phase)
 
@@ -240,7 +240,7 @@ $EIGEN_ROOT/
         ...
     eigen_lessons/                    # Lessons for compound_improve
       time_split/
-      bootstrap/
+      bootstrap_converge/
       space_split/
       plan_epic_converge/
       review_swarm_pr/

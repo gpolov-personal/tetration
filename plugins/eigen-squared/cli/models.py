@@ -125,7 +125,7 @@ class Recommendation:
 
 @dataclass
 class MainCommandState:
-    """State for a main command (time_split, bootstrap, space_split, plan_epic_converge)."""
+    """State for a main command (time_split, bootstrap_converge, space_split, plan_epic_converge)."""
 
     status: str = "not_started"  # not_started | completed | iterating
     iteration: int = 0
@@ -135,8 +135,10 @@ class MainCommandState:
     convergence: Convergence = field(default_factory=Convergence)
     # time_split only:
     phase_count: Optional[int] = None
-    # converge commands only (plan_epic_converge):
+    # converge commands only (plan_epic_converge, bootstrap_converge):
     findings_summary: Optional[FindingsSummary] = None
+    # converge commands that lock a skills set after round 1 (bootstrap_converge):
+    locked_skills: Optional[list[str]] = None
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {
@@ -151,6 +153,8 @@ class MainCommandState:
             d["phase_count"] = self.phase_count
         if self.findings_summary is not None:
             d["findings_summary"] = self.findings_summary.to_dict()
+        if self.locked_skills is not None:
+            d["locked_skills"] = self.locked_skills
         return d
 
     @classmethod
@@ -175,12 +179,13 @@ class MainCommandState:
             convergence=Convergence.from_dict(d.get("convergence")),
             phase_count=phase_count,
             findings_summary=findings_summary,
+            locked_skills=d.get("locked_skills"),
         )
 
 
 @dataclass
 class DeepenCommandState:
-    """State for a deepen command (deepen_time_split, deepen_bootstrap, etc.)."""
+    """State for a deepen command (deepen_time_split, deepen_space_split)."""
 
     status: str = "not_started"  # not_started | completed
     iteration: int = 0
@@ -304,8 +309,7 @@ class EpicPlan:
 
 @dataclass
 class PhaseState:
-    bootstrap: MainCommandState = field(default_factory=MainCommandState)
-    deepen_bootstrap: DeepenCommandState = field(default_factory=DeepenCommandState)
+    bootstrap_converge: MainCommandState = field(default_factory=MainCommandState)
     space_split: MainCommandState = field(default_factory=MainCommandState)
     deepen_space_split: DeepenCommandState = field(default_factory=DeepenCommandState)
     phase_review: PhaseReview = field(default_factory=PhaseReview)
@@ -313,8 +317,7 @@ class PhaseState:
 
     def to_dict(self) -> dict:
         return {
-            "bootstrap": self.bootstrap.to_dict(),
-            "deepen_bootstrap": self.deepen_bootstrap.to_dict(),
+            "bootstrap_converge": self.bootstrap_converge.to_dict(),
             "space_split": self.space_split.to_dict(),
             "deepen_space_split": self.deepen_space_split.to_dict(),
             "phase_review": self.phase_review.to_dict(),
@@ -327,9 +330,35 @@ class PhaseState:
             return cls()
         plans_raw = d.get("plans") or {}
         plans = {k: EpicPlan.from_dict(v) for k, v in plans_raw.items()}
+
+        # Migration shim: legacy "bootstrap" + "deepen_bootstrap" pair
+        # → unified "bootstrap_converge". Findings, locked_skills, and feedback_path
+        # are promoted from the old deepen entry to the new converge entry.
+        # NOTE: this shim is intentionally short-lived. Once all live
+        # pipeline_state.json files have been migrated, delete this block (and
+        # the corresponding test in test_models.py) and let unknown keys be
+        # silently ignored. The CLI error guards in cmd_next/cmd_complete
+        # remain in place permanently to catch stale clients.
+        bc_raw = d.get("bootstrap_converge")
+        if bc_raw is None and "bootstrap" in d:
+            legacy_main = MainCommandState.from_dict(d.get("bootstrap"))
+            legacy_deepen = DeepenCommandState.from_dict(d.get("deepen_bootstrap"))
+            if legacy_deepen.findings_summary and (
+                legacy_deepen.findings_summary.high
+                or legacy_deepen.findings_summary.medium
+                or legacy_deepen.findings_summary.low
+            ):
+                legacy_main.findings_summary = legacy_deepen.findings_summary
+            if legacy_deepen.locked_skills:
+                legacy_main.locked_skills = legacy_deepen.locked_skills
+            if legacy_deepen.feedback_path:
+                legacy_main.output_paths["feedback_file"] = legacy_deepen.feedback_path
+            bootstrap_converge = legacy_main
+        else:
+            bootstrap_converge = MainCommandState.from_dict(bc_raw)
+
         return cls(
-            bootstrap=MainCommandState.from_dict(d.get("bootstrap")),
-            deepen_bootstrap=DeepenCommandState.from_dict(d.get("deepen_bootstrap")),
+            bootstrap_converge=bootstrap_converge,
             space_split=MainCommandState.from_dict(d.get("space_split")),
             deepen_space_split=DeepenCommandState.from_dict(
                 d.get("deepen_space_split")
@@ -416,8 +445,8 @@ VALID_SWARM_STATUSES = {"not_started", "pr_created", "iterating", "converged"}
 VALID_PHASE_REVIEW_STATUSES = {"not_started", "testing", "approved"}
 
 RECOMMENDATION_MATRIX: dict[str, set[str]] = {
-    "deepen_time_split": {"bootstrap", "space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
-    "deepen_bootstrap": {"space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
+    "deepen_time_split": {"bootstrap_converge", "space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
+    "bootstrap_converge": {"space_split", "plan_epic_converge", "create_issues_from_plan_swarm"},
     "deepen_space_split": {"plan_epic_converge", "create_issues_from_plan_swarm"},
     "plan_epic_converge": {"create_issues_from_plan_swarm"},
 }
@@ -425,7 +454,7 @@ RECOMMENDATION_MATRIX: dict[str, set[str]] = {
 MAX_RECOMMENDATIONS_PER_PAIR = 5
 
 DEFAULT_RECOMMENDATIONS = {
-    "bootstrap": [],
+    "bootstrap_converge": [],
     "space_split": [],
     "plan_epic_converge": [],
     "create_issues_from_plan_swarm": [],

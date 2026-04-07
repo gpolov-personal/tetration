@@ -93,13 +93,31 @@ class TestRoundTrip:
 
     def test_phase_state(self):
         p = PhaseState(
-            bootstrap=MainCommandState(status="completed"),
+            bootstrap_converge=MainCommandState(status="completed"),
             plans={"1": EpicPlan(), "2": EpicPlan()},
         )
         d = p.to_dict()
         p2 = PhaseState.from_dict(d)
-        assert p2.bootstrap.status == "completed"
+        assert p2.bootstrap_converge.status == "completed"
         assert len(p2.plans) == 2
+
+    def test_main_command_state_locked_skills(self):
+        m = MainCommandState(
+            status="completed", iteration=2,
+            locked_skills=["skill-a", "skill-b"],
+            findings_summary=FindingsSummary(high=0, medium=1, low=2),
+        )
+        d = m.to_dict()
+        assert d["locked_skills"] == ["skill-a", "skill-b"]
+        m2 = MainCommandState.from_dict(d)
+        assert m2 == m
+
+    def test_main_command_state_no_locked_skills(self):
+        m = MainCommandState(status="completed", iteration=1)
+        d = m.to_dict()
+        assert "locked_skills" not in d
+        m2 = MainCommandState.from_dict(d)
+        assert m2.locked_skills is None
 
     def test_pipeline_state_full(self):
         state = create_initial_state("test-initiative", 3)
@@ -137,7 +155,7 @@ class TestFromDictDefaults:
     def test_phase_with_missing_keys(self):
         p = PhaseState.from_dict({"space_split": {"status": "completed"}})
         assert p.space_split.status == "completed"
-        assert p.bootstrap.status == "not_started"  # filled with default
+        assert p.bootstrap_converge.status == "not_started"  # filled with default
 
     def test_swarm_execution_string_pr_number(self):
         s = SwarmExecution.from_dict({"pr_number": "42"})
@@ -167,10 +185,10 @@ class TestValidation:
 
     def test_invalid_phase_status(self):
         state = create_initial_state("test", 1)
-        state.phases["1"].bootstrap.status = "running"
+        state.phases["1"].bootstrap_converge.status = "running"
         errors = validate_state(state)
         assert len(errors) == 1
-        assert "bootstrap.status" in errors[0]
+        assert "bootstrap_converge.status" in errors[0]
 
     def test_invalid_swarm_status(self):
         state = create_initial_state("test", 1)
@@ -185,7 +203,7 @@ class TestBackwardCompatibility:
     """CLI can load v1.x pipeline_state.json files."""
 
     def test_v1_state_with_root_bootstrap(self):
-        """v1.x bug: bootstrap at state.bootstrap instead of state.phases.N.bootstrap."""
+        """v1.x bug: bootstrap at state.bootstrap instead of state.phases.N."""
         v1 = {
             "initiative": "test",
             "state": {
@@ -202,8 +220,41 @@ class TestBackwardCompatibility:
         }
         ps = PipelineState.from_dict(v1)
         assert ps.time_split.convergence.converged is True
-        assert ps.phases["1"].bootstrap.status == "not_started"  # default, not root
+        assert ps.phases["1"].bootstrap_converge.status == "not_started"  # default, not root
         assert ps.phases["1"].space_split.status == "not_started"
+
+    def test_v2_to_v3_bootstrap_pair_migrates_to_converge(self):
+        """v2 → v3 migration: legacy bootstrap + deepen_bootstrap pair fuses into bootstrap_converge."""
+        v2 = {
+            "bootstrap": {
+                "status": "completed",
+                "iteration": 2,
+                "output_paths": {"bootstrap_report": "phases/phase_1/bootstrap-report.json"},
+                "convergence": {"converged": False},
+                "feedback_consumed": True,
+            },
+            "deepen_bootstrap": {
+                "status": "completed",
+                "iteration": 2,
+                "feedback_path": "phases/phase_1/feedback/deepen_bootstrap_feedback.json",
+                "findings_summary": {"high": 0, "medium": 1, "low": 3},
+                "locked_skills": ["python-testing-patterns", "language-profiles"],
+            },
+            "space_split": {"status": "not_started"},
+            "deepen_space_split": {"status": "not_started"},
+        }
+        ph = PhaseState.from_dict(v2)
+        # bootstrap_converge inherits status, iteration, output_paths from main
+        assert ph.bootstrap_converge.status == "completed"
+        assert ph.bootstrap_converge.iteration == 2
+        assert ph.bootstrap_converge.output_paths["bootstrap_report"] == "phases/phase_1/bootstrap-report.json"
+        # findings_summary promoted from deepen
+        assert ph.bootstrap_converge.findings_summary is not None
+        assert ph.bootstrap_converge.findings_summary.medium == 1
+        # locked_skills promoted from deepen
+        assert ph.bootstrap_converge.locked_skills == ["python-testing-patterns", "language-profiles"]
+        # feedback_path stashed in output_paths["feedback_file"]
+        assert ph.bootstrap_converge.output_paths["feedback_file"] == "phases/phase_1/feedback/deepen_bootstrap_feedback.json"
 
     def test_v1_state_missing_schema_version(self):
         v1 = {"initiative": "test", "state": {"time_split": {}, "deepen_time_split": {}}}

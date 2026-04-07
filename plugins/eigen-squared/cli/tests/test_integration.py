@@ -2,7 +2,7 @@
 
 This test walks through the entire pipeline lifecycle:
   init → complete time_split → complete deepen_time_split → mark-converged →
-  complete bootstrap → complete deepen_bootstrap → mark-converged →
+  complete bootstrap_converge → mark-converged →
   complete space_split → ... → complete plan_epic_converge → mark-converged →
   ... → all phases approved
 """
@@ -108,13 +108,13 @@ class TestFullPipelineWalk:
         # Converge
         run(["mark-converged", "time_split", "--reason", "Zero high/medium"])
 
-        # Next should be bootstrap
+        # Next should be bootstrap_converge
         result = run_json(["next", "--json"])
-        assert result["command"] == "bootstrap"
+        assert result["command"] == "bootstrap_converge"
         assert result["context"]["phase"] == 1
 
     def test_full_phase_walk(self, pipeline_env):
-        """Walk through init → time_split → bootstrap → space_split → plan → create_issues."""
+        """Walk through init → time_split → bootstrap_converge → space_split → plan → create_issues."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
 
         # time_split cycle
@@ -122,12 +122,10 @@ class TestFullPipelineWalk:
         run(["complete", "deepen_time_split", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
 
-        # bootstrap cycle
-        assert run_json(["next", "--json"])["command"] == "bootstrap"
-        run(["complete", "bootstrap", "--phase", "1", "--output-path", "report.json"])
-        assert run_json(["next", "--json"])["command"] == "deepen_bootstrap"
-        run(["complete", "deepen_bootstrap", "--phase", "1", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "bootstrap", "--phase", "1", "--reason", "clean"])
+        # bootstrap_converge (self-converging, single command)
+        assert run_json(["next", "--json"])["command"] == "bootstrap_converge"
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "report.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
 
         # space_split cycle
         assert run_json(["next", "--json"])["command"] == "space_split"
@@ -191,15 +189,15 @@ class TestFullPipelineWalk:
 
         # Add recommendation
         assert run(["add-recommendation", "--from-cmd", "deepen_time_split",
-                     "--target", "bootstrap", "--text", "Check entity stubs"]) == 0
+                     "--target", "bootstrap_converge", "--text", "Check entity stubs"]) == 0
 
         # Get context should include it
-        ctx = run_json(["get-context", "bootstrap", "--phase", "1", "--json"])
+        ctx = run_json(["get-context", "bootstrap_converge", "--phase", "1", "--json"])
         assert len(ctx["recommendations"]) == 1
 
         # Clear
         run(["clear-recommendations", "--from-cmd", "deepen_time_split"])
-        ctx = run_json(["get-context", "bootstrap", "--phase", "1", "--json"])
+        ctx = run_json(["get-context", "bootstrap_converge", "--phase", "1", "--json"])
         assert len(ctx["recommendations"]) == 0
 
     def test_status_shows_pipeline(self, pipeline_env, capsys):
@@ -232,14 +230,12 @@ class TestFullPipelineWalk:
         run(["mark-converged", "time_split", "--reason", "clean"])
 
         # === PHASE 1 ===
-        assert run_json(["next", "--json"])["command"] == "bootstrap"
+        assert run_json(["next", "--json"])["command"] == "bootstrap_converge"
         assert run_json(["next", "--json"])["context"]["phase"] == 1
 
-        # Bootstrap P1
-        run(["complete", "bootstrap", "--phase", "1", "--output-path", "r.json"])
-        run(["complete", "deepen_bootstrap", "--phase", "1", "--feedback-path", "f",
-             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "bootstrap", "--phase", "1", "--reason", "clean"])
+        # Bootstrap_converge P1 (self-converging, no deepen pair)
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
 
         # Space_split P1
         run(["complete", "space_split", "--phase", "1", "--epic-manifest", "m.json", "--e2e-config", "e.json"])
@@ -273,18 +269,16 @@ class TestFullPipelineWalk:
         result = run_json(["next", "--json"])
         assert result["command"] is None, "Should still be None during testing"
 
-        # Phase review: approved → Phase 2 bootstrap
+        # Phase review: approved → Phase 2 bootstrap_converge
         run(["set-phase-review", "--phase", "1", "--status", "approved"])
         result = run_json(["next", "--json"])
-        assert result["command"] == "bootstrap", "Phase 2 should start with bootstrap"
+        assert result["command"] == "bootstrap_converge", "Phase 2 should start with bootstrap_converge"
         assert result["context"]["phase"] == 2, "Should be phase 2, not phase 1"
 
         # === PHASE 2 ===
-        # Bootstrap P2
-        run(["complete", "bootstrap", "--phase", "2", "--output-path", "r.json"])
-        run(["complete", "deepen_bootstrap", "--phase", "2", "--feedback-path", "f",
-             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
-        run(["mark-converged", "bootstrap", "--phase", "2", "--reason", "clean"])
+        # Bootstrap_converge P2
+        run(["complete", "bootstrap_converge", "--phase", "2", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "2", "--reason", "clean"])
 
         # Space_split P2
         run(["complete", "space_split", "--phase", "2", "--epic-manifest", "m.json", "--e2e-config", "e.json"])

@@ -11,7 +11,7 @@ The eigen-squared pipeline decomposes a software initiative into shippable code:
 
 ```
   ┌────────────┐     ┌──────────────────┐     ┌─────────────┐     ┌─────────────┐
-  │ time_split │────▶│ deepen_time_split│────▶│  bootstrap   │────▶│ space_split  │──▶ ...
+  │ time_split │────▶│ deepen_time_split│────▶│ bootstrap_converge │────▶│ space_split  │──▶ ...
   └────────────┘     └──────────────────┘     └─────────────┘     └─────────────┘
    ▲                          │
    └──────── iterate ─────────┘
@@ -509,7 +509,7 @@ Next steps:
      Hint: to adjust the split (change phase count, move features between phases,
      add constraints), pass your instructions as arguments to /deepen_time_split
      or directly to the next /time_split iteration.
-  2. Run /bootstrap
+  2. Run /bootstrap_converge
      to create the project foundation before parallel execution.
   3. Run /space_split
      to decompose Phase 1 into parallel epics for swarm execution.

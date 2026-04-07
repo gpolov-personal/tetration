@@ -14,7 +14,7 @@ eigen_start (you are here)
     │ [manual mode: user runs each command by hand]
     │
     ▼
-time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
+time_split ↔ deepen_time_split → bootstrap_converge →
 space_split ↔ deepen_space_split → [per epic: plan → create → orchestrate → review] →
 STOP at E2E Testing epic convergence
 ```
@@ -454,7 +454,7 @@ Blackbox:           <filename>
 Pipeline State:     not started (fresh)
 
 Pipeline sequence:
-  time_split ↔ deepen_time_split → bootstrap ↔ deepen_bootstrap →
+  time_split ↔ deepen_time_split → bootstrap_converge →
   space_split ↔ deepen_space_split → [per epic: plan → create → orchestrate → review] →
   STOP at E2E Testing epic convergence
 

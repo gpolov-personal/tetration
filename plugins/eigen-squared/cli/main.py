@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── get-context ──
     p = sub.add_parser("get-context", help="Return context for a command on entry")
-    p.add_argument("target_command", help="Command name (e.g., bootstrap)")
+    p.add_argument("target_command", help="Command name (e.g., bootstrap_converge)")
     p.add_argument("--phase", type=int, help="Phase number")
     p.add_argument("--epic", type=int, help="Epic number")
     p.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--e2e-config", help="E2E config path (space_split)")
     p.add_argument("--epic-ids", help="JSON list of epic IDs (space_split)")
     p.add_argument("--plan-file", help="Plan file path (plan_epic_converge)")
-    p.add_argument("--locked-skills", help="JSON list of locked skill names (deepen commands)")
+    p.add_argument("--locked-skills", help="JSON list of locked skill names (deepen + converge commands)")
 
     # ── mark-converged ──
     p = sub.add_parser("mark-converged", help="Set convergence for a step")

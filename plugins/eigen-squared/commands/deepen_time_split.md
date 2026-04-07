@@ -138,7 +138,7 @@ When the current iteration is >= 4, apply this degradation before the Convergenc
      - **Degrade to `low` for convergence purposes.** The finding no longer blocks convergence.
      - **Write a recommendation** to pipeline_state.json preserving the original `medium` severity:
        ```bash
-       eigen-squared add-recommendation --from-cmd deepen_time_split --target bootstrap --phase <N> --iteration <iter> --text "[MEDIUM — degraded at iteration <N>] <finding title>: <finding description>"
+       eigen-squared add-recommendation --from-cmd deepen_time_split --target bootstrap_converge --phase <N> --iteration <iter> --text "[MEDIUM — degraded at iteration <N>] <finding title>: <finding description>"
        ```
    - If the finding is classified as `persisting` or `regressed`: keep `medium` severity. It still blocks convergence.
 
@@ -157,7 +157,7 @@ After collecting all findings (Stage 5), apply these convergence rules **in orde
    - Rationale: "Diminishing returns — remaining medium findings are new and the trend is improving. Accepting current state."
    - **Action**: Write all remaining medium `new_findings` as recommendations to pipeline_state.json (preserving `medium` severity) so downstream commands have visibility:
      ```bash
-     eigen-squared add-recommendation --from-cmd deepen_time_split --target bootstrap --iteration <iter> --text "[MEDIUM — not resolved at convergence] <finding title>: <finding description>"
+     eigen-squared add-recommendation --from-cmd deepen_time_split --target bootstrap_converge --iteration <iter> --text "[MEDIUM — not resolved at convergence] <finding title>: <finding description>"
      ```
 
 3. **Converge if**: iteration limit reached (`iteration >= 8` from CLI context).
@@ -165,7 +165,7 @@ After collecting all findings (Stage 5), apply these convergence rules **in orde
    - Set `convergence.iteration_limit_reached` to `true` in the feedback file.
 
 4. **Converge if**: stagnation detected — more than 50% of current high+medium findings match (by feature ID, per the Finding Matching Protocol) findings from 2 iterations ago (i.e., the same features keep appearing in findings across iterations without resolution).
-   - Rationale: "Stagnation detected. The same features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by downstream commands (bootstrap, space_split)."
+   - Rationale: "Stagnation detected. The same features keep appearing in findings across iterations. Accepting current state — remaining issues are better resolved by downstream commands (bootstrap_converge, space_split)."
 
 5. **Converge if**: oscillation detected AND no non-oscillating high-severity or medium-severity findings remain.
    - Oscillation = a finding was fixed in iteration N, reappeared in N+1, fixed again in N+2 (or a finding alternates between accept/reject across iterations).
@@ -646,7 +646,7 @@ Next steps:
     Hint: to add constraints (move features, change phase count), pass your
     instructions as arguments to the next /time_split run.
   If CONVERGED:
-    Run /bootstrap to create the project foundation for Phase 1.
+    Run /bootstrap_converge to create the project foundation for Phase 1.
     Run /compound_improve to apply accumulated lessons to the time_split command.
 ```
 

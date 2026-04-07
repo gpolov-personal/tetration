@@ -109,14 +109,11 @@ def make_phase(
         "plans": plans or {},
     }
     if include_bootstrap:
-        phase["bootstrap"] = {
+        phase["bootstrap_converge"] = {
             "status": "completed",
             "feedback_consumed": True,
             "convergence": {"converged": bootstrap_converged},
-        }
-        phase["deepen_bootstrap"] = {
-            "status": "completed",
-            "feedback_consumed": False,
+            "iteration": 1,
         }
     return phase
 
@@ -282,19 +279,19 @@ class TestDetermineNext:
 
     def test_time_split_converged_goes_to_bootstrap(self):
         phase = make_phase(bootstrap_converged=False)
-        phase["bootstrap"]["status"] = "not_started"
+        phase["bootstrap_converge"]["status"] = "not_started"
         state = make_pipeline_state(phases={"1": phase})
         result = determine_next(state)
-        assert result[0] == "bootstrap"
+        assert result[0] == "bootstrap_converge"
         assert result[1]["phase"] == 1
 
     def test_phase_approved_skips_to_next(self):
         phase1 = make_phase(phase_review_status="approved")
         phase2 = make_phase(bootstrap_converged=False)
-        phase2["bootstrap"]["status"] = "not_started"
+        phase2["bootstrap_converge"]["status"] = "not_started"
         state = make_pipeline_state(phase_count=2, phases={"1": phase1, "2": phase2})
         result = determine_next(state)
-        assert result[0] == "bootstrap"
+        assert result[0] == "bootstrap_converge"
         assert result[1]["phase"] == 2
 
     def test_bug3_testing_phase_review_stops(self):
@@ -309,7 +306,7 @@ class TestDetermineNext:
         assert result is None
 
     def test_phase_without_bootstrap_keys_returns_none(self):
-        """Missing bootstrap keys is a data integrity error — pipeline stops."""
+        """Missing bootstrap_converge key is a data integrity error — pipeline stops."""
         phase = make_phase(include_bootstrap=False, space_split_converged=False)
         phase["space_split"]["status"] = "not_started"
         state = make_pipeline_state(phases={"1": phase})
@@ -385,11 +382,11 @@ class TestDetermineNext:
         state = make_pipeline_state(time_split_converged=True, phase_count=1)
         state["state"]["time_split"]["phase_count"] = "1"
         phase = make_phase(bootstrap_converged=False)
-        phase["bootstrap"]["status"] = "not_started"
+        phase["bootstrap_converge"]["status"] = "not_started"
         state["state"]["phases"] = {"1": phase}
         result = determine_next(state)
         assert result is not None
-        assert result[0] == "bootstrap"
+        assert result[0] == "bootstrap_converge"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

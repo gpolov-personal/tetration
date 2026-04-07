@@ -54,7 +54,7 @@ Example:
 
 **Validate the plugin source path:**
 1. Verify `<plugin_source_path>/commands/time_split.md` exists
-2. Verify `<plugin_source_path>/commands/bootstrap.md` exists
+2. Verify `<plugin_source_path>/commands/bootstrap_converge.md` exists
 3. Verify `<plugin_source_path>/commands/space_split.md` exists
 4. Verify `<plugin_source_path>/commands/plan_epic_converge.md` exists
 5. Verify `<plugin_source_path>/.claude-plugin/plugin.json` exists
@@ -68,7 +68,7 @@ Lessons are read from `$EIGEN_ROOT/eigen_initiative/eigen_lessons/` with one sub
 | Lesson Directory | Written By | Improves Command |
 |-----------------|-----------|-----------------|
 | `eigen_lessons/time_split/` | `/deepen_time_split` | `time_split.md` |
-| `eigen_lessons/bootstrap/` | `/deepen_bootstrap` | `bootstrap.md` |
+| `eigen_lessons/bootstrap_converge/` | `/bootstrap_converge` | `bootstrap_converge.md` |
 | `eigen_lessons/space_split/` | `/deepen_space_split` | `space_split.md` |
 | `eigen_lessons/plan_epic_converge/` | `/plan_epic_converge` | `plan_epic_converge.md` |
 | `eigen_lessons/review_swarm_pr/` | `/review_swarm_pr` | `review_swarm_pr.md` |
@@ -98,7 +98,7 @@ time_split:
   Pending: <N>  (high: <N>, medium: <N>, low: <N>)
   Already applied: <N>
 
-bootstrap:
+bootstrap_converge:
   Pending: <N>  (high: <N>, medium: <N>, low: <N>)
   Already applied: <N>
 
@@ -121,7 +121,7 @@ Total pending: <N>
 
 Read each command file from the plugin source repo that has pending lessons:
 - `<plugin_source_path>/commands/time_split.md`
-- `<plugin_source_path>/commands/bootstrap.md`
+- `<plugin_source_path>/commands/bootstrap_converge.md`
 - `<plugin_source_path>/commands/space_split.md`
 - `<plugin_source_path>/commands/plan_epic_converge.md`
 - `<plugin_source_path>/commands/review_swarm_pr.md`
@@ -267,7 +267,7 @@ Prepend a new entry to `<plugin_source_path>/CHANGELOG.md`:
 - <pattern 1 title> (from <N> lessons)
 - <pattern 2 title> (from <N> lessons)
 
-**bootstrap.md:**
+**bootstrap_converge.md:**
 - <pattern 1 title> (from <N> lessons)
 
 **space_split.md:**
@@ -308,7 +308,7 @@ Commands modified in: <plugin_source_path>/commands/
 
 Changes:
   time_split.md:       <N> patterns applied (<M> lines changed)
-  bootstrap.md:        <N> patterns applied (<M> lines changed)
+  bootstrap_converge.md: <N> patterns applied (<M> lines changed)
   space_split.md:      <N> patterns applied (<M> lines changed)
   plan_epic_converge.md:  <N> patterns applied (<M> lines changed)
   review_swarm_pr.md:  <N> patterns applied (<M> lines changed)

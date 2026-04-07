@@ -73,10 +73,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Maps main commands to their deepen counterparts
+# Maps main commands to their deepen counterparts (commands still using
+# the legacy main/deepen pair pattern). bootstrap_converge and
+# plan_epic_converge are self-converging and live in CONVERGE_COMMANDS.
 MAIN_TO_DEEPEN = {
     "time_split": "deepen_time_split",
-    "bootstrap": "deepen_bootstrap",
     "space_split": "deepen_space_split",
 }
 
@@ -87,6 +88,9 @@ DEEPEN_COMMANDS = set(DEEPEN_TO_MAIN.keys())
 
 # Which commands are "main" commands (convergence pair left side)
 MAIN_COMMANDS = set(MAIN_TO_DEEPEN.keys())
+
+# Self-converging commands (single command, internal swarm convergence loop)
+CONVERGE_COMMANDS = {"plan_epic_converge", "bootstrap_converge"}
 
 
 def dispatch(args: Namespace) -> int:
@@ -157,11 +161,9 @@ def cmd_status(args: Namespace) -> int:
     for pk in sorted(state.phases.keys(), key=int):
         phase = state.phases[pk]
         print(f"Phase {pk}:")
-        bs = phase.bootstrap
-        bconv = "converged" if bs.convergence.converged else bs.status
-        print(f"  bootstrap           {bconv:12s}  iter {bs.iteration}")
-        dbs = phase.deepen_bootstrap
-        print(f"  deepen_bootstrap    {dbs.status:12s}  iter {dbs.iteration}")
+        bc = phase.bootstrap_converge
+        bconv = "converged" if bc.convergence.converged else bc.status
+        print(f"  bootstrap_converge  {bconv:12s}  iter {bc.iteration}")
         ss = phase.space_split
         sconv = "converged" if ss.convergence.converged else ss.status
         print(f"  space_split         {sconv:12s}  iter {ss.iteration}")
@@ -387,6 +389,15 @@ def cmd_get_context(args: Namespace) -> int:
             if dts.locked_skills is not None:
                 context["locked_skills"] = dts.locked_skills
 
+    elif cmd in ("bootstrap", "deepen_bootstrap"):
+        # Legacy: redirect to bootstrap_converge
+        print(
+            f"ERROR: {cmd} has been replaced by bootstrap_converge. "
+            "Use /bootstrap_converge instead.",
+            file=sys.stderr,
+        )
+        return 1
+
     elif cmd in MAIN_COMMANDS:
         pk = str(phase)
         if pk not in state.phases:
@@ -394,19 +405,14 @@ def cmd_get_context(args: Namespace) -> int:
             return 1
         ph = state.phases[pk]
 
-        if cmd == "bootstrap":
-            ms = ph.bootstrap
-            ds = ph.deepen_bootstrap
-        elif cmd == "space_split":
+        if cmd == "space_split":
             ms = ph.space_split
             ds = ph.deepen_space_split
-        elif cmd == "plan_phase_epic":
-            # Legacy: redirect to plan_epic_converge
-            print("ERROR: plan_phase_epic has been replaced by plan_epic_converge. "
-                  "Use /plan_epic_converge instead.", file=sys.stderr)
+        else:
+            print(f"ERROR: Unknown main command: {cmd}", file=sys.stderr)
             return 1
 
-        # --- Standard flow for main commands with deepen pairs (bootstrap, space_split) ---
+        # --- Standard flow for main commands with deepen pairs (space_split) ---
 
         if ms.convergence.converged:
             print(
@@ -481,16 +487,11 @@ def cmd_get_context(args: Namespace) -> int:
         ph = state.phases[pk]
         main_cmd = DEEPEN_TO_MAIN[cmd]
 
-        if cmd == "deepen_bootstrap":
-            ms = ph.bootstrap
-            ds = ph.deepen_bootstrap
-        elif cmd == "deepen_space_split":
+        if cmd == "deepen_space_split":
             ms = ph.space_split
             ds = ph.deepen_space_split
-        elif cmd == "deepen_plan_phase_epic":
-            # Legacy: redirect to plan_epic_converge
-            print("ERROR: deepen_plan_phase_epic has been replaced by plan_epic_converge. "
-                  "Use /plan_epic_converge instead.", file=sys.stderr)
+        else:
+            print(f"ERROR: Unknown deepen command: {cmd}", file=sys.stderr)
             return 1
 
         if ms.convergence.converged:
@@ -549,6 +550,52 @@ def cmd_get_context(args: Namespace) -> int:
         # Pass locked skills if they exist
         if ds.locked_skills is not None:
             context["locked_skills"] = ds.locked_skills
+
+    elif cmd == "bootstrap_converge":
+        if phase is None:
+            print("ERROR: --phase required for bootstrap_converge", file=sys.stderr)
+            return 1
+        pk = str(phase)
+        if pk not in state.phases:
+            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
+            return 1
+        bc = state.phases[pk].bootstrap_converge
+
+        if bc.convergence.converged:
+            print(
+                f"ERROR: bootstrap_converge phase {phase} already converged "
+                f"(decided at {bc.convergence.decided_at}: {bc.convergence.reason}). "
+                f"No re-run needed.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Self-converging command: no should_process_feedback flag, no
+        # main↔deepen feedback lifecycle. The internal swarm loop manages
+        # everything via convergence_state.json.
+        # First-run detection uses iteration == 0 (the slot always exists,
+        # unlike plan_epic_converge which lazy-inits per-epic).
+        context["iteration"] = bc.iteration + 1
+        context["current_iteration"] = bc.iteration
+        context["is_first_run"] = bc.iteration == 0
+        context["output_paths"] = bc.output_paths
+        context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+        context["bootstrap_report"] = f"phases/phase_{phase}/bootstrap-report.json"
+        context["lessons_dir"] = "eigen_lessons/bootstrap_converge/"
+        # Persisted across crashes — restored to the swarm so the
+        # skills-reviewer doesn't re-discover.
+        if bc.locked_skills is not None:
+            context["locked_skills"] = bc.locked_skills
+
+        recs = [
+            r.to_dict() if hasattr(r, "to_dict") else r
+            for r in state.recommendations.get("bootstrap_converge", [])
+            if (
+                (isinstance(r, dict) and r.get("phase") in (phase, None))
+                or (hasattr(r, "phase") and r.phase in (phase, None))
+            )
+        ]
+        context["recommendations"] = recs
 
     elif cmd == "plan_epic_converge":
         if epic is None:
@@ -719,6 +766,15 @@ def cmd_complete(args: Namespace) -> int:
         if args.locked_skills:
             dts.locked_skills = json.loads(args.locked_skills)
 
+    elif cmd in ("bootstrap", "deepen_bootstrap"):
+        # Legacy: redirect to bootstrap_converge
+        print(
+            f"ERROR: {cmd} has been replaced by bootstrap_converge. "
+            "Use /bootstrap_converge instead.",
+            file=sys.stderr,
+        )
+        return 1
+
     elif cmd in MAIN_COMMANDS and phase is not None:
         pk = str(phase)
         if pk not in state.phases:
@@ -726,9 +782,7 @@ def cmd_complete(args: Namespace) -> int:
             return 1
         ph = state.phases[pk]
 
-        if cmd == "bootstrap":
-            ms, ds = ph.bootstrap, ph.deepen_bootstrap
-        elif cmd == "space_split":
+        if cmd == "space_split":
             ms, ds = ph.space_split, ph.deepen_space_split
         else:
             print(f"ERROR: Unknown main command: {cmd}", file=sys.stderr)
@@ -740,10 +794,7 @@ def cmd_complete(args: Namespace) -> int:
         ms.feedback_consumed = True
         ds.feedback_consumed = True
 
-        if cmd == "bootstrap" and args.output_path:
-            ms.output_paths["bootstrap_report"] = args.output_path
-            ms.output_paths["target_repo"] = _eigen_root()
-        elif cmd == "space_split":
+        if cmd == "space_split":
             if args.epic_manifest:
                 ms.output_paths["epic_manifest"] = args.epic_manifest
             if args.e2e_config:
@@ -757,11 +808,8 @@ def cmd_complete(args: Namespace) -> int:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
             return 1
         ph = state.phases[pk]
-        main_cmd = DEEPEN_TO_MAIN[cmd]
 
-        if cmd == "deepen_bootstrap":
-            ms, ds = ph.bootstrap, ph.deepen_bootstrap
-        elif cmd == "deepen_space_split":
+        if cmd == "deepen_space_split":
             ms, ds = ph.space_split, ph.deepen_space_split
         else:
             print(f"ERROR: Unknown deepen command: {cmd}", file=sys.stderr)
@@ -782,6 +830,32 @@ def cmd_complete(args: Namespace) -> int:
             ds.findings_summary = FindingsSummary.from_dict(fs)
         if args.locked_skills:
             ds.locked_skills = json.loads(args.locked_skills)
+
+    elif cmd == "bootstrap_converge":
+        if phase is None:
+            print("ERROR: --phase required for bootstrap_converge", file=sys.stderr)
+            return 1
+        pk = str(phase)
+        if pk not in state.phases:
+            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
+            return 1
+        bc = state.phases[pk].bootstrap_converge
+        bc.status = "completed"
+        bc.iteration += 1
+        bc.last_run_at = now
+        # NOTE: feedback_consumed is NOT toggled by the CLI for self-converging
+        # commands. The internal swarm loop manages all feedback state.
+        if args.output_path:
+            bc.output_paths["bootstrap_report"] = args.output_path
+            bc.output_paths["target_repo"] = _eigen_root()
+        if args.feedback_path:
+            bc.output_paths["feedback_file"] = args.feedback_path
+        if args.findings_summary:
+            from ..models import FindingsSummary
+            fs = json.loads(args.findings_summary)
+            bc.findings_summary = FindingsSummary.from_dict(fs)
+        if args.locked_skills:
+            bc.locked_skills = json.loads(args.locked_skills)
 
     elif cmd == "plan_epic_converge":
         if phase is None or epic is None:
@@ -873,8 +947,16 @@ def cmd_mark_converged(args: Namespace) -> int:
         caller = "deepen_time_split"
         target = state.time_split
     elif cmd == "bootstrap" and phase is not None:
-        caller = "deepen_bootstrap"
-        target = state.phases[str(phase)].bootstrap
+        # Legacy: redirect to bootstrap_converge
+        print(
+            "ERROR: bootstrap has been replaced by bootstrap_converge. "
+            "Use `eigen-squared mark-converged bootstrap_converge --phase N` instead.",
+            file=sys.stderr,
+        )
+        return 1
+    elif cmd == "bootstrap_converge" and phase is not None:
+        caller = "bootstrap_converge"  # self-marking, like plan_epic_converge
+        target = state.phases[str(phase)].bootstrap_converge
     elif cmd == "space_split" and phase is not None:
         caller = "deepen_space_split"
         target = state.phases[str(phase)].space_split

@@ -8,7 +8,7 @@ description: Decompose a phase manifest into sequentially ordered epics, each re
 ## Pipeline Context
 
 ```
-  time_split ↔ deepen → bootstrap ↔ deepen → [ space_split ↔ deepen_space_split ] → plan_epic_converge → ...
+  time_split ↔ deepen → bootstrap_converge → [ space_split ↔ deepen_space_split ] → plan_epic_converge → ...
                                                 ^^^^^^^^^^^^^
                                                 YOU ARE HERE
 ```
@@ -274,7 +274,7 @@ Recommendations come from the `recommendations` field in the CLI context. Use as
    ```
    ERROR: No bootstrap-report.json found at $EIGEN_ROOT/eigen_initiative/phases/phase_N/
    Bootstrap must be converged before running space_split.
-   Run /bootstrap and /deepen_bootstrap until converged first.
+   Run /bootstrap_converge first.
    ```
 3. Extract:
    - `language` — detected project language and frameworks

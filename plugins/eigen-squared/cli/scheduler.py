@@ -20,8 +20,7 @@ DEDUP_WINDOW_SECONDS = 30
 COMMAND_TO_SKILL = {
     "time_split": "eigen-squared:time_split",
     "deepen_time_split": "eigen-squared:deepen_time_split",
-    "bootstrap": "eigen-squared:bootstrap",
-    "deepen_bootstrap": "eigen-squared:deepen_bootstrap",
+    "bootstrap_converge": "eigen-squared:bootstrap_converge",
     "space_split": "eigen-squared:space_split",
     "deepen_space_split": "eigen-squared:deepen_space_split",
     "plan_epic_converge": "eigen-squared:plan_epic_converge",
