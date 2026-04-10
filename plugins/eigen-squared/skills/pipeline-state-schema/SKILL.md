@@ -50,7 +50,7 @@ Determined by `determine_next()` in the CLI:
       - create_issues_from_plan_swarm
       - orchestrate_swarm <-> review_swarm_pr  (must converge)
    d. Phase checkpoint: phase_review must reach "approved"
-      (managed by /eigen_continue)
+      (human checkpoint managed by /eigen_continue, not a CLI command)
 3. All phases approved -> pipeline complete
 ```
 
@@ -205,8 +205,8 @@ Tracks the phase-level review and transition lifecycle:
 
 - `"not_started"` — default
 - `"pr_created"` — set by `orchestrate_swarm` after creating the PR (populates `pr_url`, `pr_number`, `integration_branch`, `manifest_path`)
-- `"iterating"` — set by `review_swarm_pr` when P1/P2 findings remain (fixup tasks created)
-- `"converged"` — set by `review_swarm_pr` when zero P1+P2 findings remain (PR ready to merge)
+- `"iterating"` — set by `review_swarm_pr` when P1/P2/P3 findings remain (fixup tasks created)
+- `"converged"` — set by `review_swarm_pr` when zero P1+P2+P3 findings remain (PR ready to merge)
 
 Note: `swarm_execution.findings_summary` uses **`p1/p2/p3`** (not `high/medium/low`).
 
@@ -374,4 +374,6 @@ The CLI handles backward compatibility with old state files via migration shims 
 - Legacy `"space_split"` + `"deepen_space_split"` keys are migrated to `"space_split_converge"`
 - Findings summary, locked_skills, and feedback_path are promoted from the old deepen entry
 
-Legacy command names (`bootstrap`, `deepen_bootstrap`, `space_split`, `deepen_space_split`, `plan_phase_epic`, `deepen_plan_phase_epic`) are rejected by `cmd_get_context` and `cmd_mark_converged` with an error pointing to the `_converge` replacement.
+Legacy command names are handled differently depending on the pair:
+- `bootstrap`, `deepen_bootstrap`, `space_split`, `deepen_space_split` — explicitly rejected by `cmd_get_context` and `cmd_mark_converged` with an error pointing to the `_converge` replacement.
+- `plan_phase_epic`, `deepen_plan_phase_epic` — silently migrated via `EpicPlan.from_dict()` (no rejection error, old keys are loaded into the new `plan_epic_converge` structure).
