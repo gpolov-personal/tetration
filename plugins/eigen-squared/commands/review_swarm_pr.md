@@ -459,9 +459,10 @@ Next steps:
     The manifest has been updated — only new review tasks will execute.
     After fixups complete, run /review_swarm_pr again (iteration <N+1>).
   If CONVERGED:
-    PR #<pr_number> merged to $EIGEN_BRANCH. Branch feat/P<N>.E<M> deleted.
-    Now on $EIGEN_BRANCH with latest changes.
-    Proceeding to next epic in the phase.
+    PR #<pr_number> is converged and ready to merge.
+    Merge manually when ready.
+    If more epics remain in this phase: run /plan_epic_converge for the next epic.
+    If all epics are complete: run /eigen_continue to review and approve the phase.
 ```
 
 ---

@@ -442,6 +442,45 @@ def cmd_get_context(args: Namespace) -> int:
         ]
         context["recommendations"] = recs
 
+    elif cmd == "space_split_converge":
+        if phase is None:
+            print("ERROR: --phase required for space_split_converge", file=sys.stderr)
+            return 1
+        pk = str(phase)
+        if pk not in state.phases:
+            print(f"ERROR: Phase {phase} not found", file=sys.stderr)
+            return 1
+        ssc = state.phases[pk].space_split_converge
+
+        if ssc.convergence.converged:
+            print(
+                f"ERROR: space_split_converge phase {phase} already converged "
+                f"(decided at {ssc.convergence.decided_at}: {ssc.convergence.reason}). "
+                f"No re-run needed.",
+                file=sys.stderr,
+            )
+            return 1
+
+        context["iteration"] = ssc.iteration + 1
+        context["current_iteration"] = ssc.iteration
+        context["is_first_run"] = ssc.iteration == 0
+        context["output_paths"] = ssc.output_paths
+        context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
+        context["bootstrap_report"] = f"phases/phase_{phase}/bootstrap-report.json"
+        context["lessons_dir"] = "eigen_lessons/space_split_converge/"
+        if ssc.locked_skills is not None:
+            context["locked_skills"] = ssc.locked_skills
+
+        recs = [
+            r.to_dict() if hasattr(r, "to_dict") else r
+            for r in state.recommendations.get("space_split_converge", [])
+            if (
+                (isinstance(r, dict) and r.get("phase") in (phase, None))
+                or (hasattr(r, "phase") and r.phase in (phase, None))
+            )
+        ]
+        context["recommendations"] = recs
+
     elif cmd == "plan_epic_converge":
         if epic is None:
             print("ERROR: --epic required for plan_epic_converge", file=sys.stderr)
