@@ -135,7 +135,9 @@ Determined by `determine_next()` in the CLI:
       "decided_by": null,
       "decided_at": null,
       "reason": null
-    }
+    },
+    "findings_summary": { "high": 0, "medium": 0, "low": 0 },
+    "locked_skills": null
   },
   "phase_review": {
     "status": "not_started|testing|approved",
@@ -147,7 +149,7 @@ Determined by `determine_next()` in the CLI:
 }
 ```
 
-`findings_summary` and `locked_skills` are **optional** on `MainCommandState` — omitted from JSON when `null`. `bootstrap_converge` uses both; `space_split_converge` typically uses `findings_summary` and `locked_skills` as well.
+`findings_summary` and `locked_skills` are **optional** on `MainCommandState` — omitted from JSON when `null`. All three converge commands (`bootstrap_converge`, `space_split_converge`, `plan_epic_converge`) use `findings_summary`. `bootstrap_converge` and `space_split_converge` also use `locked_skills`.
 
 ### phase_review
 

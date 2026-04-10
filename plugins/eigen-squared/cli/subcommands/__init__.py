@@ -466,7 +466,7 @@ def cmd_get_context(args: Namespace) -> int:
         context["is_first_run"] = ssc.iteration == 0
         context["output_paths"] = ssc.output_paths
         context["phase_manifest"] = f"phases/phase_{phase}_manifest.md"
-        context["bootstrap_report"] = f"phases/phase_{phase}/bootstrap-report.json"
+        context["bootstrap_report"] = f"phases/phase_{phase}/bootstrap-report.json"  # input from bootstrap_converge, not an output of this command
         context["lessons_dir"] = "eigen_lessons/space_split_converge/"
         if ssc.locked_skills is not None:
             context["locked_skills"] = ssc.locked_skills

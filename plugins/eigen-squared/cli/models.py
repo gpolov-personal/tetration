@@ -135,9 +135,9 @@ class MainCommandState:
     convergence: Convergence = field(default_factory=Convergence)
     # time_split only:
     phase_count: Optional[int] = None
-    # converge commands only (plan_epic_converge, bootstrap_converge):
+    # converge commands only (bootstrap_converge, space_split_converge, plan_epic_converge):
     findings_summary: Optional[FindingsSummary] = None
-    # converge commands that lock a skills set after round 1 (bootstrap_converge):
+    # converge commands that lock a skills set after round 1 (bootstrap_converge, space_split_converge):
     locked_skills: Optional[list[str]] = None
 
     def to_dict(self) -> dict:
