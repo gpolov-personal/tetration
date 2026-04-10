@@ -201,6 +201,26 @@ class TestFullPipelineWalk:
         ctx = run_json(["get-context", "bootstrap_converge", "--phase", "1", "--json"])
         assert len(ctx["recommendations"]) == 0
 
+    def test_get_context_space_split_converge(self, pipeline_env):
+        """get-context space_split_converge returns full context like bootstrap_converge."""
+        run(["init", "--initiative", "Test", "--phase-count", "1"])
+        run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "report.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+
+        ctx = run_json(["get-context", "space_split_converge", "--phase", "1", "--json"])
+        assert ctx["command"] == "space_split_converge"
+        assert ctx["iteration"] == 1
+        assert ctx["current_iteration"] == 0
+        assert ctx["is_first_run"] is True
+        assert "output_paths" in ctx
+        assert "phase_manifest" in ctx
+        assert "bootstrap_report" in ctx
+        assert "lessons_dir" in ctx
+        assert "recommendations" in ctx
+
     def test_status_shows_pipeline(self, pipeline_env, capsys):
         run(["init", "--initiative", "Test", "--phase-count", "2"])
         run(["status"])

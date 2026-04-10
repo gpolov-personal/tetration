@@ -461,7 +461,8 @@ Next steps:
   If CONVERGED:
     PR #<pr_number> merged to $EIGEN_BRANCH. Branch feat/P<N>.E<M> deleted.
     Now on $EIGEN_BRANCH with latest changes.
-    Proceeding to next epic in the phase.
+    If more epics remain in this phase: proceeding to next epic.
+    If all epics are complete: run /eigen_continue to review and approve the phase.
 ```
 
 ---

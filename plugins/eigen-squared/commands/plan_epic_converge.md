@@ -885,6 +885,10 @@ Findings:
 
 Lessons: <N> new lessons written
 Feedback: $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json
+
+Next steps:
+  1. Run /create_issues_from_plan_swarm to decompose the plan into file-disjoint tasks.
+  2. (Optional) Run /compound_improve to apply accumulated lessons to command prompts.
 ```
 
 ---
