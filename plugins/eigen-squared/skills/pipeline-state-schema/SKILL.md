@@ -313,8 +313,8 @@ Self-converging commands (`bootstrap_converge`, `space_split_converge`, `plan_ep
 |---|---|
 | `"not_started"` | Swarm has not run |
 | `"pr_created"` | PR exists, not yet reviewed |
-| `"iterating"` | Review found P1/P2 findings, fixup in progress |
-| `"converged"` | Zero P1+P2 findings, PR ready to merge |
+| `"iterating"` | Review found P1/P2/P3 findings, fixup in progress |
+| `"converged"` | Zero P1+P2+P3 findings, PR ready to merge |
 
 **Phase review statuses** (on `phase_review`):
 
