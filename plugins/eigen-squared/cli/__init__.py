@@ -1,3 +1,3 @@
 """eigen-squared CLI — deterministic pipeline state management."""
 
-__version__ = "3.4.2"
+__version__ = "3.4.3"

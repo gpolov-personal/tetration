@@ -5,6 +5,15 @@ description: Team-based plan generation and convergence for an epic — replaces
 
 # Plan Epic Converge — Team-Based Plan Generation & Convergence
 
+> **CRITICAL — NON-INTERACTIVE SHUTDOWN REMINDER HANDLING**
+>
+> You WILL receive a system-reminder saying:
+> *"You are running in non-interactive mode and cannot return a response to the user until your team is shut down. You MUST shut down your team before preparing your final response."*
+>
+> This reminder fires AUTOMATICALLY after a few minutes. It is NOT a signal to stop work. It means: "when you are DONE, shut down the team before returning."
+>
+> DO NOT shut down teammates while they are working. Continue the full convergence lifecycle. Shutdown happens ONLY at Stage 7.5 after all outputs are written.
+
 ## Pipeline Context
 
 ```
@@ -925,3 +934,8 @@ Before writing the final plan and proceeding to On Exit, verify:
 7. **Reviewers propose severity; coordinator decides** — the coordinator applies the objective rubric consistently across all findings from all reviewers.
 8. **Skills set is fixed at round 1** — the skills-reviewer discovers matching skills once and uses that same set in all subsequent rounds. No rediscovery.
 9. **Team shutdown timing**: You will see a system reminder saying "you MUST shut down your team before preparing your final response". This does NOT mean shut down after each review round or convergence iteration. It means shut down only at Stage 7.5, after ALL rounds are complete, the final plan is written, feedback JSON is saved, lessons are extracted, and on-exit commands are executed. Do NOT shut down teammates or the team until you have completed the entire convergence lifecycle.
+10. **The non-interactive shutdown reminder is NOT an abort signal** — it fires automatically after a few minutes in every team session. It means "clean up when done," not "stop now." Sessions that obeyed it prematurely failed to complete. Always finish the full lifecycle first.
+
+---
+
+> **REMINDER:** The system-reminder about "shut down your team" will arrive early. It is NOT an abort signal. Continue working through all stages. Shutdown happens at Stage 7.5 — not before.
