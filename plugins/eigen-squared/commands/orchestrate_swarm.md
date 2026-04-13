@@ -289,8 +289,8 @@ TESTING PHILOSOPHY — NON-NEGOTIABLE:
 - NEVER monkeypatch connections
 - If infrastructure is needed for a test, structure it to work with real infra when available
 
-EXTERNAL DEPENDENCIES — NON-NEGOTIABLE:
-- If your task involves calling external APIs or SDKs: verify method signatures, parameter names, and identifiers against the installed library source or official documentation BEFORE writing code
+EXTERNAL DEPENDENCIES — VERIFICATION REQUIRED:
+- If your task involves calling external APIs or SDKs: verify method signatures, parameter names, and identifiers against the installed library source or official documentation BEFORE Step B implementation (not during Step A test design — mocks in tests are expected, but implementation must use verified calls)
 - If the spec, plan, or guide contains details marked ⚠️ UNVERIFIED: you MUST verify them — do not implement unverified external details as-is
 - If you cannot verify an external detail: send a [BLOCKER] to team-lead with exactly what you tried and what remains unverified. The leader will escalate to the user — this is the one case where the pipeline pauses for human input rather than guessing
 - Do NOT fabricate external identifiers (model IDs, API slugs, catalog values, SDK method names) — if you don't know the real value, say so and escalate
@@ -478,6 +478,8 @@ A teammate hit a blocking issue. These are time-sensitive.
 **Ownership Violation**: evaluate whether the file is owned by another active teammate (deny), in shared_files (deny — use integration request), unowned (consider granting), or owned by a finished teammate (consider granting).
 
 **Dependency Mismatch**: coordinate between the two teammates until resolved.
+
+**`[BLOCKER-EXTERNAL-DEP]`** (subtype): a worker cannot verify an external identifier (API method name, model ID, catalog values, etc.). This is the one blocker type that breaks autonomous mode — you MUST use AskUserQuestion regardless of `$HUMAN_SWARM_FALLBACK`. If the user is unavailable (timeout), mark the task as blocked and continue with other tasks that don't depend on the unverifiable detail.
 
 ### Handling: `[STUCK]` Task
 

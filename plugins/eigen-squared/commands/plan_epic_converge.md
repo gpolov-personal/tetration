@@ -379,6 +379,13 @@ Epic manifest: <epic manifest content>
 RECOMMENDATIONS FROM UPSTREAM:
 <recommendations content, or 'None'>
 
+EXTERNAL DEPENDENCY VERIFICATION RESULTS:
+<If Stage 2.2 produced verification results, include them here. Format:
+- VERIFIED: <identifier> — confirmed as <correct value> from <source>
+- STILL UNVERIFIED: <identifier> — could not verify, preserve ⚠️ UNVERIFIED tag in plan
+- RESOLVED: <identifier> — spec said X but SDK source shows Y, use Y
+If no external dependencies exist: 'No external dependencies in this epic.'>
+
 PLAN GENERATION INSTRUCTIONS:
 
 1. RESEARCH FIRST:
@@ -503,16 +510,23 @@ After ALL sub-phase agents return:
 
 CRITICAL: Do NOT add code examples during refinement. The plan must remain strategic and code-free.
 
-6. SEND THE COMPLETED PLAN:
+6. HANDLE EXTERNAL DEPENDENCY VERIFICATION TAGS:
+Check the EXTERNAL DEPENDENCY VERIFICATION RESULTS section above.
+- For VERIFIED details: use the confirmed value in the plan. No tag needed.
+- For RESOLVED details: use the corrected value from SDK source. Note the correction.
+- For STILL UNVERIFIED details: preserve the ⚠️ UNVERIFIED tag inline wherever the plan references that detail. Example: 'Call `client.method()` ⚠️ UNVERIFIED — workers MUST verify against installed SDK before implementing.'
+- Plans must NEVER launder unverified details into verified-looking instructions.
+
+7. SEND THE COMPLETED PLAN:
 Send the complete plan content to the coordinator. Include ALL sections and the full Parallelization Strategy block."
 })
 ```
 
-### 2.3 Receive Plan from Planner
+### 2.4 Receive Plan from Planner
 
 Wait for the planner's response via SendMessage. The planner sends the complete plan content back to the coordinator.
 
-### 2.4 Write Plan to Disk (Crash Recovery Checkpoint)
+### 2.5 Write Plan to Disk (Crash Recovery Checkpoint)
 
 1. Ensure the epic directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`
 2. Ensure the feedback directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/`

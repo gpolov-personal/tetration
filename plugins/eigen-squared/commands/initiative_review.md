@@ -361,6 +361,11 @@ Scope:                     <DEFINED / MISSING>
 
 Whitebox Reference:        <PRESENT / NOT PROVIDED (optional)>
 
+External Dependencies:     <N features reference external systems>
+  ✅ Verified:              <N/M>
+  ⚠️ Unverified:           <N/M> — workers will need to verify at implementation time
+  ❓ Untagged:              <N/M> — need assessment before pipeline starts
+
 Overall:                   <READY / NEEDS WORK — N gaps to fill>
 ```
 
