@@ -82,6 +82,7 @@ The epic file (`epic.md`) must exist and contain features, blackbox specs, valid
 - **pipeline_state.json is the single source of truth** — per-epic plan state lives at `state.phases[N].plans[M]`.
 - **Feedback files are owned by this command** — no other command writes to the feedback path.
 - **Single approach per decision**: every architectural or implementation decision must specify exactly ONE approach — never "use X or Y". If alternatives were considered, state the chosen approach and briefly note why alternatives were rejected. Swarm workers need unambiguous instructions.
+- **Verification tag propagation**: if any external detail from the blackbox spec could not be verified in Stage 2.2 and still carries `⚠️ UNVERIFIED`, the plan MUST preserve that tag inline wherever it references that detail. Plans must NEVER launder unverified details into verified-looking instructions. Workers and reviewers check for these tags.
 
 ---
 
@@ -342,7 +343,23 @@ COMMUNICATION:
 6. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_manifest.json` — the epic manifest for inter-epic dependency awareness.
 7. Read `recommendations` from the CLI context. Filter by current phase and epic number (include entries where `epic` is null — phase-wide observations). Use as advisory context during plan generation.
 
-### 2.2 Send to Planner
+### 2.2 External Dependency Verification Gate
+
+Before generating the plan, check the epic's blackbox specs for external dependency details:
+
+1. **Scan blackbox specs** in `epic.md` for external identifiers: API endpoints, SDK method names, model IDs, parameter names, catalog values.
+2. **Check tags**: look for `✅ VERIFIED(source)` and `⚠️ UNVERIFIED` markers.
+3. **For `⚠️ UNVERIFIED` details**: attempt to verify them NOW, before the plan is generated:
+   - Read the installed SDK source in `$EIGEN_ROOT` (virtual environment, node_modules, etc.) to confirm method signatures and parameter names.
+   - Read existing verified integrations in the codebase for patterns.
+   - If verification succeeds: record the verified value and source in the plan. The plan MUST use the verified value, not the spec's unverified one.
+   - If verification fails (SDK not installed, no access, etc.): preserve the `⚠️ UNVERIFIED` tag in the plan and add a note: "Workers MUST verify this before implementing. If unable, escalate to team-lead as a [BLOCKER]."
+4. **For untagged external details** (no verification tag at all): treat as unverified and follow step 3.
+5. **For `✅ VERIFIED(source)` details**: accept as-is. Include them in the plan without the tag (they are trusted).
+
+**Why this matters:** The plan is the last checkpoint before workers start coding. If unverified details pass through the plan as if verified, workers implement them faithfully and mocks hide the errors until E2E tests — by which time multiple review iterations have been spent.
+
+### 2.3 Send to Planner
 
 Send the epic content, context files, and research instructions to the `planner` via SendMessage:
 

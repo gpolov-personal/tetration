@@ -291,9 +291,9 @@ TESTING PHILOSOPHY — NON-NEGOTIABLE:
 
 EXTERNAL DEPENDENCIES — NON-NEGOTIABLE:
 - If your task involves calling external APIs or SDKs: verify method signatures, parameter names, and identifiers against the installed library source or official documentation BEFORE writing code
-- If the spec or guide contains details marked ⚠️ UNVERIFIED: you MUST verify them — do not implement unverified external details as-is
-- If you cannot verify an external detail: document it in your working notes and ask the team-lead for guidance
-- Do NOT fabricate external identifiers (model IDs, API slugs, catalog values, SDK method names) — if you don't know the real value, say so
+- If the spec, plan, or guide contains details marked ⚠️ UNVERIFIED: you MUST verify them — do not implement unverified external details as-is
+- If you cannot verify an external detail: send a [BLOCKER] to team-lead with exactly what you tried and what remains unverified. The leader will escalate to the user — this is the one case where the pipeline pauses for human input rather than guessing
+- Do NOT fabricate external identifiers (model IDs, API slugs, catalog values, SDK method names) — if you don't know the real value, say so and escalate
 - Unit tests with mocks do NOT validate external API correctness — mocks accept any method name and parameter
 
 WORKING NOTES — external memory for crash/compaction recovery:
@@ -467,6 +467,7 @@ Design decisions affect architecture and need user approval. Contextualize the q
 - **worker stuck (budget exhausted)**: Mark the task as failed, skip it and its dependents. Create a `[DECISION-AUTONOMOUS]` task with full context. Continue with the rest of the swarm.
 - **ambiguous requirement**: Choose the simpler interpretation. Document the ambiguity in a `[DECISION-AUTONOMOUS]` task so the reviewer can assess.
 - **stub not replaced / Step C failure / attribution uncertain**: Take the safest action (skip the questionable component, document it). Never block the pipeline waiting for input that won't come.
+- **unverifiable external dependency** (EXCEPTION — breaks autonomous mode): If a worker reports they cannot verify an external identifier (API method name, model ID, catalog values, etc.) and you also cannot verify it from the installed SDK or codebase, you MUST use AskUserQuestion regardless of `$HUMAN_SWARM_FALLBACK`. This is the ONE case where guessing autonomously is worse than pausing — fabricated external details cause cascading review cycles that cost far more than a pause. Create a `[BLOCKER-EXTERNAL-DEP]` task documenting exactly what needs verification and what was attempted. If the user is unavailable (timeout), mark the task as blocked and continue with other tasks that don't depend on the unverifiable detail.
 
 All `[DECISION-AUTONOMOUS]` tasks will be visible in the PR summary and to `/review_swarm_pr`, which can create fixup tasks if any decision was wrong.
 

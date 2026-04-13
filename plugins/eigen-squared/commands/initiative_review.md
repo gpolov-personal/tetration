@@ -303,14 +303,16 @@ Check if the initiative mentions deployment. If it's a server project:
 For each Blackbox spec that references external systems (third-party APIs, SDKs, model providers, external services):
 
 1. **Identify all external identifiers**: model IDs, API endpoints, SDK method names, parameter names, catalog values (voice IDs, model variants, available options, etc.)
-2. **Check verification status**: Are these tagged as verified or `⚠️ UNVERIFIED`? If no tags exist, treat all as unverified.
-3. **Flag unverified details in the readiness report** under a new section:
+2. **Check verification status**: Are these tagged with `✅ VERIFIED(source)` or `⚠️ UNVERIFIED`? If no tags exist, treat all as untagged (not yet assessed).
+3. **Flag in the readiness report** under a new section:
    ```
    External Dependencies:      <N features reference external systems>
-     Verified details:          <N/M>
-     Unverified details:        <N/M> — workers will need to verify at implementation time
+     ✅ Verified:               <N/M>
+     ⚠️ Unverified:            <N/M> — workers will need to verify at implementation time
+     ❓ Untagged:               <N/M> — need assessment before pipeline starts
    ```
-4. **Recommend verification sources**: For each unverified detail, suggest how to verify (official docs URL, SDK source inspection, live API call).
+4. **Recommend verification sources**: For each unverified or untagged detail, suggest how to verify (official docs URL, SDK source inspection, live API call).
+5. **Ask the user** to verify or tag untagged details before proceeding. The pipeline runs best when every external detail has an explicit status.
 
 This audit prevents the most expensive pipeline failure mode: specs shipping wrong external details that workers implement faithfully, causing cascading review cycles.
 
@@ -545,14 +547,18 @@ Blackbox specs often reference external systems: third-party APIs, SDK method si
 
 For every Blackbox spec that references an external dependency, apply these rules:
 
-1. **Tag unverified external details.** If you cannot confirm an external identifier (API endpoint, SDK method name, model ID, parameter name, catalog of values) from official documentation or a live API call, mark it with `⚠️ UNVERIFIED`:
+1. **Tag ALL external details with verification status.** Every external identifier (API endpoint, SDK method name, model ID, parameter name, catalog of values) must carry one of three tags:
+   - `✅ VERIFIED(source)` — confirmed from a specific source. Include the source: `✅ VERIFIED(Mistral SDK v2.3 source)` or `✅ VERIFIED(live API query 2026-04-12)`.
+   - `⚠️ UNVERIFIED` — copied from examples, blog posts, guides, or inferred. Workers MUST verify before implementing.
+   - No tag = **not yet assessed**. The `deepen_time_split` agent will flag untagged external details as needing assessment.
+
+   Examples:
    ```markdown
    4. SDK call: `client.resource.method(model="model-id", ...)` ⚠️ UNVERIFIED — method name and parameters need verification against installed SDK
+   7. `list_voices()` returns ~30 presets ✅ VERIFIED(live API query 2026-04-12)
    ```
 
 2. **Distinguish identifiers by source:**
-   - **Verified** — confirmed from official docs, SDK source, or live API call. No tag needed.
-   - **⚠️ UNVERIFIED** — copied from examples, blog posts, guides, or inferred. Workers MUST verify before implementing.
    - **Repository path vs API identifier** — these are commonly confused. A package/model repository path (e.g., `org/model-name`) is NOT the same as an API model identifier. If both exist, specify both and label which is which.
 
 3. **For features with external catalogs** (voice presets, model variants, available options, etc.): Do NOT list specific catalog values in the spec unless you have verified them. Instead write:

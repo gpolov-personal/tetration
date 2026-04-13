@@ -195,7 +195,7 @@ In addition to scope-aware code review, each agent type has specific checks:
 - Mocks MUST throw/fail on calls beyond expected count. Flag mocks that silently reuse the last response or return undefined on unexpected calls — this directly masks bugs. [R6]
 
 **External dependency checks** (for agents reviewing code that calls external APIs/SDKs):
-- Verify that external API/SDK calls use correct method signatures, parameter names, and identifiers. Cross-check against: (a) installed library source in the project's virtual environment, (b) official documentation, (c) existing verified integrations in the codebase. Incorrect external identifiers are P1 — they cause 100% runtime failure and are invisible to unit tests using mocks. [R10]
+- Verify that external API/SDK calls use correct method signatures, parameter names, and identifiers. Cross-check in this priority order: (1) existing verified integrations already in the codebase — the most reliable reference, (2) installed library source in the project's virtual environment (requires venv to be set up on the branch — check before relying on this), (3) official documentation — note any details that could only be verified via docs as needing manual confirmation. Incorrect external identifiers are P1 — they cause 100% runtime failure and are invisible to unit tests using mocks. [R10]
 - Flag any hardcoded catalog values (model IDs, voice/variant lists, API slugs) that are not sourced from official documentation or a live API query. Fabricated identifiers are P1 regardless of how plausible they look. [R11]
 
 **CI and configuration checks** (for agents reviewing CI/config changes):

@@ -344,8 +344,11 @@ Prompt: "Check that blackbox specs in every phase manifest properly handle refer
 
 For each blackbox spec that mentions external APIs, SDKs, third-party services, model providers, or external catalogs:
 1. Does the spec contain specific external identifiers (API endpoints, SDK method names, model IDs, parameter names, catalog values)?
-2. Are those identifiers tagged with verification status? Look for '⚠️ UNVERIFIED' tags.
-3. If external identifiers are present WITHOUT verification tags, flag as medium severity — unverified external details shipped as ground truth cause cascading downstream failures.
+2. Are those identifiers tagged with verification status? Look for '✅ VERIFIED(source)' and '⚠️ UNVERIFIED' tags.
+3. Three-state assessment:
+   - '✅ VERIFIED(source)' — acceptable, check that the source citation is specific (not just 'docs')
+   - '⚠️ UNVERIFIED' — acceptable tagging, but flag as medium severity so downstream commands know to resolve before implementation
+   - No tag on external identifiers — flag as high severity. This means the upstream tagging step was skipped or incomplete. External identifiers without any verification tag are the most dangerous — they appear verified by omission.
 4. Check for common confusion patterns:
    - Repository/package paths used as API identifiers (e.g., 'org/model-name' vs API slug)
    - SDK method names copied from examples without verification
