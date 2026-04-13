@@ -289,6 +289,13 @@ TESTING PHILOSOPHY — NON-NEGOTIABLE:
 - NEVER monkeypatch connections
 - If infrastructure is needed for a test, structure it to work with real infra when available
 
+EXTERNAL DEPENDENCIES — NON-NEGOTIABLE:
+- If your task involves calling external APIs or SDKs: verify method signatures, parameter names, and identifiers against the installed library source or official documentation BEFORE writing code
+- If the spec or guide contains details marked ⚠️ UNVERIFIED: you MUST verify them — do not implement unverified external details as-is
+- If you cannot verify an external detail: document it in your working notes and ask the team-lead for guidance
+- Do NOT fabricate external identifiers (model IDs, API slugs, catalog values, SDK method names) — if you don't know the real value, say so
+- Unit tests with mocks do NOT validate external API correctness — mocks accept any method name and parameter
+
 WORKING NOTES — external memory for crash/compaction recovery:
 Your working notes file is: swarm_working_notes/working-notes-<task.id>.md
 The Skill commands below will create and maintain this file with checkpoints at every stage.

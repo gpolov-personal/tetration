@@ -337,7 +337,27 @@ Original blackbox document:
 Report: missing specs, truncated specs, mismatched specs."
 ```
 
-### 2.2 Whitebox Relevance Agent
+### 2.2 External Dependency Verification Agent
+
+```
+Prompt: "Check that blackbox specs in every phase manifest properly handle references to external systems.
+
+For each blackbox spec that mentions external APIs, SDKs, third-party services, model providers, or external catalogs:
+1. Does the spec contain specific external identifiers (API endpoints, SDK method names, model IDs, parameter names, catalog values)?
+2. Are those identifiers tagged with verification status? Look for '⚠️ UNVERIFIED' tags.
+3. If external identifiers are present WITHOUT verification tags, flag as medium severity — unverified external details shipped as ground truth cause cascading downstream failures.
+4. Check for common confusion patterns:
+   - Repository/package paths used as API identifiers (e.g., 'org/model-name' vs API slug)
+   - SDK method names copied from examples without verification
+   - Hardcoded catalogs (lists of IDs, voice presets, model variants) that appear fabricated
+
+Phase manifests:
+<all phase manifests>
+
+Report: unverified external identifiers, missing verification tags, suspicious catalog values."
+```
+
+### 2.3 Whitebox Relevance Agent
 
 **Skip this agent if no whitebox file was provided** (check `source_files.whitebox` in the initiative summary — if null, the initiative has no whitebox reference and phase manifests won't have whitebox sections).
 
