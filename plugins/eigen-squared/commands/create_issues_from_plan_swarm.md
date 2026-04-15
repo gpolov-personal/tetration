@@ -225,6 +225,7 @@ For each task, produce:
 6. **Testing Requirements**: unit tests, integration tests, edge cases
 7. **Dependencies**: blocked_by, blocks
 8. **Risk Flags**: breaking changes, performance sensitivity, complexity
+9. **External Dependency Verification Status**: if the plan contains any `⚠️ UNVERIFIED` external details that affect this task, propagate them into the task's Implementation Details section with the tag preserved. Workers check for these tags and will escalate unverifiable details as blockers rather than fabricating values
 
 ### 2.4 Generate the Integration Task
 

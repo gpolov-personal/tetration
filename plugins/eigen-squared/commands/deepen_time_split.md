@@ -337,7 +337,37 @@ Original blackbox document:
 Report: missing specs, truncated specs, mismatched specs."
 ```
 
-### 2.2 Whitebox Relevance Agent
+### 2.2 External Dependency Verification Agent
+
+**Skip this agent if no feature in any phase manifest references external APIs, SDKs, third-party services, model providers, or external catalogs.** If all features are purely internal (no external system calls), this agent has nothing to verify.
+
+```
+Prompt: "Check that blackbox specs in every phase manifest properly handle references to external systems.
+
+For each blackbox spec that mentions external APIs, SDKs, third-party services, model providers, or external catalogs:
+1. Does the spec contain specific external identifiers (API endpoints, SDK method names, model IDs, parameter names, catalog values)?
+2. Are those identifiers tagged with verification status? Look for '✅ VERIFIED(source)' and '⚠️ UNVERIFIED' tags.
+3. Three-state assessment:
+   - '✅ VERIFIED(source)' — acceptable, check that the source citation is specific (not just 'docs')
+   - '⚠️ UNVERIFIED' — acceptable tagging, but flag as medium severity so downstream commands know to resolve before implementation
+   - No tag on external identifiers — flag as high severity. This means the upstream tagging step was skipped or incomplete. External identifiers without any verification tag are the most dangerous — they appear verified by omission.
+4. Check for common confusion patterns:
+   - Repository/package paths used as API identifiers (e.g., 'org/model-name' vs API slug)
+   - SDK method names copied from examples without verification
+   - Hardcoded catalogs (lists of IDs, voice presets, model variants) that appear fabricated
+
+Original blackbox document:
+<blackbox document content>
+
+Phase manifests:
+<all phase manifests>
+
+Report as structured findings:
+{feature_id, identifier, current_tag, assessed_severity, detail}
+One entry per external identifier found. assessed_severity: high if untagged, medium if UNVERIFIED, low if VERIFIED with vague source."
+```
+
+### 2.3 Whitebox Relevance Agent
 
 **Skip this agent if no whitebox file was provided** (check `source_files.whitebox` in the initiative summary — if null, the initiative has no whitebox reference and phase manifests won't have whitebox sections).
 
@@ -448,6 +478,7 @@ For each finding, assign:
   - `structural_error` — DAG violation, cluster split, missing dependency
   - `balance_issue` — phase too large/small, priority misordering, bottleneck placement
   - `content_gap` — missing blackbox spec, irrelevant/missing whitebox section
+  - `external_dep_unverified` — external identifier missing verification tag or tagged as unverified
   - `e2e_gap` — phase doesn't enable progressive E2E testing (phase-level; distinct from `e2e_coverage_gap` used by space_split_converge for epic-level gaps)
   - `strategic_concern` — risk concentration, architectural ordering issue
   - `cross_phase_dep_error` — missing or incorrect cross-phase dependency
@@ -509,7 +540,7 @@ Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/feedback/
   "findings": [
     {
       "id": "dtf-<sequential_number>",
-      "category": "<structural_error|balance_issue|content_gap|e2e_gap|cross_phase_dep_error|strategic_concern>",
+      "category": "<structural_error|balance_issue|content_gap|e2e_gap|cross_phase_dep_error|strategic_concern|external_dep_unverified>",
       "severity": "high|medium|low",
       "title": "<concise>",
       "description": "<detailed>",

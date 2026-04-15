@@ -298,7 +298,25 @@ Check if the initiative mentions deployment. If it's a server project:
 - Is there a containerization feature in the Feature Summary Table?
 - Recommend adding one if missing — bootstrap creates Docker artifacts for server projects and needs a containerization feature in Phase 1
 
-#### 1.7 Reference System Analysis
+#### 1.7 External Dependency Verification Audit
+
+For each Blackbox spec that references external systems (third-party APIs, SDKs, model providers, external services):
+
+1. **Identify all external identifiers**: model IDs, API endpoints, SDK method names, parameter names, catalog values (voice IDs, model variants, available options, etc.)
+2. **Check verification status**: Are these tagged with `✅ VERIFIED(source)` or `⚠️ UNVERIFIED`? If no tags exist, treat all as untagged (not yet assessed).
+3. **Flag in the readiness report** under a new section:
+   ```
+   External Dependencies:      <N features reference external systems>
+     ✅ Verified:               <N/M>
+     ⚠️ Unverified:            <N/M> — workers will need to verify at implementation time
+     ❓ Untagged:               <N/M> — need assessment before pipeline starts
+   ```
+4. **Recommend verification sources**: For each unverified or untagged detail, suggest how to verify (official docs URL, SDK source inspection, live API call).
+5. **Ask the user** to verify or tag untagged details before proceeding. The pipeline runs best when every external detail has an explicit status.
+
+This audit prevents the most expensive pipeline failure mode: specs shipping wrong external details that workers implement faithfully, causing cascading review cycles.
+
+#### 1.8 Reference System Analysis
 
 If the user mentions a reference system or existing codebase:
 - Ask for its path
@@ -342,6 +360,11 @@ Scope:                     <DEFINED / MISSING>
   Success criteria:        <present / missing>
 
 Whitebox Reference:        <PRESENT / NOT PROVIDED (optional)>
+
+External Dependencies:     <N features reference external systems>
+  ✅ Verified:              <N/M>
+  ⚠️ Unverified:           <N/M> — workers will need to verify at implementation time
+  ❓ Untagged:              <N/M> — need assessment before pipeline starts
 
 Overall:                   <READY / NEEDS WORK — N gaps to fill>
 ```
@@ -522,6 +545,36 @@ For each feature, generate:
 ```
 
 Group features by domain with domain headings.
+
+### 3.2.1 External Dependency Verification Tags
+
+Blackbox specs often reference external systems: third-party APIs, SDK method signatures, model identifiers, service endpoints, parameter names, data formats. These details are the **#1 source of downstream defects** — if a spec ships wrong external details, workers implement them faithfully and review cycles multiply.
+
+For every Blackbox spec that references an external dependency, apply these rules:
+
+1. **Tag ALL external details with verification status.** Every external identifier (API endpoint, SDK method name, model ID, parameter name, catalog of values) must carry one of three tags:
+   - `✅ VERIFIED(source)` — confirmed from a specific source. Include the source: `✅ VERIFIED(Mistral SDK v2.3 source)` or `✅ VERIFIED(live API query 2026-04-12)`.
+   - `⚠️ UNVERIFIED` — copied from examples, blog posts, guides, or inferred. Workers MUST verify before implementing.
+   - No tag = **not yet assessed**. The `deepen_time_split` agent will flag untagged external details as needing assessment.
+
+   Examples:
+   ```markdown
+   4. SDK call: `client.resource.method(model="model-id", ...)` ⚠️ UNVERIFIED — method name and parameters need verification against installed SDK
+   7. `list_voices()` returns ~30 presets ✅ VERIFIED(live API query 2026-04-12)
+   ```
+
+2. **Distinguish identifiers by source:**
+   - **Repository path vs API identifier** — these are commonly confused. A package/model repository path (e.g., `org/model-name`) is NOT the same as an API model identifier. If both exist, specify both and label which is which.
+
+3. **For features with external catalogs** (voice presets, model variants, available options, etc.): Do NOT list specific catalog values in the spec unless you have verified them. Instead write:
+   ```markdown
+   7. `list_items()` fetches catalog from API — returns ~N named entries
+      ⚠️ UNVERIFIED: exact identifiers must be queried from live API at implementation time
+   ```
+
+4. **Ask the user** if you are unsure whether external details are correct. This is an interactive command — use it.
+
+**Why this matters:** Downstream workers (`orchestrate_swarm`) treat Blackbox specs as ground truth. If a spec says the SDK method is `.create()`, the worker will call `.create()`. If the spec lists 20 identifiers, the worker will hardcode all 20. Mocks in unit tests will hide the error. Only E2E tests or live API calls will catch it — by which time multiple review iterations have been spent.
 
 ### 3.3 Whitebox Reference Guide (optional)
 
