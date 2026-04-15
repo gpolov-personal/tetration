@@ -289,6 +289,13 @@ TESTING PHILOSOPHY — NON-NEGOTIABLE:
 - NEVER monkeypatch connections
 - If infrastructure is needed for a test, structure it to work with real infra when available
 
+EXTERNAL DEPENDENCIES — VERIFICATION REQUIRED:
+- If your task involves calling external APIs or SDKs: verify method signatures, parameter names, and identifiers against the installed library source or official documentation BEFORE Step B implementation (not during Step A test design — mocks in tests are expected, but implementation must use verified calls)
+- If the spec, plan, or guide contains details marked ⚠️ UNVERIFIED: you MUST verify them — do not implement unverified external details as-is
+- If you cannot verify an external detail: send a [BLOCKER] to team-lead with exactly what you tried and what remains unverified. The leader will escalate to the user — this is the one case where the pipeline pauses for human input rather than guessing
+- Do NOT fabricate external identifiers (model IDs, API slugs, catalog values, SDK method names) — if you don't know the real value, say so and escalate
+- Unit tests with mocks do NOT validate external API correctness — mocks accept any method name and parameter
+
 WORKING NOTES — external memory for crash/compaction recovery:
 Your working notes file is: swarm_working_notes/working-notes-<task.id>.md
 The Skill commands below will create and maintain this file with checkpoints at every stage.
@@ -460,6 +467,7 @@ Design decisions affect architecture and need user approval. Contextualize the q
 - **worker stuck (budget exhausted)**: Mark the task as failed, skip it and its dependents. Create a `[DECISION-AUTONOMOUS]` task with full context. Continue with the rest of the swarm.
 - **ambiguous requirement**: Choose the simpler interpretation. Document the ambiguity in a `[DECISION-AUTONOMOUS]` task so the reviewer can assess.
 - **stub not replaced / Step C failure / attribution uncertain**: Take the safest action (skip the questionable component, document it). Never block the pipeline waiting for input that won't come.
+- **unverifiable external dependency** (EXCEPTION — breaks autonomous mode): If a worker reports they cannot verify an external identifier (API method name, model ID, catalog values, etc.) and you also cannot verify it from the installed SDK or codebase, you MUST use AskUserQuestion regardless of `$HUMAN_SWARM_FALLBACK`. This is the ONE case where guessing autonomously is worse than pausing — fabricated external details cause cascading review cycles that cost far more than a pause. Create a `[BLOCKER-EXTERNAL-DEP]` task documenting exactly what needs verification and what was attempted. If the user is unavailable (timeout), mark the task as blocked and continue with other tasks that don't depend on the unverifiable detail.
 
 All `[DECISION-AUTONOMOUS]` tasks will be visible in the PR summary and to `/review_swarm_pr`, which can create fixup tasks if any decision was wrong.
 
@@ -470,6 +478,8 @@ A teammate hit a blocking issue. These are time-sensitive.
 **Ownership Violation**: evaluate whether the file is owned by another active teammate (deny), in shared_files (deny — use integration request), unowned (consider granting), or owned by a finished teammate (consider granting).
 
 **Dependency Mismatch**: coordinate between the two teammates until resolved.
+
+**`[BLOCKER-EXTERNAL-DEP]`** (subtype): a worker cannot verify an external identifier (API method name, model ID, catalog values, etc.). This is the one blocker type that breaks autonomous mode — you MUST use AskUserQuestion regardless of `$HUMAN_SWARM_FALLBACK`. If the user is unavailable (timeout), mark the task as blocked and continue with other tasks that don't depend on the unverifiable detail.
 
 ### Handling: `[STUCK]` Task
 
