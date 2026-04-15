@@ -22,7 +22,7 @@ This command participates in a **convergence loop** with `orchestrate_swarm`:
 - `review_swarm_pr` reviews the PR, creates fixup tasks if needed
 - `orchestrate_swarm` executes fixup tasks
 - `review_swarm_pr` reviews again
-- Loop continues until ALL findings (P1, P2, and P3) are resolved (converged)
+- Loop continues until all P1 and P2 findings are resolved. Residual P3 findings do not block convergence — they are recorded in `pipeline_state.json` for downstream visibility.
 
 **Scope**: one epic at a time (P<N>.E<M>).
 
@@ -106,8 +106,9 @@ If a previous review report exists (`review_report_iteration_<review_iteration -
 
 Apply these rules **in order**:
 
-1. **Converge if**: zero P1, zero P2, AND zero P3 findings remain.
-   - Rationale: "All findings resolved."
+1. **Converge if**: zero P1 AND zero P2 findings remain. Residual P3 findings are allowed.
+   - Rationale (when `p3 == 0`): "All findings resolved."
+   - Rationale (when `p3 > 0`): "All P1/P2 findings resolved. `<z>` residual P3 finding(s) recorded in `findings_summary.p3` (non-blocking)."
 
 2. **Converge if**: iteration limit reached (`review_iteration >= 8`).
    - Rationale: "Maximum review iterations (8) reached. Accepting current state."
@@ -116,7 +117,7 @@ Apply these rules **in order**:
    - Oscillation = a finding was fixed in iteration N but reappeared in N+1.
    - Rationale: "Oscillation detected. Accepting current state to break cycle."
 
-4. **Continue if**: any P1, P2, or P3 actionable findings remain.
+4. **Continue if**: any P1 or P2 actionable finding remains. (P3-only states take rule 1, not this rule.)
 
 ---
 
@@ -249,7 +250,7 @@ Apply the convergence rules from the Convergence Protocol section.
 
 ### 4.1 Derive File Ownership
 
-For each finding (P1, P2, and P3 — all severities get fixup tasks):
+For each finding (P1, P2, and P3 — all severities get fixup tasks when iteration is already triggered by P1/P2 per Convergence rule 4; P3-only states never reach Stage 4 because they converge via rule 1):
 - Look up which manifest task owns the finding's file → `original_task_id`
 - Determine `files_owned` and `test_files_owned` for the fix
 - If file is in `shared_files` → integration finding (final wave)
@@ -405,13 +406,20 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`.
 Use the CLI to update pipeline state:
 
 **If converged:**
+
+Use actual counts in `--findings-summary` — `p3` may be > 0 when converging with residual P3. The `--reason` string MUST mention residual P3 count when `p3 > 0` so downstream commands can parse/display it.
+
 ```bash
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}'
+# Replace <z> with the actual residual P3 count (0 when no P3 findings).
+# <rationale> examples:
+#   z == 0: "All findings resolved."
+#   z  > 0: "All P1/P2 findings resolved. <z> residual P3 finding(s) recorded (non-blocking)."
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}'
 eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "<rationale>"
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
-**If continuing (P1 or P2 findings remain):**
+**If continuing (P1 or P2 findings remain — a state with `p1=0, p2=0, p3>0` takes the CONVERGED branch above, not this one):**
 ```bash
 eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}'
 eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
@@ -454,8 +462,10 @@ Findings:
   P1: <x>, P2: <y>, P3: <z>
   <if iteration 2+:>
   vs Previous: <addressed> fixed, <persistent> remaining, <new> new
+  <if converged and z > 0:>
+  Residual (non-blocking): P3 × <z> — recorded in pipeline_state.json
 
-Convergence: <CONVERGED | CONTINUE — N findings remain (P1: x, P2: y, P3: z)>
+Convergence: <CONVERGED [with <z> residual P3] | CONTINUE — <x+y> blocking findings remain (P1: x, P2: y); P3: z carried over>
 
 Next steps:
   If CONTINUE:
@@ -486,7 +496,7 @@ Next steps:
 - **No code modifications**: this command reviews, creates tasks, updates manifest. No source code changes.
 - **Runs from the integration branch**: same branch as orchestrate_swarm. All artifacts committed to `feat/P<N>.E<M>`.
 - **Review task IDs**: `P<N>.E<M>.R<K>` format (R for Review).
-- **Convergence**: ALL findings (P1, P2, and P3) must be resolved. Max 8 iterations. Oscillation breaks the cycle.
+- **Convergence**: all P1 and P2 findings must be resolved. Residual P3 findings are allowed and recorded in `pipeline_state.json` (`swarm_execution.findings_summary.p3` and `swarm_execution.convergence.reason`). Max 8 iterations. Oscillation breaks the cycle.
 - **Push after every commit**: the PR updates automatically when the branch is pushed.
 - **Merge is automatic on convergence**: when converged, the command merges the PR via `gh pr merge --squash --delete-branch`, checks out `$EIGEN_BRANCH`, pulls, and deletes the local branch. No manual step needed.
 - **Post-merge state**: after auto-merge, the working directory is on `$EIGEN_BRANCH` with all epic artifacts (code, tasks, manifest, pipeline_state, reports) merged in.
