@@ -61,7 +61,7 @@ Instead, call the corresponding `team_*` tool from the mapping table. If a comma
 | `Task({subagent_type, prompt})` — plain subagent, no team | OpenCode native `task({subagent_type, prompt, description})` | Blocking child session. Same semantics. Not a teammate. |
 | `Agent({subagent_type, name, prompt, team_name})` — teammate spawn | `team_spawn({name, agent: subagent_type, prompt})` | Teammate in the active team. `team_name` is ignored; OpenCode has one active team per lead session. |
 | `Agent({..., run_in_background: true})` | `team_spawn({...})` | `team_spawn` is fire-and-forget by default. |
-| `Agent({..., isolation: "worktree"})` | `team_spawn({..., worktree: true})` | Default is `true`. Pass `worktree: false` for read-only agents that share the parent workspace. |
+| `Agent({..., isolation: "worktree"})` | `team_spawn({..., worktree: false})` **for eigen-squared swarms** (see note below) | Ensemble's default is `worktree: true`, but eigen-squared's `orchestrate_swarm` and related commands deliberately **avoid git worktrees** — see the "Worktree policy" section. Only pass `worktree: true` if a command explicitly requests git-isolated parallel edits. |
 | `SendMessage({to, message})` | `team_message({to, text: message})` | `to` = teammate name. |
 | `SendMessage({to, message: {plan_approved: true}})` | `team_message({to, approve: true, text})` | Structured plan-approval variant. |
 | `SendMessage({to, message: {plan_rejected: reason}})` | `team_message({to, reject: reason})` | |
@@ -79,6 +79,25 @@ Instead, call the corresponding `team_*` tool from the mapping table. If a comma
 | Switch view to a teammate's session | `team_view({member})` | TUI-only; useful when the lead wants the user to see a specific teammate's chat. |
 | Shut down a single teammate | `team_shutdown({member, force?})` | Graceful by default; `force: true` aborts. |
 | Merge a teammate's worktree branch | `team_merge({member})` | Squash-merges unstaged into lead's working directory. `team_cleanup` does this automatically for remaining branches. |
+
+---
+
+## `Skill(...)` invocations in eigen-squared commands
+
+Eigen-squared's `orchestrate_swarm` delegates the two TDD steps to worker skills using Claude Code's `Skill(...)` tool:
+
+```
+Skill("eigen-squared:design_validation_tests_swarm", args: "<task.id>")
+Skill("eigen-squared:code_from_validation_tests_swarm", args: "<task.id>")
+```
+
+Two translation rules for OpenCode:
+
+1. **Drop the `eigen-squared:` namespace prefix.** OpenCode's `skill` tool takes a plain `name`. Call `skill({name: "design_validation_tests_swarm"})`, not `skill({name: "eigen-squared:design_validation_tests_swarm"})`.
+
+2. **OpenCode's `skill` tool has no `args` parameter.** If the original call passes `args: "<value>"`, state the value explicitly in your turn **before** invoking the skill, so it is available in the context the skill will read. Example: say "I am invoking the design-validation skill for task `task_abc123`." then call `skill({name: "design_validation_tests_swarm"})`. The skill's bridge instructions tell the invoked agent to extract the task ID from the immediate context and use it wherever the target command expects `$ARGUMENTS`.
+
+The bridge skills (`design_validation_tests_swarm` and `code_from_validation_tests_swarm`) redirect to the corresponding command file under `.opencode/commands/`. You will typically need to `read` the command file yourself after the `skill` call, because the bridge content only points to the command.
 
 ---
 
@@ -105,7 +124,7 @@ These are places where `team_*` tools behave differently from their Claude Code 
 
 1. **Teammates have a restricted toolset**: on spawn, teammates get `edit` (in their worktree), `bash`, and the 6 team communication tools (`team_message`, `team_broadcast`, `team_tasks_*`, `team_claim`). They **cannot** spawn further teammates (no nested teams). Sub-subagents via the OpenCode `task` tool are allowed.
 
-2. **Worktree isolation is default-on**: every teammate runs in its own git worktree at `~/.local/share/opencode/worktree/<project-id>/ensemble-<team>-<member>/`. File edits stay isolated until merge. If two teammates must see each other's files live, pass `worktree: false` on spawn (and accept the risk of conflicting edits).
+2. **Worktree isolation is default-on in ensemble, but eigen-squared swarms disable it**: ensemble's default is `worktree: true` (each teammate in `~/.local/share/opencode/worktree/<project-id>/ensemble-<team>-<member>/`). **For eigen-squared swarm commands (`orchestrate_swarm`, `code_from_validation_tests_swarm`, etc.), always pass `worktree: false`** when translating an `Agent(...)` call into `team_spawn(...)`. Eigen-squared coordinates concurrent edits through **declared file ownership** (`files_owned` / `test_files_owned` in the swarm manifest) rather than through git-level isolation. All teammates share the lead's working directory and integrate continuously, so worktrees would break the design. See the dedicated section below.
 
 3. **State layout is SQLite, global**: teams, members, tasks, and messages live in `~/.config/opencode/ensemble.db`. Not filesystem-per-team like Claude Code. `team_id` is generated internally; you work with the `name` you passed to `team_create`.
 
@@ -120,6 +139,23 @@ These are places where `team_*` tools behave differently from their Claude Code 
 8. **No auto-restart after crash**: if OpenCode restarts mid-swarm, stale busy members are marked as errored, orphaned sessions aborted, undelivered messages re-delivered. Teammates themselves do **not** auto-restart. The lead must re-spawn them if the swarm should continue.
 
 9. **Shell env vars injected into teammates**: each teammate's shell gets `ENSEMBLE_TEAM`, `ENSEMBLE_MEMBER`, `ENSEMBLE_ROLE`, `ENSEMBLE_BRANCH`. Useful for identifying self in bash commands.
+
+---
+
+## Worktree policy for eigen-squared swarms
+
+Eigen-squared's orchestration model (`orchestrate_swarm` and the `*_swarm` family) predates ensemble's worktree feature and was designed for a single shared filesystem. Its coordination primitive is **file ownership**: each task in the swarm manifest declares `files_owned: [...]` and `test_files_owned: [...]`, and teammates are disciplined to only edit files in their declared ownership set. This lets multiple teammates work in parallel in the same branch without conflicts.
+
+If you enable ensemble worktrees (`worktree: true`) when translating an eigen-squared `Agent(...)` call, you break several assumptions:
+
+- Teammates won't see each other's writes in real time.
+- The integration step (which expects all ownership sets to coexist on one branch) breaks, because each teammate's edits live in a separate branch.
+- File-ownership conflicts — which the manifest prevents by construction — become invisible to the ownership guardrails.
+- Crash recovery in eigen-squared uses branch state as the source of truth and assumes a single branch per phase/epic; parallel branches would confuse it.
+
+**Rule**: when the command you are executing was written for eigen-squared (identifiable by `[WAVE-STATUS]`/`[INTEGRATION-REQUEST]` task prefixes, `swarm-manifest.json`, or explicit mention of file ownership), **always translate `Agent(...)` to `team_spawn({..., worktree: false, ...})`**, regardless of what the Agent call looks like in the command prose.
+
+If a non-eigen-squared command (e.g. a personal experiment or a review flow where agents should not see each other's edits) wants isolation, pass `worktree: true` explicitly. Default when unsure: `worktree: false`.
 
 ---
 
