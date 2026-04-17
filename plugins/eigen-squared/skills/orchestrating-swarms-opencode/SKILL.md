@@ -142,6 +142,53 @@ These are places where `team_*` tools behave differently from their Claude Code 
 
 ---
 
+## Single-turn polling pattern (critical on `opencode run`)
+
+`opencode run` is a **single-turn** invocation: the lead session terminates the instant its turn ends with prose. When the lead terminates, **all teammates spawned during that turn are killed mid-work** — their processes die, their `busy` status goes stale in the DB, and pending file writes are lost.
+
+This constraint does not exist in Claude Code (where the TUI keeps the session alive across turns). On OpenCode, it forces a specific orchestration shape: **from the first `team_spawn` until `team_cleanup`, the lead must not emit prose.** Every turn between those two points must end with a tool call that schedules the next turn.
+
+### The monolithic polling loop
+
+Use this structure in any orchestrator command (equivalent of `orchestrate_swarm`, `plan_epic_converge`, `create_issues_from_plan_swarm`, etc.) that spawns teammates on OpenCode:
+
+```
+1. setup (team_create, team_tasks_add, etc.)   ← prose OK here
+2. spawn first wave  (team_spawn x N in a single response)
+3. loop (tool calls ONLY, no prose between iterations):
+   a. Bash({command: "sleep 15"})              ← keeps runtime alive ~15s
+   b. team_tasks_list
+   c. DECIDE (no prose; your next tool call is exactly one of):
+      - if any task just transitioned blocked→pending and has no
+        assignee yet  →  team_spawn that task's worker (joins the swarm)
+      - else if every task is status=completed  →  exit loop
+      - else  →  go back to (a), another sleep
+4. team_cleanup
+5. final prose summary                         ← prose allowed again here
+```
+
+One loop, one exit condition ("all tasks completed"). Dependency gating is automatic: downstream waves stay `blocked` in the DB until prereqs complete, and the loop spawns them on the iteration they unblock. No wave-boundary prose, no "Wave N complete — moving on" acknowledgments.
+
+### What breaks the lead's survival
+
+- **Prose acknowledgements between waves** (e.g. "Wave 1 complete — proceeding to Wave 2."). Don't emit them even if the command template suggests structured per-wave reporting. All acknowledgement happens AFTER `team_cleanup`.
+- **Progress narratives** ("I'll now wait for teammates", "teammates are running", "all 3 are busy"). Same failure mode — any narrative ends the turn.
+- **`team_message` to the user mid-loop**. Reserve user-facing messages for the final summary.
+- **Conditional branches expressed as prose** ("If not all completed, I'll sleep again"). Express them as the decision in step 3c via the choice of next tool call, not as narrated intent.
+
+### What is safe inside the loop
+
+- `Bash` (including `sleep`, `python`, `git`, filesystem inspection).
+- Any `team_*` tool (`team_status`, `team_view`, `team_results`, `team_spawn`, `team_message` between teammates).
+- `read`, `write`, `edit`, `grep`, `glob` if the lead needs to consult a file mid-orchestration.
+- A single final prose summary AFTER `team_cleanup`, consolidating per-task outcomes.
+
+### Timeout and partial-failure handling
+
+Cap the loop at ~80 iterations (~20 minutes). If the cap is hit, the correct final sequence is still pure tool calls: `team_status` → `team_cleanup` → one prose summary with partial results. Do NOT narrate the timeout mid-loop.
+
+---
+
 ## Worktree policy for eigen-squared swarms
 
 Eigen-squared's orchestration model (`orchestrate_swarm` and the `*_swarm` family) predates ensemble's worktree feature and was designed for a single shared filesystem. Its coordination primitive is **file ownership**: each task in the swarm manifest declares `files_owned: [...]` and `test_files_owned: [...]`, and teammates are disciplined to only edit files in their declared ownership set. This lets multiple teammates work in parallel in the same branch without conflicts.
@@ -293,4 +340,4 @@ team_view({ member })                              # switch user's view
 
 ## One-line invariant
 
-If you are on OpenCode with a non-Anthropic model, **every tool call that mentions `Task`, `Agent`, `SendMessage`, `TaskCreate`, `TaskList`, `TaskUpdate`, `TeamCreate`, or `TeamDelete` is a bug**. Translate it before emitting the call.
+If you are on OpenCode with a non-Anthropic model, **every tool call that mentions `Task`, `Agent`, `SendMessage`, `TaskCreate`, `TaskList`, `TaskUpdate`, `TeamCreate`, or `TeamDelete` is a bug**. Translate it before emitting the call. And from the first `team_spawn` until `team_cleanup`, **no prose** — only tool calls, or the swarm dies.
