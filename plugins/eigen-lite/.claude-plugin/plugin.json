@@ -1,0 +1,8 @@
+{
+  "name": "eigen-lite",
+  "version": "0.9.0",
+  "description": "Destilated eigen plugin for small initiatives (2-5 features) on existing codebases. Single-phase pipeline with one consolidated planner (lite_plan), parallel execution (lite_swarm), and scope-aware review (lite_review). Reuses eigen-squared workers via cross-plugin Skill referencing.",
+  "dependencies": ["eigen-squared"],
+  "keywords": ["autonomous", "swarm", "lite", "small-initiatives", "single-phase", "existing-codebase"],
+  "homepage": "https://github.com/ggpolovera/tetration"
+}
