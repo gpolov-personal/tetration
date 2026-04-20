@@ -5,12 +5,16 @@ on:
     branches: [master, dev]
     paths:
       - 'plugins/eigen-squared/cli/**'
+      - 'plugins/eigen-squared/.claude-plugin/plugin.json'
       - 'plugins/eigen-core/eigen_core/**'
+      - 'plugins/eigen-core/.claude-plugin/plugin.json'
       - '.github/workflows/eigen-squared-tests.yml'
   pull_request:
     paths:
       - 'plugins/eigen-squared/cli/**'
+      - 'plugins/eigen-squared/.claude-plugin/plugin.json'
       - 'plugins/eigen-core/eigen_core/**'
+      - 'plugins/eigen-core/.claude-plugin/plugin.json'
       - '.github/workflows/eigen-squared-tests.yml'
 
 jobs:
@@ -44,8 +48,8 @@ jobs:
         run: |
           count=$(pytest cli/tests/ --collect-only -q 2>&1 | tail -1 | awk '{print $1}')
           echo "Collected $count tests"
-          if [ "$count" -lt 119 ]; then
-            echo "::error::Test count ($count) below baseline (119). Did tests get deleted?"
+          if [ "$count" -lt 120 ]; then
+            echo "::error::Test count ($count) below baseline (120). Did tests get deleted?"
             exit 1
           fi
 

@@ -12,6 +12,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,10 +70,8 @@ def watchdog_env(tmp_path, tasks_api):
     # the lite package in this repo (not the installed CLI).
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    venv_python = (
-        Path(__file__).resolve().parent.parent.parent.parent  # plugins/
-        / "eigen-squared" / ".venv" / "bin" / "python"
-    )
+    # Use the interpreter running pytest (works in CI with no venv too).
+    venv_python = Path(sys.executable)
     shim = bin_dir / "eigen-lite"
     shim.write_text(
         "#!/bin/bash\n"

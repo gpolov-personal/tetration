@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -23,9 +24,9 @@ from cli.state import resolve_state_file
 
 
 LITE_ROOT = Path(__file__).resolve().parent.parent.parent  # plugins/eigen-lite
-VENV_PY = (
-    LITE_ROOT.parent / "eigen-squared" / ".venv" / "bin" / "python"
-)
+# Use the interpreter running pytest; this works both in CI (plain
+# setup-python) and locally when pytest was launched from any venv.
+VENV_PY = Path(sys.executable)
 
 
 def _git(args, cwd):
