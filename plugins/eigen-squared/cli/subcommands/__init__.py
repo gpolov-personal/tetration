@@ -1155,6 +1155,61 @@ def cmd_set_phase_review(args: Namespace) -> int:
         print(f"ERROR: Phase {args.phase} not found", file=sys.stderr)
         return 1
     pr = state.phases[pk].phase_review
+
+    # 2.7 — before approving a phase, verify every epic swarm has a
+    # merged PR on $EIGEN_BRANCH. The old behavior accepted
+    # --review-status approved purely on the operator's word, with no
+    # cross-check against GitHub. That let a human respond "Yes" in
+    # eigen_continue Mode 2 even when the PRs were still open — the
+    # pipeline would advance to phase N+1 on an inconsistent base.
+    #
+    # The check runs only for status=approved and degrades gracefully
+    # when `gh` is absent (no-op). Can be bypassed by passing
+    # --force-approve for operator discretion (e.g. manual merges done
+    # via CLI, not via PR).
+    if args.review_status == "approved" and not getattr(args, "force_approve", False):
+        import subprocess
+
+        phase = state.phases[pk]
+        unmerged: list[tuple[str, int]] = []
+        probed_any = False
+        for ek, ep in phase.plans.items():
+            sw = ep.swarm_execution
+            if not sw.pr_number:
+                continue
+            try:
+                probe = subprocess.run(
+                    ["gh", "pr", "view", str(sw.pr_number), "--json", "state"],
+                    cwd=_eigen_root() or None,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                probe = None
+            if probe is None or probe.returncode != 0:
+                continue
+            probed_any = True
+            try:
+                pr_data = json.loads(probe.stdout or "{}")
+            except json.JSONDecodeError:
+                pr_data = {}
+            if pr_data.get("state") != "MERGED":
+                unmerged.append((ek, sw.pr_number))
+        if probed_any and unmerged:
+            details = ", ".join(
+                f"P{args.phase}.E{ek} (PR #{n})" for ek, n in unmerged
+            )
+            print(
+                f"ERROR: cannot approve phase {args.phase}: the "
+                f"following epic PR(s) are not MERGED: {details}. "
+                "Either merge them via `gh pr merge` (or GitHub UI) "
+                "and re-run, or pass --force-approve if the merges "
+                "were performed out-of-band.",
+                file=sys.stderr,
+            )
+            return 1
+
     pr.status = args.review_status
     now = _now()
     if args.review_status == "testing":

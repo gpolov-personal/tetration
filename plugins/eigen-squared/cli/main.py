@@ -106,6 +106,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--status", required=True, dest="review_status",
                    choices=["not_started", "testing", "approved"])
     p.add_argument("--testing-recipe", help="Testing recipe path")
+    p.add_argument(
+        "--force-approve",
+        action="store_true",
+        dest="force_approve",
+        help=(
+            "Skip the 2.7 gh-state precondition that requires every "
+            "epic PR to be MERGED before status=approved. Use only "
+            "when the merges were performed out-of-band (e.g. CLI) "
+            "and the gh probe does not reflect the real state."
+        ),
+    )
 
     # ── commit-state ──
     p = sub.add_parser("commit-state", help="Git add + commit + push pipeline state")

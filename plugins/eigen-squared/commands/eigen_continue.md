@@ -233,6 +233,18 @@ Do NOT update pipeline state. Exit.
    eigen-squared commit-state --message "pipeline: phase <N> review — approved"
    ```
 
+   **Note (2.7):** `set-phase-review --status approved` now verifies
+   via `gh pr view --json state` that every epic PR on this phase is
+   `MERGED` before accepting the approval. If any PR is still OPEN or
+   CLOSED-without-merge, the CLI exits 1 and lists which PRs block the
+   approval. This prevents advancing to phase N+1 on an inconsistent
+   base (e.g. when a user answers "Yes" while PRs are still pending).
+
+   If the merges were performed out-of-band (e.g. via `git merge` on
+   the CLI rather than a PR merge), pass `--force-approve` to bypass
+   the check. Use sparingly — the check is your safety net against
+   premature approval.
+
 3. Determine next phase:
    - Read `initiative_summary.json` for total phase count
    - If Phase N is the LAST phase → print the completion message
