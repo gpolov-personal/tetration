@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from argparse import Namespace
 from datetime import datetime, timezone
@@ -66,6 +67,41 @@ EXIT_IDEMPOTENT_NOOP = 3
 def _shell_escape(val: str) -> str:
     """Escape a value for safe inclusion in a double-quoted shell string."""
     return val.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+
+
+def _gh_probe_json(
+    gh_args: list[str], cwd: str = "", timeout: int = 15
+):
+    """S18 — advisory-mode ``gh`` probe that returns parsed JSON.
+
+    Returns the parsed JSON payload on success, or ``None`` when the
+    probe could not complete (``gh`` missing, timed out, non-zero exit,
+    invalid JSON, OS-level error). The three 2.2 / 2.4 / 2.7 guards
+    previously inlined this same shape; consolidating removes ~60 LoC
+    of near-duplicated subprocess plumbing and makes the advisory
+    semantics (``None`` ≠ failure) a single, greppable contract.
+
+    Callers must decide what ``None`` means locally. For the phase-
+    approval check we keep the existing "gh unreachable → don't block"
+    policy; for the swarm-entry guards the same policy preserves local
+    offline testing.
+    """
+    try:
+        probe = subprocess.run(
+            ["gh"] + gh_args,
+            cwd=cwd or None,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if probe.returncode != 0:
+        return None
+    try:
+        return json.loads(probe.stdout or "null")
+    except json.JSONDecodeError:
+        return None
 
 
 def _eigen_root() -> str:
@@ -690,45 +726,33 @@ def cmd_get_context(args: Namespace) -> int:
             # skip), preserving today's behavior for environments
             # without gh. Exits with EXIT_IDEMPOTENT_NOOP (3) so the
             # watchdog treats this as "advance, don't retry".
-            import subprocess
             branch_name = git_ops.integration_branch_name(phase, epic)
             eigen_branch = _eigen_branch()
-            try:
-                probe = subprocess.run(
-                    [
-                        "gh", "pr", "list",
-                        "--state", "merged",
-                        "--base", eigen_branch,
-                        "--head", branch_name,
-                        "--json", "number,mergedAt",
-                        "--limit", "1",
-                    ],
-                    cwd=_eigen_root() or None,
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
+            merged = _gh_probe_json(
+                [
+                    "pr", "list",
+                    "--state", "merged",
+                    "--base", eigen_branch,
+                    "--head", branch_name,
+                    "--json", "number,mergedAt",
+                    "--limit", "1",
+                ],
+                cwd=_eigen_root() or "",
+            )
+            if merged:
+                pr = merged[0]
+                print(
+                    f"ERROR: PR #{pr.get('number')} for branch "
+                    f"'{branch_name}' is already MERGED (mergedAt="
+                    f"{pr.get('mergedAt')}). Pipeline state is "
+                    f"stale — run `git -C {_eigen_root()} fetch "
+                    f"origin {eigen_branch} && git pull --ff-only "
+                    f"origin {eigen_branch}` and retry, or delete "
+                    "the integration branch if re-run is truly "
+                    "intentional.",
+                    file=sys.stderr,
                 )
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                probe = None
-            if probe is not None and probe.returncode == 0:
-                try:
-                    merged = json.loads(probe.stdout or "[]")
-                except json.JSONDecodeError:
-                    merged = []
-                if merged:
-                    pr = merged[0]
-                    print(
-                        f"ERROR: PR #{pr.get('number')} for branch "
-                        f"'{branch_name}' is already MERGED (mergedAt="
-                        f"{pr.get('mergedAt')}). Pipeline state is "
-                        f"stale — run `git -C {_eigen_root()} fetch "
-                        f"origin {eigen_branch} && git pull --ff-only "
-                        f"origin {eigen_branch}` and retry, or delete "
-                        "the integration branch if re-run is truly "
-                        "intentional.",
-                        file=sys.stderr,
-                    )
-                    return EXIT_IDEMPOTENT_NOOP
+                return EXIT_IDEMPOTENT_NOOP
             context["branch"] = git_ops.integration_branch_name(phase, epic)
             context["plan_file"] = ep.plan_epic_converge.output_paths.get("plan_file", f"phases/phase_{phase}/epic_{epic}/plan.md")
             context["epic_file"] = f"phases/phase_{phase}/epic_{epic}/epic.md"
@@ -787,25 +811,11 @@ def cmd_get_context(args: Namespace) -> int:
                 # PR-state probe via gh. Advisory — if gh is missing,
                 # errors, or times out, we fall through to normal entry.
                 if sw.pr_number:
-                    import subprocess
-                    try:
-                        probe = subprocess.run(
-                            [
-                                "gh", "pr", "view", str(sw.pr_number),
-                                "--json", "state",
-                            ],
-                            cwd=_eigen_root() or None,
-                            capture_output=True,
-                            text=True,
-                            timeout=15,
-                        )
-                    except (FileNotFoundError, subprocess.TimeoutExpired):
-                        probe = None
-                    if probe is not None and probe.returncode == 0:
-                        try:
-                            pr_data = json.loads(probe.stdout or "{}")
-                        except json.JSONDecodeError:
-                            pr_data = {}
+                    pr_data = _gh_probe_json(
+                        ["pr", "view", str(sw.pr_number), "--json", "state"],
+                        cwd=_eigen_root() or "",
+                    )
+                    if isinstance(pr_data, dict):
                         pr_state = pr_data.get("state")
                         if pr_state in ("MERGED", "CLOSED"):
                             print(
@@ -1227,34 +1237,74 @@ def cmd_set_phase_review(args: Namespace) -> int:
     # --force-approve for operator discretion (e.g. manual merges done
     # via CLI, not via PR).
     if args.review_status == "approved" and not getattr(args, "force_approve", False):
-        import subprocess
-
         phase = state.phases[pk]
-        unmerged: list[tuple[str, int]] = []
-        probed_any = False
+
+        # S6 — an epic with status ∈ {pr_created, iterating, converged}
+        # but no recorded pr_number is a state/GitHub desync: the
+        # orchestrate/review loop got far enough to set a non-terminal
+        # status but the pr_number was never persisted (likely
+        # orchestrate_swarm crashed between creating the PR and
+        # committing state, or a pre-pr_number release wrote the state).
+        # The prior code silently `continue`-d past such epics; with
+        # them excluded, ``probed_any`` could end up False and the
+        # approval passed. Treat them as a blocker regardless of the
+        # gh probe outcome.
+        desynced: list[str] = []
         for ek, ep in phase.plans.items():
             sw = ep.swarm_execution
-            if not sw.pr_number:
-                continue
-            try:
-                probe = subprocess.run(
-                    ["gh", "pr", "view", str(sw.pr_number), "--json", "state"],
-                    cwd=_eigen_root() or None,
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                probe = None
-            if probe is None or probe.returncode != 0:
-                continue
-            probed_any = True
-            try:
-                pr_data = json.loads(probe.stdout or "{}")
-            except json.JSONDecodeError:
-                pr_data = {}
-            if pr_data.get("state") != "MERGED":
-                unmerged.append((ek, sw.pr_number))
+            if not sw.pr_number and sw.status in (
+                "pr_created", "iterating", "converged",
+            ):
+                desynced.append(ek)
+        if desynced:
+            details = ", ".join(f"P{args.phase}.E{ek}" for ek in desynced)
+            print(
+                f"ERROR: cannot approve phase {args.phase}: the "
+                f"following epic(s) have swarm_execution.status in "
+                f"{{pr_created, iterating, converged}} but no recorded "
+                f"pr_number: {details}. This indicates a state/GitHub "
+                "desync — the PR may exist on origin without having "
+                "been recorded, or the local state is stale. "
+                "Reconcile before approving (pull latest, or pass "
+                "--force-approve if the merges were performed "
+                "out-of-band).",
+                file=sys.stderr,
+            )
+            return 1
+
+        # S11 — single batched `gh pr list` instead of N sequential
+        # `gh pr view`s. At N=20 epics this is ~15s vs. ~400-800ms.
+        # `--state all` covers OPEN/MERGED/CLOSED so we can classify
+        # each recorded pr_number without another round-trip.
+        eigen_branch = _eigen_branch()
+        all_prs = _gh_probe_json(
+            [
+                "pr", "list",
+                "--base", eigen_branch,
+                "--state", "all",
+                "--json", "number,state",
+                "--limit", "200",
+            ],
+            cwd=_eigen_root() or "",
+        )
+        unmerged: list[tuple[str, int]] = []
+        probed_any = isinstance(all_prs, list)
+        if probed_any:
+            states_by_number = {
+                p.get("number"): p.get("state")
+                for p in all_prs  # type: ignore[union-attr]
+                if isinstance(p, dict)
+            }
+            for ek, ep in phase.plans.items():
+                sw = ep.swarm_execution
+                if not sw.pr_number:
+                    continue
+                # Absence from the batched result is treated as unmerged
+                # (pessimistic): either the PR has a different --base,
+                # was deleted, or fell outside the --limit. Any of those
+                # warrants a stop-and-reconcile.
+                if states_by_number.get(sw.pr_number) != "MERGED":
+                    unmerged.append((ek, sw.pr_number))
         if probed_any and unmerged:
             details = ", ".join(
                 f"P{args.phase}.E{ek} (PR #{n})" for ek, n in unmerged
