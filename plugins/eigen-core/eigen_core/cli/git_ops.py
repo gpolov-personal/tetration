@@ -118,11 +118,8 @@ def checkout_branch(
 ) -> bool:
     """Checkout a branch, optionally creating it from base_branch.
 
-    Preconditions and error semantics (1.10):
+    Error semantics (1.10, refined):
 
-    * **Clean working tree required.** If `git status --porcelain` reports
-      any untracked/uncommitted changes, refuse the checkout with a clear
-      stderr message rather than silently carrying changes across branches.
     * **create=True refuses collisions.** If the branch already exists
       either locally or on ``origin/``, abort loudly instead of falling
       through to a silent re-checkout of an existing branch (the old
@@ -134,18 +131,18 @@ def checkout_branch(
       --exit-code`) from network/auth errors and emit a differentiated
       stderr message.
 
+    Git itself is the authority on whether a given checkout is safe
+    with a dirty working tree: ``git checkout`` refuses when the switch
+    would overwrite modified files, and permits carry-over when it is
+    safe (e.g. ``checkout -b`` from the current branch). The earlier
+    clean-tree pre-check duplicated that logic more coarsely and broke
+    legitimate create-from-HEAD flows; with 1.7 propagating stderr,
+    git's own error is already visible to callers, so the guard has
+    been dropped.
+
     Returns True on success, False on any refused or failed step. Failure
     reasons are always surfaced to sys.stderr so invoking callers see why.
     """
-    # 1. Clean-tree precondition — never carry uncommitted work across branches.
-    dirty = run_git(["status", "--porcelain"], cwd=eigen_root, silent=True)
-    if dirty.returncode == 0 and dirty.stdout.strip():
-        sys.stderr.write(
-            f"[checkout_branch] refusing to checkout '{branch}': working "
-            "tree has uncommitted changes. Commit, stash, or reset first.\n"
-        )
-        return False
-
     if create:
         # 2. Branch must not already exist anywhere when creating.
         local_exists = (
@@ -178,16 +175,39 @@ def checkout_branch(
 
         if base_branch:
             # Switch to base and pull it (ff-only) so the new branch starts
-            # from a remote-synced tip. Failures here are fatal for create.
+            # from a remote-synced tip. Failures here are fatal for create,
+            # EXCEPT when there is no `origin` configured — local-only
+            # repos (tests, bare scaffolds) can still create branches from
+            # their base without needing a remote.
             base_checkout = run_git(["checkout", base_branch], cwd=eigen_root)
             if base_checkout.returncode != 0:
                 return False
             base_pull = run_git(
                 ["pull", "--ff-only", "origin", base_branch, "--quiet"],
                 cwd=eigen_root,
+                silent=True,
             )
             if base_pull.returncode != 0:
-                return False
+                has_origin = (
+                    run_git(
+                        ["remote", "get-url", "origin"],
+                        cwd=eigen_root,
+                        silent=True,
+                    ).returncode
+                    == 0
+                )
+                if has_origin:
+                    # Real pull failure on a repo that *does* have a
+                    # remote — propagate it (diverged history, auth,
+                    # network). Emit the git error now that we know it
+                    # is worth surfacing.
+                    sys.stderr.write(
+                        f"[checkout_branch] pull --ff-only of base "
+                        f"'{base_branch}' failed: "
+                        f"{base_pull.stderr.strip()}\n"
+                    )
+                    return False
+                # No remote configured — best-effort sync is a no-op.
 
         # Finally, create the new branch.
         return run_git(["checkout", "-b", branch], cwd=eigen_root).returncode == 0

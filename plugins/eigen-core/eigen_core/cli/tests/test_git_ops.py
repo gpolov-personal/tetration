@@ -47,18 +47,6 @@ class TestCheckoutBranch:
         assert checkout_branch("feature", str(repo)) is True
         assert current_branch(str(repo)) == "feature"
 
-    # --- 1.10: clean-tree precondition ---
-
-    def test_refuses_checkout_with_dirty_tree(self, repo, capsys):
-        _git(["checkout", "-q", "-b", "feature"], cwd=repo)
-        _git(["checkout", "-q", "main"], cwd=repo)
-        # Leave an untracked file so the working tree is "dirty".
-        (repo / "dirty.txt").write_text("x")
-        assert checkout_branch("feature", str(repo)) is False
-        assert current_branch(str(repo)) == "main"  # did not switch
-        captured = capsys.readouterr()
-        assert "uncommitted changes" in captured.err
-
     # --- 1.10: create-collision refused ---
 
     def test_create_refused_when_branch_exists_locally(self, repo, capsys):
