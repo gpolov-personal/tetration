@@ -197,7 +197,7 @@ def dispatch(args: Namespace) -> int:
         "add-review-report": _with_state_lock(cmd_add_review_report),
         "init-plan": _with_state_lock(cmd_init_plan),
         "set-phase-review": _with_state_lock(cmd_set_phase_review),
-        "commit-state": cmd_commit_state,
+        "commit-state": _with_state_lock(cmd_commit_state),
         "sync": cmd_sync,
         "resolve-branch": cmd_resolve_branch,
         "checkout-branch": cmd_checkout_branch,

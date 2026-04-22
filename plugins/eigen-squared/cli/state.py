@@ -54,7 +54,11 @@ def locked_state(state_file: str | Path) -> Iterator[None]:
     something is very wrong and failing loudly is better than silently
     dropping writes.
     """
-    path = Path(state_file)
+    # N10 — resolve to absolute so two callers with different CWDs and
+    # relative state_file paths get the same inode, not silently-separate
+    # locks. _state_file() in subcommands already resolves, but
+    # --state-file overrides and tests may pass relative paths.
+    path = Path(state_file).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.parent / (path.name + ".lock")
     # O_CREAT|O_WRONLY is enough — flock attaches to the open file
