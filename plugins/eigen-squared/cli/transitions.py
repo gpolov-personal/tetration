@@ -39,8 +39,13 @@ def _manifest_belongs_to_epic(
     """
     expected_id = f"P{phase_num}.E{epic_num}"
     try:
+        # N16 — size bound: a pathologically large file could crash
+        # json.loads with RecursionError or eat memory. Swarm manifests
+        # are typically 5-50 KB; 1 MB is a generous ceiling.
+        if manifest_file.stat().st_size > 1_000_000:
+            return False
         data = json.loads(manifest_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, RecursionError, ValueError):
         return False
     return isinstance(data, dict) and data.get("epic_id") == expected_id
 

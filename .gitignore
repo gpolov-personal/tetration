@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+# B1 / N2 — advisory flock files created by locked_state() and the watchdog
+*.lock

@@ -1270,7 +1270,7 @@ def cmd_set_phase_review(args: Namespace) -> int:
                 "out-of-band).",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
         # S11 — single batched `gh pr list` instead of N sequential
         # `gh pr view`s. At N=20 epics this is ~15s vs. ~400-800ms.
@@ -1317,7 +1317,7 @@ def cmd_set_phase_review(args: Namespace) -> int:
                 "were performed out-of-band.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
     pr.status = args.review_status
     now = _now()
