@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -38,14 +40,49 @@ def load_state(state_file: str | Path) -> Optional[PipelineState]:
 
 
 def save_state(state: PipelineState, state_file: str | Path) -> None:
-    """Serialize PipelineState to JSON and write to disk.
+    """Serialize PipelineState to JSON and write to disk atomically.
+
+    1.1 — writes the new content to a temporary file in the same directory
+    and then ``os.replace()``-s it into place. On POSIX this is an atomic
+    rename within a single filesystem, so a crash mid-write can never
+    leave ``pipeline_state.json`` truncated or half-written: any reader
+    either sees the previous complete file or the new complete file,
+    never a partial one.
+
+    ``tempfile.NamedTemporaryFile(dir=parent)`` guarantees the temp file
+    lands on the same filesystem as the target — required for the
+    rename to be atomic.
 
     Sets updated_at to current UTC time before writing.
     """
     state.updated_at = datetime.now(timezone.utc).isoformat()
     path = Path(state_file)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state.to_dict(), indent=2) + "\n")
+    payload = json.dumps(state.to_dict(), indent=2) + "\n"
+
+    # delete=False because we rename it ourselves; the context manager
+    # only exists so the file handle is closed before the rename.
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=str(path.parent),
+        prefix=path.name + ".",
+        suffix=".tmp",
+        delete=False,
+    ) as tmp:
+        tmp.write(payload)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp_path = tmp.name
+    try:
+        os.replace(tmp_path, path)
+    except OSError:
+        # Best-effort cleanup if the rename itself failed.
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def create_initial_state(
