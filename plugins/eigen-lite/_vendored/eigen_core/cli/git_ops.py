@@ -33,21 +33,26 @@ def _timeout_for(args: list[str]) -> int:
 # Must NOT mangle: ssh://git@github.com (standard SSH user principal,
 # not a secret — scrubbing it is a debugging regression).
 #
-# Two-branch regex:
-# 1. Any userinfo containing `:` — covers user:pass@ and :token@ forms
-# 2. Bare 20+ char alphanum token — covers ghp_TOKEN@ without `:`,
-#    while excluding short well-known principals like `git@`.
-_CREDENTIAL_URL_RE = re.compile(
-    r"(\w+)://"
-    r"(?:"
-    r"[^/@\s]*:[^@\s]*@"
-    r"|[^/@\s:]{20,}@"
-    r")"
-)
+# B-R4-1: the round-3 two-branch alternation was O(n²) — both branches
+# ending in `@` forced the engine to retry at every position when no
+# `@` appeared. Single pattern + Python callback is linear and handles
+# the same coverage via post-match filtering: scrub if `:` present in
+# userinfo (user:pass, :token) or if the userinfo is 20+ chars (bare
+# PAT). Short principals like `git@` pass through untouched.
+_CREDENTIAL_URL_RE = re.compile(r"\b(\w+)://([^/@\s]+)@")
 
 
 def _scrub_credentials(text: str) -> str:
-    return _CREDENTIAL_URL_RE.sub(r"\1://***@", text)
+    if "@" not in text:
+        return text
+
+    def _repl(m: re.Match) -> str:
+        scheme, userinfo = m.group(1), m.group(2)
+        if ":" in userinfo or len(userinfo) >= 20:
+            return f"{scheme}://***@"
+        return m.group(0)
+
+    return _CREDENTIAL_URL_RE.sub(_repl, text)
 
 
 def run_git(
