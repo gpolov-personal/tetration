@@ -118,7 +118,7 @@ def _state_file(args: Namespace) -> Path:
     root = _eigen_root()
     if not root:
         print("ERROR: EIGEN_ROOT not set", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
     return resolve_state_file(root)
 
 
@@ -127,7 +127,7 @@ def _load_or_die(args: Namespace) -> tuple[PipelineState, Path]:
     state = load_state(sf)
     if state is None:
         print(f"ERROR: Cannot load {sf}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
     return state, sf
 
 
@@ -209,7 +209,7 @@ def dispatch(args: Namespace) -> int:
     handler = handlers.get(args.command)
     if not handler:
         print(f"Unknown command: {args.command}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     return handler(args)
 
 
@@ -222,7 +222,7 @@ def cmd_init(args: Namespace) -> int:
     sf = _state_file(args)
     if sf.exists():
         print(f"ERROR: {sf} already exists. Delete it first to re-initialize.", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     state = create_initial_state(args.initiative, args.phase_count)
     save_state(state, sf)
     print(json.dumps({"status": "created", "state_file": str(sf), "phase_count": args.phase_count}))
@@ -387,11 +387,11 @@ def cmd_get_context(args: Namespace) -> int:
         elif result and result[0] != cmd:
             print(f"ERROR: Next command is {result[0]}, not {cmd}. "
                   f"Run `eigen-squared next` to see what should run.", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
 
     if phase is None and cmd not in ("time_split", "deepen_time_split"):
         print(f"ERROR: --phase required for {cmd}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     # Step 4: Resolve branch for this command's context
     branch = _eigen_branch()
@@ -421,7 +421,7 @@ def cmd_get_context(args: Namespace) -> int:
                     f"No re-run needed.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
             context["iteration"] = ts.iteration + 1
             context["current_iteration"] = ts.iteration
             context["is_first_run"] = ts.iteration == 0
@@ -441,14 +441,14 @@ def cmd_get_context(args: Namespace) -> int:
                         f"Run /deepen_time_split first to generate feedback before re-running.",
                         file=sys.stderr,
                     )
-                    return 1
+                    return EXIT_ERROR
                 if ts.feedback_consumed and feedback_exists:
                     print(
                         f"ERROR: Feedback already processed in iteration {ts.iteration}. "
                         f"Run /deepen_time_split again for fresh review before re-running.",
                         file=sys.stderr,
                     )
-                    return 1
+                    return EXIT_ERROR
                 if not ts.feedback_consumed and feedback_exists:
                     context["should_process_feedback"] = True
                     context["feedback_path"] = dts.feedback_path
@@ -459,7 +459,7 @@ def cmd_get_context(args: Namespace) -> int:
                         f"Run /deepen_time_split to generate it.",
                         file=sys.stderr,
                     )
-                    return 1
+                    return EXIT_ERROR
             else:
                 context["should_process_feedback"] = False
 
@@ -476,14 +476,14 @@ def cmd_get_context(args: Namespace) -> int:
                     f"{ts.convergence.reason}). No further review needed.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
             if ts.status == "not_started":
                 print(
                     "ERROR: time_split has not run yet. "
                     "Run /time_split first to generate the phase split.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
 
             context["iteration"] = dts.iteration + 1
             context["main_command_iteration"] = ts.iteration
@@ -535,16 +535,16 @@ def cmd_get_context(args: Namespace) -> int:
             f"Use /{replacement} instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
 
     elif cmd == "bootstrap_converge":
         if phase is None:
             print("ERROR: --phase required for bootstrap_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         bc = state.phases[pk].bootstrap_converge
 
         if bc.convergence.converged:
@@ -554,7 +554,7 @@ def cmd_get_context(args: Namespace) -> int:
                 f"No re-run needed.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
         # Self-converging command: no should_process_feedback flag, no
         # main↔deepen feedback lifecycle. The internal swarm loop manages
@@ -586,11 +586,11 @@ def cmd_get_context(args: Namespace) -> int:
     elif cmd == "space_split_converge":
         if phase is None:
             print("ERROR: --phase required for space_split_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ssc = state.phases[pk].space_split_converge
 
         if ssc.convergence.converged:
@@ -600,7 +600,7 @@ def cmd_get_context(args: Namespace) -> int:
                 f"No re-run needed.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
         context["iteration"] = ssc.iteration + 1
         context["current_iteration"] = ssc.iteration
@@ -625,11 +625,11 @@ def cmd_get_context(args: Namespace) -> int:
     elif cmd == "plan_epic_converge":
         if epic is None:
             print("ERROR: --epic required for plan_epic_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ph = state.phases[pk]
 
         if ek not in ph.plans:
@@ -664,7 +664,7 @@ def cmd_get_context(args: Namespace) -> int:
                 f"No re-run needed.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
         context["iteration"] = pec.iteration + 1
         context["current_iteration"] = pec.iteration
@@ -687,11 +687,11 @@ def cmd_get_context(args: Namespace) -> int:
     elif cmd in ("create_issues_from_plan_swarm", "orchestrate_swarm", "review_swarm_pr"):
         if phase is None or epic is None:
             print(f"ERROR: --phase and --epic required for {cmd}", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases or ek not in state.phases[pk].plans:
             print(f"ERROR: Plan P{phase}.E{epic} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ep = state.phases[pk].plans[ek]
         sw = ep.swarm_execution
 
@@ -703,7 +703,7 @@ def cmd_get_context(args: Namespace) -> int:
                     f"Run /plan_epic_converge first.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
             # Guard: manifest must NOT exist
             if sw.manifest_path is not None:
                 print(
@@ -711,7 +711,7 @@ def cmd_get_context(args: Namespace) -> int:
                     f"This epic has already been task-ified.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
             # 2.2 — Guard C: reject re-run after the PR has already been
             # merged on $EIGEN_BRANCH. This is the fingerprint of the
             # 2026-04-22 P2.E1 regression: pipeline_state.json shows
@@ -899,16 +899,16 @@ def cmd_complete(args: Namespace) -> int:
             f"Use /{replacement} instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
 
     elif cmd == "space_split_converge":
         if phase is None:
             print("ERROR: --phase required for space_split_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ssc = state.phases[pk].space_split_converge
         ssc.status = "completed"
         ssc.iteration += 1
@@ -935,11 +935,11 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "bootstrap_converge":
         if phase is None:
             print("ERROR: --phase required for bootstrap_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         bc = state.phases[pk].bootstrap_converge
         bc.status = "completed"
         bc.iteration += 1
@@ -961,11 +961,11 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "plan_epic_converge":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         if ek not in state.phases[pk].plans:
             state.phases[pk].plans[ek] = EpicPlan()
         pec = state.phases[pk].plans[ek].plan_epic_converge
@@ -984,11 +984,11 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "create_issues_from_plan_swarm":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ph = state.phases[pk]
         if ek not in ph.plans:
             ph.plans[ek] = EpicPlan()
@@ -1001,7 +1001,7 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "orchestrate_swarm":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         sw = state.phases[pk].plans[ek].swarm_execution
         sw.status = "pr_created"
@@ -1014,7 +1014,7 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "review_swarm_pr":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         sw = state.phases[pk].plans[ek].swarm_execution
         # 2.6 — refuse to bump review_iteration when the review has
@@ -1023,7 +1023,7 @@ def cmd_complete(args: Namespace) -> int:
         # cross-branch race) would keep incrementing the counter past
         # the iteration_limit, desynchronize it from the on-disk
         # review_report_iteration_N.md filenames, and confuse the
-        # convergence-with-residual-P3 accounting (see 79b3e42).
+        # convergence-with-residual-P3 accounting.
         if sw.convergence.converged:
             print(
                 f"ERROR: cannot complete review_swarm_pr for P{phase}.E{epic}: "
@@ -1045,7 +1045,7 @@ def cmd_complete(args: Namespace) -> int:
 
     else:
         print(f"ERROR: Unknown command or missing --phase: {cmd}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     save_state(state, sf)
     print(json.dumps({"status": "completed", "command": cmd}))
@@ -1070,7 +1070,7 @@ def cmd_mark_converged(args: Namespace) -> int:
             "Use `eigen-squared mark-converged bootstrap_converge --phase N` instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
     elif cmd == "bootstrap_converge" and phase is not None:
         caller = "bootstrap_converge"  # self-marking, like plan_epic_converge
         target = state.phases[str(phase)].bootstrap_converge
@@ -1081,7 +1081,7 @@ def cmd_mark_converged(args: Namespace) -> int:
             "Use `eigen-squared mark-converged space_split_converge --phase N` instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
     elif cmd == "space_split_converge" and phase is not None:
         caller = "space_split_converge"  # self-marking, like bootstrap_converge
         target = state.phases[str(phase)].space_split_converge
@@ -1101,7 +1101,7 @@ def cmd_mark_converged(args: Namespace) -> int:
         return 0
     else:
         print(f"ERROR: Cannot converge {cmd} with given args", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     target.convergence.converged = True
     target.convergence.decided_by = caller
@@ -1119,10 +1119,10 @@ def cmd_add_recommendation(args: Namespace) -> int:
     allowed_targets = RECOMMENDATION_MATRIX.get(args.from_cmd)
     if allowed_targets is None:
         print(f"ERROR: {args.from_cmd} is not a valid recommendation source", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     if args.target not in allowed_targets:
         print(f"ERROR: {args.from_cmd} cannot recommend to {args.target}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     if args.target not in state.recommendations:
         state.recommendations[args.target] = []
@@ -1135,7 +1135,7 @@ def cmd_add_recommendation(args: Namespace) -> int:
     ]
     if len(existing) >= MAX_RECOMMENDATIONS_PER_PAIR:
         print(f"WARNING: Max {MAX_RECOMMENDATIONS_PER_PAIR} recommendations from {args.from_cmd} to {args.target}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     rec = Recommendation(
         from_cmd=args.from_cmd,
@@ -1171,10 +1171,10 @@ def cmd_set_swarm_status(args: Namespace) -> int:
     pk, ek = str(args.phase), str(args.epic)
     if pk not in state.phases or ek not in state.phases[pk].plans:
         print(f"ERROR: Plan P{args.phase}.E{args.epic} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     if args.status_value not in VALID_SWARM_STATUSES:
         print(f"ERROR: Invalid status: {args.status_value}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     sw = state.phases[pk].plans[ek].swarm_execution
     sw.status = args.status_value
@@ -1207,7 +1207,7 @@ def cmd_init_plan(args: Namespace) -> int:
     pk, ek = str(args.phase), str(args.epic)
     if pk not in state.phases:
         print(f"ERROR: Phase {args.phase} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     if ek in state.phases[pk].plans:
         print(f"Plan P{args.phase}.E{args.epic} already exists")
         return 0
@@ -1222,7 +1222,7 @@ def cmd_set_phase_review(args: Namespace) -> int:
     pk = str(args.phase)
     if pk not in state.phases:
         print(f"ERROR: Phase {args.phase} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     pr = state.phases[pk].phase_review
 
     # 2.7 — before approving a phase, verify every epic swarm has a
@@ -1347,7 +1347,7 @@ def cmd_commit_state(args: Namespace) -> int:
         print(json.dumps({"status": "committed"}))
         return 0
     print("ERROR: git commit/push failed", file=sys.stderr)
-    return 1
+    return EXIT_ERROR
 
 
 def cmd_sync(args: Namespace) -> int:
@@ -1368,7 +1368,7 @@ def cmd_sync(args: Namespace) -> int:
         "(diverged history, network, or auth). Local state may be stale.",
         file=sys.stderr,
     )
-    return 1
+    return EXIT_ERROR
 
 
 def cmd_resolve_branch(args: Namespace) -> int:
@@ -1394,7 +1394,7 @@ def cmd_checkout_branch(args: Namespace) -> int:
         print(json.dumps({"status": "checked_out", "branch": branch}))
         return 0
     print(f"ERROR: Failed to checkout {branch}", file=sys.stderr)
-    return 1
+    return EXIT_ERROR
 
 
 def cmd_schedule_next(args: Namespace) -> int:
@@ -1429,14 +1429,14 @@ def cmd_schedule_next(args: Namespace) -> int:
                             "context_key": context_key, "attempt": attempt}),
                 file=sys.stderr,
             )
-            return 2  # Distinct exit code: stalled
+            return EXIT_STALLED
         return 0  # Dedup — not an error
     context["_attempt"] = attempt
 
     api = os.environ.get("CLAUDE_TASKS_API", "")
     if not api:
         print("ERROR: CLAUDE_TASKS_API not set", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     success = schedule_command(
         command, context,
@@ -1465,7 +1465,7 @@ def cmd_validate(args: Namespace) -> int:
         return 0
 
     print(json.dumps({"valid": False, "errors": errors}))
-    return 1
+    return EXIT_ERROR
 
 
 def cmd_write_env(args: Namespace) -> int:
@@ -1473,18 +1473,18 @@ def cmd_write_env(args: Namespace) -> int:
     root = _eigen_root()
     if not root:
         print("ERROR: EIGEN_ROOT not set", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     settings_path = Path(root) / ".claude" / "settings.json"
     if not settings_path.exists():
         print(f"ERROR: {settings_path} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     try:
         settings = json.loads(settings_path.read_text())
     except (json.JSONDecodeError, OSError) as e:
         print(f"ERROR: Failed to read settings: {e}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     env_vars = settings.get("env", {})
 
