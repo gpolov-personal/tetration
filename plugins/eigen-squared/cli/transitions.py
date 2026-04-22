@@ -1,11 +1,15 @@
 """Pipeline state machine — determine the next command to run.
 
 Ported from hooks/pipeline_controller.py (lines 159-456).
-Pure functions: no I/O, no side effects, fully testable.
+Mostly pure functions; the single I/O touch point is a
+`swarm-manifest.json` existence probe in the create-issues gate (2.1),
+which lets the transition reconcile a stale `manifest_path: null`
+against the real filesystem.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from .models import PipelineState
@@ -175,10 +179,32 @@ def determine_next(
 
             # ── Create issues ──
             swarm = plan.get("swarm_execution", {})
-            if (
-                swarm.get("manifest_path") is None
-                and swarm.get("status") == "not_started"
-            ):
+
+            # 2.1 reality-check — reconcile a stale `manifest_path: null`
+            # against the actual filesystem. The 2026-04-22 P2.E1
+            # regression proved this is required: a squash-merge can
+            # land a freshly-created manifest on `$EIGEN_BRANCH` while
+            # the pre-merge local snapshot of pipeline_state.json still
+            # records `manifest_path: null`, and the stale JSON makes
+            # this branch fire again, re-creating the manifest and
+            # re-launching the swarm. If the file already exists on
+            # disk, treat it as present regardless of what the JSON
+            # says — the swarm-pair logic below then routes correctly
+            # based on status alone.
+            manifest_path = swarm.get("manifest_path")
+            if manifest_path is None and eigen_root:
+                expected = (
+                    Path(eigen_root)
+                    / "eigen_initiative"
+                    / "phases"
+                    / f"phase_{phase_num}"
+                    / f"epic_{epic_num}"
+                    / "swarm-manifest.json"
+                )
+                if expected.exists():
+                    manifest_path = str(expected.relative_to(eigen_root))
+
+            if manifest_path is None and swarm.get("status") == "not_started":
                 return (
                     "create_issues_from_plan_swarm",
                     {"scope": "epic", "phase": phase_num, "epic": epic_num},
