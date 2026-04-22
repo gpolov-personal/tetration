@@ -152,31 +152,46 @@ class TestCredentialScrubbing:
     of logs / prompts.
     """
 
-    def test_scrub_https_userinfo(self):
+    def test_scrub_user_colon_pass(self):
         from eigen_core.cli.git_ops import _scrub_credentials
 
         src = "fatal: unable to access 'https://alice:ghp_abcDEF123@github.com/org/repo/'"
         out = _scrub_credentials(src)
         assert "alice" not in out
         assert "ghp_abcDEF123" not in out
-        assert "https://***:***@github.com/org/repo/" in out
+        assert "https://***@github.com/org/repo/" in out
+
+    def test_scrub_token_only(self):
+        """N3 — token-only form (no colon) used by gh auth setup-git."""
+        from eigen_core.cli.git_ops import _scrub_credentials
+
+        src = "fatal: cannot access 'https://ghp_PROD_TOKEN@github.com/org/repo'"
+        out = _scrub_credentials(src)
+        assert "ghp_PROD_TOKEN" not in out
+        assert "https://***@github.com/org/repo" in out
+
+    def test_scrub_password_only(self):
+        """N3 — password-only form (:token@) used by git-credential-store."""
+        from eigen_core.cli.git_ops import _scrub_credentials
+
+        src = "fatal: cannot access 'https://:ghp_TOKEN@github.com/org/repo'"
+        out = _scrub_credentials(src)
+        assert "ghp_TOKEN" not in out
+        assert "https://***@github.com/org/repo" in out
 
     def test_scrub_preserves_host_and_path(self):
         from eigen_core.cli.git_ops import _scrub_credentials
 
         out = _scrub_credentials("https://user:tok@example.com/path?q=v")
-        assert out == "https://***:***@example.com/path?q=v"
+        assert out == "https://***@example.com/path?q=v"
 
     def test_scrub_leaves_non_credential_urls_alone(self):
         from eigen_core.cli.git_ops import _scrub_credentials
 
-        # A plain URL without userinfo must not be mangled.
         src = "remote: https://github.com/org/repo"
         assert _scrub_credentials(src) == src
 
     def test_scrub_applied_when_emitting_stderr(self, repo, capsys, monkeypatch):
-        # Force run_git to return a CompletedProcess whose stderr contains
-        # a credential URL, then confirm the emitted line is scrubbed.
         from eigen_core.cli import git_ops
 
         def _fake_run(*_a, **_kw):
@@ -192,7 +207,7 @@ class TestCredentialScrubbing:
         assert result.returncode == 128
         captured = capsys.readouterr()
         assert "tok" not in captured.err
-        assert "***:***" in captured.err
+        assert "***@" in captured.err
 
 
 class TestRunGitTimeout:

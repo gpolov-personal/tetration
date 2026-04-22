@@ -27,17 +27,22 @@ def _timeout_for(args: list[str]) -> int:
     return _DEFAULT_TIMEOUT
 
 
-# S9 — git errors sometimes echo the full remote URL (e.g.
-# `fatal: unable to access 'https://user:token@github.com/...'`).
-# 1.7 routes stderr to sys.stderr, where the claude-tasks transcript
-# captures it and subsequent LLM turns read it back. Scrub any
-# embedded userinfo before emitting so tokens don't leak into logs.
-# Pattern: `scheme://user:token@host` → `scheme://***:***@host`.
-_CREDENTIAL_URL_RE = re.compile(r"(\w+)://[^:/@\s]+:[^@\s]+@")
+# S9 + N3 — git errors sometimes echo the full remote URL.
+# 1.7 routes stderr to sys.stderr where the claude-tasks transcript
+# captures it. Scrub any embedded userinfo before emitting.
+#
+# N3: the original regex required `user:token@` — it missed the two
+# most common real-world forms emitted by git-credential-store and
+# `gh auth setup-git`:
+#   - token-only: `https://ghp_TOKEN@github.com/...`
+#   - password-only: `https://:ghp_TOKEN@github.com/...`
+# The broadened pattern matches any `scheme://...@` userinfo block
+# (RFC 3986 §3.2.1), covering all three variants.
+_CREDENTIAL_URL_RE = re.compile(r"(\w+)://[^/@\s]+@")
 
 
 def _scrub_credentials(text: str) -> str:
-    return _CREDENTIAL_URL_RE.sub(r"\1://***:***@", text)
+    return _CREDENTIAL_URL_RE.sub(r"\1://***@", text)
 
 
 def run_git(
