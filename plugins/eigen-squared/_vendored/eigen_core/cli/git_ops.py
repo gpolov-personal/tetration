@@ -6,6 +6,7 @@ previously scattered across every command prompt.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,19 @@ def _timeout_for(args: list[str]) -> int:
         if arg in _NETWORK_VERBS:
             return _NETWORK_TIMEOUT
     return _DEFAULT_TIMEOUT
+
+
+# S9 — git errors sometimes echo the full remote URL (e.g.
+# `fatal: unable to access 'https://user:token@github.com/...'`).
+# 1.7 routes stderr to sys.stderr, where the claude-tasks transcript
+# captures it and subsequent LLM turns read it back. Scrub any
+# embedded userinfo before emitting so tokens don't leak into logs.
+# Pattern: `scheme://user:token@host` → `scheme://***:***@host`.
+_CREDENTIAL_URL_RE = re.compile(r"(\w+)://[^:/@\s]+:[^@\s]+@")
+
+
+def _scrub_credentials(text: str) -> str:
+    return _CREDENTIAL_URL_RE.sub(r"\1://***:***@", text)
 
 
 def run_git(
@@ -81,7 +95,9 @@ def run_git(
     if result.returncode != 0 and not silent:
         stderr = result.stderr.strip()
         if stderr:
-            sys.stderr.write(f"[git {' '.join(args)}] {stderr}\n")
+            sys.stderr.write(
+                f"[git {' '.join(args)}] {_scrub_credentials(stderr)}\n"
+            )
     return result
 
 
@@ -204,7 +220,7 @@ def checkout_branch(
                     sys.stderr.write(
                         f"[checkout_branch] pull --ff-only of base "
                         f"'{base_branch}' failed: "
-                        f"{base_pull.stderr.strip()}\n"
+                        f"{_scrub_credentials(base_pull.stderr.strip())}\n"
                     )
                     return False
                 # No remote configured — best-effort sync is a no-op.
@@ -235,7 +251,7 @@ def checkout_branch(
         else:
             sys.stderr.write(
                 f"[checkout_branch] fetch of 'origin/{branch}' failed: "
-                f"{fetched.stderr.strip() or probe.stderr.strip()}\n"
+                f"{_scrub_credentials(fetched.stderr.strip() or probe.stderr.strip())}\n"
             )
         return False
 

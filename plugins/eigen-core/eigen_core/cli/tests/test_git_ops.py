@@ -144,6 +144,57 @@ class TestRunGitErrorPropagation:
         assert captured.err == ""
 
 
+class TestCredentialScrubbing:
+    """S9 — git stderr sometimes echoes the full credential URL
+    (``fatal: unable to access 'https://user:token@github.com/...'``).
+    1.7 routes stderr to the process's sys.stderr where the claude-tasks
+    transcript captures it, so scrubbing is required to keep tokens out
+    of logs / prompts.
+    """
+
+    def test_scrub_https_userinfo(self):
+        from eigen_core.cli.git_ops import _scrub_credentials
+
+        src = "fatal: unable to access 'https://alice:ghp_abcDEF123@github.com/org/repo/'"
+        out = _scrub_credentials(src)
+        assert "alice" not in out
+        assert "ghp_abcDEF123" not in out
+        assert "https://***:***@github.com/org/repo/" in out
+
+    def test_scrub_preserves_host_and_path(self):
+        from eigen_core.cli.git_ops import _scrub_credentials
+
+        out = _scrub_credentials("https://user:tok@example.com/path?q=v")
+        assert out == "https://***:***@example.com/path?q=v"
+
+    def test_scrub_leaves_non_credential_urls_alone(self):
+        from eigen_core.cli.git_ops import _scrub_credentials
+
+        # A plain URL without userinfo must not be mangled.
+        src = "remote: https://github.com/org/repo"
+        assert _scrub_credentials(src) == src
+
+    def test_scrub_applied_when_emitting_stderr(self, repo, capsys, monkeypatch):
+        # Force run_git to return a CompletedProcess whose stderr contains
+        # a credential URL, then confirm the emitted line is scrubbed.
+        from eigen_core.cli import git_ops
+
+        def _fake_run(*_a, **_kw):
+            return subprocess.CompletedProcess(
+                args=["git", "fetch"],
+                returncode=128,
+                stdout="",
+                stderr="fatal: unable to access 'https://u:tok@github.com/x/y/'",
+            )
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        result = git_ops.run_git(["fetch"], cwd=str(repo))
+        assert result.returncode == 128
+        captured = capsys.readouterr()
+        assert "tok" not in captured.err
+        assert "***:***" in captured.err
+
+
 class TestRunGitTimeout:
     """run_git must enforce a timeout (1.8) so a hung network call does
     not block the CLI indefinitely. Timeouts surface as returncode=124
