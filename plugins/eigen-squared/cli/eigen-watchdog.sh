@@ -72,17 +72,19 @@ export EIGEN_TELEGRAM_CHAT_ID="${EIGEN_TELEGRAM_CHAT_ID:-}"
 # false-timeout rate on legitimate VPN/proxy connections.
 # Exit-code branching: `timeout` returns 124 on timeout, allowing
 # the log to distinguish "timed out" from "auth failed" / "diverged".
+# B-R3-1: under `set -e`, bare `cmd; rc=$?` exits the script at the
+# semicolon if `cmd` returns non-zero — $rc is never set and the
+# watchdog silently terminates. `rc=0; cmd || rc=$?` suppresses -e
+# via `||` while capturing the real exit code into $rc.
 if [ -d "$EIGEN_ROOT/.git" ]; then
-    timeout --kill-after=5 30 git -C "$EIGEN_ROOT" fetch --quiet origin "$EIGEN_BRANCH" 2>/dev/null
-    rc=$?
+    rc=0; timeout --kill-after=5 30 git -C "$EIGEN_ROOT" fetch --quiet origin "$EIGEN_BRANCH" 2>/dev/null || rc=$?
     if [ $rc -eq 124 ]; then
         echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH timed out after 30s"
     elif [ $rc -ne 0 ]; then
         echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH failed (rc=$rc; offline or auth)"
     fi
 
-    timeout --kill-after=5 30 git -C "$EIGEN_ROOT" pull --ff-only --quiet origin "$EIGEN_BRANCH" 2>/dev/null
-    rc=$?
+    rc=0; timeout --kill-after=5 30 git -C "$EIGEN_ROOT" pull --ff-only --quiet origin "$EIGEN_BRANCH" 2>/dev/null || rc=$?
     if [ $rc -eq 124 ]; then
         echo "[$(date -u +%FT%TZ)] WARN: git pull --ff-only $EIGEN_BRANCH timed out after 30s — local state may be stale this tick"
     elif [ $rc -ne 0 ]; then
