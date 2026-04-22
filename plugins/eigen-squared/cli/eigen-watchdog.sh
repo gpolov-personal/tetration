@@ -152,6 +152,12 @@ else
     eigen-squared schedule-next || EXIT_CODE=$?
 fi
 
+# Exit-code convention (2.5):
+#   0 = scheduled successfully
+#   2 = stalled (max retries) → notify operator, stay stalled until intervention
+#   3 = idempotent-noop (nothing to do; downstream already complete) →
+#       treat as non-error, let the next tick re-evaluate against fresh state
+#   * = generic error → log and exit 1
 if [ $EXIT_CODE -eq 2 ]; then
     echo "[$(date -u +%FT%TZ)] STALLED: pipeline stalled after max retries for $EXPECTED_NAME"
     # Notify via telegram if configured
@@ -162,6 +168,13 @@ if [ $EXIT_CODE -eq 2 ]; then
             2>/dev/null || true
     fi
     exit 2
+elif [ $EXIT_CODE -eq 3 ]; then
+    # An idempotent-noop return means the command was rejected by a
+    # reality-check guard because the work is already done (e.g. PR
+    # merged, swarm converged, state advanced). Do NOT treat as error —
+    # the next tick will pick up whatever comes after this slot.
+    echo "[$(date -u +%FT%TZ)] NOOP: $EXPECTED_NAME reported idempotent-noop (already complete)"
+    exit 0
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: eigen-squared schedule-next failed (exit $EXIT_CODE)"
     exit 1

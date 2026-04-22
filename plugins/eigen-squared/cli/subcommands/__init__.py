@@ -37,6 +37,31 @@ from ..scheduler import (
 from .. import git_ops
 
 
+# ---------------------------------------------------------------------------
+# Exit-code convention (2.5)
+# ---------------------------------------------------------------------------
+#
+# 0  — success; caller proceeds normally
+# 1  — generic error; caller retries / surfaces / aborts
+# 2  — stalled (max retries reached; operator action required). Used by
+#      cmd_schedule_next and observed by the watchdog.
+# 3  — idempotent-noop. The requested command has already been completed
+#      and re-executing it would be a no-op (e.g. an epic whose PR is
+#      already merged, or a swarm whose state is `converged`). Distinct
+#      from 1 so the watchdog can advance past the slot instead of
+#      retrying it. Returned by the guards in 2.2 / 2.3 / 2.4.
+#
+# Downstream consumers:
+#   - eigen-watchdog.sh treats exit 3 as "not-an-error; advance next
+#     tick without warnings".
+#   - The LLM invoked by the scheduler sees exit 3 from
+#     `eigen-squared get-context` and exits the skill immediately.
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_STALLED = 2
+EXIT_IDEMPOTENT_NOOP = 3
+
+
 def _shell_escape(val: str) -> str:
     """Escape a value for safe inclusion in a double-quoted shell string."""
     return val.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
