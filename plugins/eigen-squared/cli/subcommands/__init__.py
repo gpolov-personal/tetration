@@ -279,57 +279,62 @@ def cmd_status(args: Namespace) -> int:
     return 0
 
 
+def _sync_and_reload(
+    root: str, sf: Path, caller: str,
+) -> int | None:
+    """S2 + N6 — TOCTOU-safe two-phase sync shared by cmd_next and
+    cmd_get_context.
+
+    1. Sync $EIGEN_BRANCH (canonical source of truth for
+       pipeline_state.json).
+    2. Reload state, re-resolve the decision branch — if it points at
+       an integration branch (swarm commands), sync that too.
+
+    Returns ``None`` on success (caller should proceed), or an int
+    exit code if the sync failed (caller should return it).
+
+    Skips silently when there is no ``.git`` directory (tests, local
+    scaffolds without a remote).
+    """
+    has_git = bool(root) and (Path(root) / ".git").exists()
+    if not has_git or not sf.exists():
+        return None
+
+    eigen_branch = _eigen_branch()
+    if not git_ops.sync(eigen_branch, root):
+        print(
+            f"ERROR: git pull --ff-only origin {eigen_branch} failed "
+            "(diverged history, network, or auth). Local state may "
+            f"be stale; refusing to proceed ({caller}).",
+            file=sys.stderr,
+        )
+        return 1
+
+    post_state = load_state(sf)
+    if post_state:
+        post_raw = post_state.to_dict()
+        resolved = resolve_branch(
+            post_raw, eigen_branch=eigen_branch, eigen_root=root
+        )
+        if resolved and resolved != eigen_branch:
+            if not git_ops.sync(resolved, root):
+                print(
+                    f"ERROR: git pull --ff-only origin {resolved} "
+                    "failed. Local integration-branch state may be "
+                    f"stale; refusing to proceed ({caller}).",
+                    file=sys.stderr,
+                )
+                return 1
+    return None
+
+
 def cmd_next(args: Namespace) -> int:
     root = _eigen_root()
-
-    # 1.3 + S2 — auto-sync before reading state.
-    # cmd_next is the main entry point for the watchdog, so a stale local
-    # view here is what let the 2026-04-22 P2.E1 regression re-launch
-    # `create_issues_from_plan_swarm` against a `swarm_execution.status ==
-    # not_started` snapshot that had already been superseded on `origin/dev`.
-    #
-    # S2: the previous one-shot form resolved `pre_branch` from the
-    # *pre-sync* state, which is a TOCTOU: if origin has advanced past
-    # the swarm pair (e.g. the feat branch was squash-merged and the
-    # decision is now `plan_epic_converge` on $EIGEN_BRANCH), we'd sync
-    # the stale feat branch and still miss the update. The canonical
-    # source of truth for pipeline_state.json is $EIGEN_BRANCH, so
-    # always sync that first, then re-resolve, and if the fresh decision
-    # points at a different branch (integration branch for swarm
-    # commands), sync that too.
     sf = _state_file(args)
-    eigen_branch = _eigen_branch()
-    # Skip the whole auto-sync dance when the project has no `.git`
-    # directory (tests, local scaffolds without a remote). In that
-    # environment there is no origin to sync against, so there is no
-    # stale-local-state risk to guard against either.
-    has_git = bool(root) and (Path(root) / ".git").exists()
-    if has_git and sf.exists():
-        if not git_ops.sync(eigen_branch, root):
-            print(
-                f"ERROR: git pull --ff-only origin {eigen_branch} failed "
-                "(diverged history, network, or auth). Local state may "
-                "be stale; refusing to emit a next-command decision.",
-                file=sys.stderr,
-            )
-            return 1
 
-        # Re-resolve from the now-fresh $EIGEN_BRANCH state.
-        post_state = load_state(sf)
-        if post_state:
-            post_raw = post_state.to_dict()
-            resolved = resolve_branch(
-                post_raw, eigen_branch=eigen_branch, eigen_root=root
-            )
-            if resolved and resolved != eigen_branch:
-                if not git_ops.sync(resolved, root):
-                    print(
-                        f"ERROR: git pull --ff-only origin {resolved} "
-                        "failed. Local integration-branch state may be "
-                        "stale; refusing to emit a next-command decision.",
-                        file=sys.stderr,
-                    )
-                    return 1
+    err = _sync_and_reload(root, sf, caller="cmd_next")
+    if err is not None:
+        return err
 
     state, _ = _load_or_die(args)
     raw = state.to_dict()
@@ -357,20 +362,15 @@ def cmd_next(args: Namespace) -> int:
 
 def cmd_get_context(args: Namespace) -> int:
     root = _eigen_root()
-
-    # Step 1: Auto-sync — pull from the correct branch before reading state.
-    # Resolves the branch first (integration branch for swarm commands,
-    # EIGEN_BRANCH for everything else), then pulls.
     sf = _state_file(args)
-    if sf.exists():
-        pre_state = load_state(sf)
-        if pre_state:
-            raw = pre_state.to_dict()
-            branch = resolve_branch(raw, eigen_branch=_eigen_branch(), eigen_root=root)
-            if branch and root:
-                git_ops.sync(branch, root)
 
-    # Step 2: Reload state after sync (may have changed from pull)
+    # N6 — apply the same S2 TOCTOU-safe two-phase sync that cmd_next
+    # received in bedcca4. The previous one-shot form resolved branch
+    # from pre-sync state and ignored the sync return value.
+    err = _sync_and_reload(root, sf, caller="cmd_get_context")
+    if err is not None:
+        return err
+
     state, _ = _load_or_die(args)
     cmd = args.target_command
     phase = args.phase
