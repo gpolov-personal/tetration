@@ -617,6 +617,59 @@ def cmd_get_context(args: Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 1
+            # 2.2 — Guard C: reject re-run after the PR has already been
+            # merged on $EIGEN_BRANCH. This is the fingerprint of the
+            # 2026-04-22 P2.E1 regression: pipeline_state.json shows
+            # manifest_path == None on stale local state, but the squash
+            # of the converged PR already landed on origin/dev. Without
+            # this guard, create_issues would happily re-build the
+            # manifest and re-launch the swarm against a state that has
+            # in fact already completed.
+            #
+            # Implemented as an advisory guard: if `gh` is unavailable
+            # or errors, the guard becomes a no-op (returncode != 0 →
+            # skip), preserving today's behavior for environments
+            # without gh. Exits with EXIT_IDEMPOTENT_NOOP (3) so the
+            # watchdog treats this as "advance, don't retry".
+            import subprocess
+            branch_name = git_ops.integration_branch_name(phase, epic)
+            eigen_branch = _eigen_branch()
+            try:
+                probe = subprocess.run(
+                    [
+                        "gh", "pr", "list",
+                        "--state", "merged",
+                        "--base", eigen_branch,
+                        "--head", branch_name,
+                        "--json", "number,mergedAt",
+                        "--limit", "1",
+                    ],
+                    cwd=_eigen_root() or None,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                probe = None
+            if probe is not None and probe.returncode == 0:
+                try:
+                    merged = json.loads(probe.stdout or "[]")
+                except json.JSONDecodeError:
+                    merged = []
+                if merged:
+                    pr = merged[0]
+                    print(
+                        f"ERROR: PR #{pr.get('number')} for branch "
+                        f"'{branch_name}' is already MERGED (mergedAt="
+                        f"{pr.get('mergedAt')}). Pipeline state is "
+                        f"stale — run `git -C {_eigen_root()} fetch "
+                        f"origin {eigen_branch} && git pull --ff-only "
+                        f"origin {eigen_branch}` and retry, or delete "
+                        "the integration branch if re-run is truly "
+                        "intentional.",
+                        file=sys.stderr,
+                    )
+                    return EXIT_IDEMPOTENT_NOOP
             context["branch"] = git_ops.integration_branch_name(phase, epic)
             context["plan_file"] = ep.plan_epic_converge.output_paths.get("plan_file", f"phases/phase_{phase}/epic_{epic}/plan.md")
             context["epic_file"] = f"phases/phase_{phase}/epic_{epic}/epic.md"
