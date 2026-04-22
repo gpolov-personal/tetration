@@ -86,12 +86,16 @@ def run_git(
 
 
 def sync(branch: str, eigen_root: str) -> bool:
-    """Pull latest from remote branch.
+    """Pull latest from remote branch, refusing non-fast-forward merges.
 
-    Returns True if pull succeeded.
+    1.5 — uses ``--ff-only`` so a diverged local branch fails loudly
+    instead of producing a silent merge commit. True on fast-forward or
+    already-up-to-date; False on any other outcome (network failure,
+    auth, divergence). The failure path is surfaced via run_git's
+    stderr propagation (1.7).
     """
     result = run_git(
-        ["pull", "origin", branch, "--quiet"],
+        ["pull", "--ff-only", "origin", branch, "--quiet"],
         cwd=eigen_root,
     )
     return result.returncode == 0

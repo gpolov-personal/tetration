@@ -1005,8 +1005,18 @@ def cmd_sync(args: Namespace) -> int:
     if ok:
         print(json.dumps({"status": "synced", "branch": branch}))
         return 0
-    print(f"WARNING: git pull from {branch} failed (may be offline)", file=sys.stderr)
-    return 0  # Non-fatal
+    # 1.5 — a failed ff-only pull means the local branch is either behind
+    # the remote in a way that cannot fast-forward (diverged history,
+    # force-push upstream) or unreachable. Either way, decisions made
+    # against the stale local state are unsafe — surface it with a real
+    # non-zero exit so the watchdog / invoking LLM treats it as an error
+    # instead of continuing on a silent warning.
+    print(
+        f"ERROR: git pull --ff-only origin {branch} failed "
+        "(diverged history, network, or auth). Local state may be stale.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def cmd_resolve_branch(args: Namespace) -> int:
