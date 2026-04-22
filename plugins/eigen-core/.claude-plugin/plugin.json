@@ -1,0 +1,7 @@
+{
+  "name": "eigen-core",
+  "version": "1.0.0",
+  "description": "Shared utility library for eigen-squared and eigen-lite. Pure Python primitives: git operations, claude-tasks scheduler, raw state I/O, base data models. No commands or skills — consumed by sibling plugins via Python imports.",
+  "keywords": ["utility", "library", "shared", "eigen"],
+  "homepage": "https://github.com/ggpolovera/tetration"
+}

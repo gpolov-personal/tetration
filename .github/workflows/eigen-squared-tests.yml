@@ -1,0 +1,93 @@
+name: eigen-squared + eigen-core CLI tests
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - 'plugins/eigen-squared/cli/**'
+      - 'plugins/eigen-squared/.claude-plugin/plugin.json'
+      - 'plugins/eigen-core/eigen_core/**'
+      - 'plugins/eigen-core/.claude-plugin/plugin.json'
+      - '.github/workflows/eigen-squared-tests.yml'
+  pull_request:
+    paths:
+      - 'plugins/eigen-squared/cli/**'
+      - 'plugins/eigen-squared/.claude-plugin/plugin.json'
+      - 'plugins/eigen-core/eigen_core/**'
+      - 'plugins/eigen-core/.claude-plugin/plugin.json'
+      - '.github/workflows/eigen-squared-tests.yml'
+
+jobs:
+  squared-tests:
+    name: eigen-squared (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+
+    defaults:
+      run:
+        working-directory: plugins/eigen-squared
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run CLI tests
+        run: pytest cli/tests/ -v --tb=short
+
+      - name: Verify test count
+        run: |
+          count=$(pytest cli/tests/ --collect-only -q 2>&1 | tail -1 | awk '{print $1}')
+          echo "Collected $count tests"
+          if [ "$count" -lt 120 ]; then
+            echo "::error::Test count ($count) below baseline (120). Did tests get deleted?"
+            exit 1
+          fi
+
+  core-tests:
+    name: eigen-core (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+
+    defaults:
+      run:
+        working-directory: plugins/eigen-core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run eigen-core tests
+        env:
+          PYTHONPATH: .
+        run: pytest eigen_core/cli/tests/ -v --tb=short
+
+      - name: Verify test count
+        env:
+          PYTHONPATH: .
+        run: |
+          count=$(pytest eigen_core/cli/tests/ --collect-only -q 2>&1 | tail -1 | awk '{print $1}')
+          echo "Collected $count tests"
+          if [ "$count" -lt 42 ]; then
+            echo "::error::Test count ($count) below baseline (42). Did tests get deleted?"
+            exit 1
+          fi

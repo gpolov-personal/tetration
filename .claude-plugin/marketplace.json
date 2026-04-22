@@ -12,7 +12,7 @@
     {
       "name": "eigen-squared",
       "description": "Autonomous initiative-scale development orchestration with auto-chaining via claude-tasks. Zero-argument pipeline, triplet IDs, language-agnostic, worktree isolation, convergence loops, real-dependencies testing. Runs a full phase autonomously — plan, code, review, fix — until the E2E Testing epic converges.",
-      "version": "1.1.0",
+      "version": "3.4.6",
       "author": {
         "name": "G.Polo.V",
         "email": "ggpolovera@gmail.com"
@@ -20,6 +20,18 @@
       "homepage": "https://github.com/ggpolovera/tetration",
       "tags": ["autonomous", "swarm", "parallel-execution", "auto-chaining", "claude-tasks", "convergence", "self-improving"],
       "source": "./plugins/eigen-squared"
+    },
+    {
+      "name": "eigen-lite",
+      "description": "Destilated eigen plugin for small initiatives (2-5 features) on existing codebases. Four commands (lite_start, lite_plan, lite_swarm, lite_review) collapse squared's seven-command planning pipeline into a single-pass planner with parallel analyst subagents. Reuses eigen-squared workers via cross-plugin Skill referencing.",
+      "version": "0.9.0",
+      "author": {
+        "name": "Diego San Cristobal",
+        "email": "diego.scristobal@gmail.com"
+      },
+      "homepage": "https://github.com/ggpolovera/tetration",
+      "tags": ["autonomous", "swarm", "lite", "single-phase", "existing-codebase", "small-initiatives"],
+      "source": "./plugins/eigen-lite"
     }
   ]
 }

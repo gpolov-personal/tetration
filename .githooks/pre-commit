@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Keep _vendored/ in sync with plugins/eigen-core/eigen_core/ on every commit.
+#
+# Rules:
+#   1. If only _vendored/ is staged (without a matching eigen-core source
+#      change) → ABORT. The developer meant to edit the source, not the
+#      vendored copy. Silently overwriting would discard their work.
+#   2. If eigen-core source is staged → re-run vendor-core.sh and stage the
+#      regenerated _vendored/ dirs alongside.
+#   3. Otherwise → no-op (don't slow down unrelated commits).
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+staged="$(git diff --cached --name-only)"
+has_core=0
+has_vendored=0
+
+if echo "$staged" | grep -qE '^plugins/eigen-core/eigen_core/'; then
+  has_core=1
+fi
+if echo "$staged" | grep -qE '^plugins/[^/]+/_vendored/'; then
+  has_vendored=1
+fi
+
+if [[ "$has_vendored" == "1" && "$has_core" == "0" ]]; then
+  cat >&2 <<'ERR'
+pre-commit: refusing to commit direct edits to _vendored/.
+
+Shared code lives in plugins/eigen-core/eigen_core/. Edit there — the
+vendored copies under plugins/*/_vendored/ are regenerated from that source
+by tools/vendor-core.sh on every commit.
+
+If you really mean to bypass this check (e.g. reverting a failed merge),
+use:  git commit --no-verify
+ERR
+  exit 1
+fi
+
+if [[ "$has_core" == "1" ]]; then
+  bash tools/vendor-core.sh
+  git add plugins/*/_vendored 2>/dev/null || true
+fi

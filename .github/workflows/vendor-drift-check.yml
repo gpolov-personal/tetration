@@ -1,0 +1,37 @@
+name: eigen-core vendor drift check
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - 'plugins/eigen-core/eigen_core/**'
+      - 'plugins/*/_vendored/**'
+      - 'tools/vendor-core.sh'
+      - '.github/workflows/vendor-drift-check.yml'
+  pull_request:
+    paths:
+      - 'plugins/eigen-core/eigen_core/**'
+      - 'plugins/*/_vendored/**'
+      - 'tools/vendor-core.sh'
+      - '.github/workflows/vendor-drift-check.yml'
+
+jobs:
+  drift-check:
+    name: Verify _vendored/ matches eigen-core source
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Re-run vendoring
+        run: bash tools/vendor-core.sh
+
+      - name: Fail if _vendored/ is stale
+        run: |
+          if ! git diff --exit-code plugins/*/_vendored/; then
+            echo "::error::_vendored/ is out of sync with plugins/eigen-core/eigen_core/."
+            echo "Run tools/vendor-core.sh locally and commit the result, or enable the pre-commit hook with:"
+            echo "  git config core.hooksPath .githooks"
+            exit 1
+          fi
+          echo "_vendored/ matches eigen-core source — OK"
