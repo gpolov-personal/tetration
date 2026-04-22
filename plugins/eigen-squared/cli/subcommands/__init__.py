@@ -20,6 +20,7 @@ from ..models import (
 from ..state import (
     create_initial_state,
     load_state,
+    locked_state,
     resolve_state_file,
     save_state,
     validate_state,
@@ -94,6 +95,29 @@ def _load_or_die(args: Namespace) -> tuple[PipelineState, Path]:
     return state, sf
 
 
+def _with_state_lock(handler):
+    """B1 — decorator that acquires the pipeline_state.json flock for the
+    full duration of a mutating handler.
+
+    Applied at dispatch time (see ``dispatch`` below) so the handler
+    bodies stay unchanged. The lock serializes concurrent
+    ``load_state → mutate → save_state`` cycles — 1.1's atomic rename
+    prevents torn *reads* but not lost *updates* when two writers race
+    (e.g. watchdog-spawned LLM task + a manual
+    ``eigen-squared add-recommendation``). The held region covers the
+    entire handler, so a ``sys.exit`` inside ``_load_or_die`` still
+    releases the lock via ``locked_state``'s ``finally``.
+    """
+
+    def wrapped(args: Namespace) -> int:
+        sf = _state_file(args)
+        with locked_state(sf):
+            return handler(args)
+
+    wrapped.__name__ = handler.__name__
+    return wrapped
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -118,26 +142,31 @@ CONVERGE_COMMANDS = {"plan_epic_converge", "bootstrap_converge", "space_split_co
 
 
 def dispatch(args: Namespace) -> int:
-    """Route to the appropriate subcommand handler."""
+    """Route to the appropriate subcommand handler.
+
+    Commands that mutate ``pipeline_state.json`` (load→save cycles)
+    are wrapped with ``_with_state_lock`` so concurrent invocations
+    cannot produce lost updates.
+    """
     handlers = {
-        "init": cmd_init,
+        "init": _with_state_lock(cmd_init),
         "status": cmd_status,
         "next": cmd_next,
         "get-context": cmd_get_context,
-        "complete": cmd_complete,
-        "mark-converged": cmd_mark_converged,
-        "add-recommendation": cmd_add_recommendation,
-        "clear-recommendations": cmd_clear_recommendations,
-        "set-swarm-status": cmd_set_swarm_status,
-        "add-review-report": cmd_add_review_report,
-        "init-plan": cmd_init_plan,
-        "set-phase-review": cmd_set_phase_review,
+        "complete": _with_state_lock(cmd_complete),
+        "mark-converged": _with_state_lock(cmd_mark_converged),
+        "add-recommendation": _with_state_lock(cmd_add_recommendation),
+        "clear-recommendations": _with_state_lock(cmd_clear_recommendations),
+        "set-swarm-status": _with_state_lock(cmd_set_swarm_status),
+        "add-review-report": _with_state_lock(cmd_add_review_report),
+        "init-plan": _with_state_lock(cmd_init_plan),
+        "set-phase-review": _with_state_lock(cmd_set_phase_review),
         "commit-state": cmd_commit_state,
         "sync": cmd_sync,
         "resolve-branch": cmd_resolve_branch,
         "checkout-branch": cmd_checkout_branch,
         "schedule-next": cmd_schedule_next,
-        "validate": cmd_validate,
+        "validate": _with_state_lock(cmd_validate),
         "install": cmd_install,
         "write-env": cmd_write_env,
     }

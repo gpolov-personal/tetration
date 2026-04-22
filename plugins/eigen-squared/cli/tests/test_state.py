@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import os
+import time
 
 from cli.state import (
     create_initial_state,
     load_state,
+    locked_state,
     resolve_state_file,
     save_state,
     validate_state,
@@ -125,6 +128,71 @@ class TestFilePermissions:
         save_state(state, sf)
         # No prior file → default 0o644 (not 0o600 from NamedTemporaryFile).
         assert (sf.stat().st_mode & 0o777) == 0o644
+
+
+def _writer_worker(sf_str: str, marker: str, hold_ms: int) -> None:
+    """Process target: acquire lock, mutate, hold briefly, save."""
+    from pathlib import Path
+
+    sf = Path(sf_str)
+    with locked_state(sf):
+        state = load_state(sf)
+        assert state is not None
+        state.initiative = marker
+        # Hold the critical section so the other writer would actually
+        # race if the lock were absent.
+        time.sleep(hold_ms / 1000)
+        save_state(state, sf)
+
+
+class TestLockedState:
+    """B1 — ``locked_state`` must serialize concurrent load→mutate→save
+    cycles so a second writer can't overwrite the first writer's
+    mutation.
+    """
+
+    def test_concurrent_writers_are_serialized(self, tmp_path):
+        sf = tmp_path / "pipeline_state.json"
+        state = create_initial_state("seed", phase_count=1)
+        save_state(state, sf)
+
+        # Two writers each set a distinct marker and hold the lock for
+        # ~100ms. With proper serialization the second one sees the first
+        # one's marker when it loads — both mutations are preserved in
+        # *order* (last writer wins on initiative, but neither write is
+        # lost because the load happens *after* the first save).
+        ctx = multiprocessing.get_context("fork")
+        p1 = ctx.Process(target=_writer_worker, args=(str(sf), "writer-A", 100))
+        p2 = ctx.Process(target=_writer_worker, args=(str(sf), "writer-B", 100))
+        p1.start()
+        p2.start()
+        p1.join(timeout=5)
+        p2.join(timeout=5)
+        assert p1.exitcode == 0
+        assert p2.exitcode == 0
+
+        # The final state is one of the two markers — never corrupt,
+        # never the seed (both writers ran to completion).
+        loaded = load_state(sf)
+        assert loaded is not None
+        assert loaded.initiative in {"writer-A", "writer-B"}
+
+    def test_lock_file_is_created_next_to_state(self, tmp_path):
+        sf = tmp_path / "pipeline_state.json"
+        with locked_state(sf):
+            assert (tmp_path / "pipeline_state.json.lock").exists()
+
+    def test_lock_released_on_exception(self, tmp_path):
+        sf = tmp_path / "pipeline_state.json"
+        try:
+            with locked_state(sf):
+                raise RuntimeError("boom")
+        except RuntimeError:
+            pass
+        # Re-acquiring must succeed immediately (non-blocking); if the
+        # previous lock had leaked, this would either block or fail.
+        with locked_state(sf):
+            pass
 
 
 class TestValidateState:

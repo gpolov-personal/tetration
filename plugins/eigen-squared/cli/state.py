@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from .models import (
     PipelineState,
@@ -22,6 +24,50 @@ from .models import (
 
 def resolve_state_file(eigen_root: str | Path) -> Path:
     return Path(eigen_root) / "eigen_initiative" / "phases" / "pipeline_state.json"
+
+
+@contextmanager
+def locked_state(state_file: str | Path) -> Iterator[None]:
+    """Serialize concurrent load→mutate→save cycles via POSIX ``flock``.
+
+    B1 — 1.1's atomic ``os.replace`` prevents *torn writes* (a reader
+    never sees a truncated file), but it does not prevent *lost
+    updates*: if two processes both ``load_state → mutate → save_state``
+    concurrently, the second save silently overwrites the first
+    mutation. ``eigen-watchdog.sh``'s ``flock`` only serializes the
+    watchdog against itself — not against already-spawned LLM tasks or
+    manual CLI invocations (e.g. ``eigen-squared add-recommendation``).
+
+    Callers wrap the full load→mutate→save block:
+
+        with locked_state(sf):
+            state = load_state(sf)
+            ...
+            save_state(state, sf)
+
+    The lock file lives next to the state file (``pipeline_state.json.lock``).
+    ``fcntl.flock`` is advisory — only processes that also call
+    ``locked_state`` are serialized. That is the correct scope here:
+    all writers come through this module. ``LOCK_EX`` blocks; we do
+    not time out, because the held region is a handful of in-memory
+    operations plus one ``os.replace`` — any multi-second block means
+    something is very wrong and failing loudly is better than silently
+    dropping writes.
+    """
+    path = Path(state_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.parent / (path.name + ".lock")
+    # O_CREAT|O_WRONLY is enough — flock attaches to the open file
+    # description, not to the file contents.
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def load_state(state_file: str | Path) -> Optional[PipelineState]:
