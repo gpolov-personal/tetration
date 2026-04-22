@@ -48,6 +48,30 @@ fi
 export EIGEN_ROOT EIGEN_BRANCH CLAUDE_TASKS_API
 export EIGEN_TELEGRAM_CHAT_ID="${EIGEN_TELEGRAM_CHAT_ID:-}"
 
+# 1.2 — pre-tick sync with the remote before reading any state.
+#
+# The 2026-04-22 P2.E1 regression traced back to exactly this gap: the
+# Stage-7 squash-merge for review_swarm_pr landed on origin/dev while
+# the local worktree still pointed at pre-merge d5b5257, so the watchdog
+# read a swarm_execution.status=="not_started" snapshot that had already
+# been superseded — and duly re-scheduled create_issues_from_plan_swarm.
+#
+# We fetch the current remote tip and attempt a --ff-only pull of
+# $EIGEN_BRANCH. The pull is non-fatal because a genuine divergence
+# (force-push upstream, or local having unpushed commits we shouldn't
+# overwrite) should NOT crash the watchdog — the subsequent `cmd_next`
+# already has its own sync (1.3) and the guards in Capa 2 catch the
+# staleness another way. But we log WARN so the operator can tell that
+# the pre-sync was skipped this tick.
+if [ -d "$EIGEN_ROOT/.git" ]; then
+    if ! git -C "$EIGEN_ROOT" fetch --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
+        echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH failed (offline or auth)"
+    fi
+    if ! git -C "$EIGEN_ROOT" pull --ff-only --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
+        echo "[$(date -u +%FT%TZ)] WARN: git pull --ff-only $EIGEN_BRANCH failed (local diverged or offline) — local state may be stale this tick"
+    fi
+fi
+
 # 1. Is anything running for this project? (HIGH-3, HIGH-5)
 RUNNING=$(curl -sf "$CLAUDE_TASKS_API/api/v1/tasks" 2>/dev/null | \
     EIGEN_ROOT="$EIGEN_ROOT" python3 -c "
