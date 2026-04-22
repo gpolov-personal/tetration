@@ -101,6 +101,32 @@ class TestAtomicWrite:
         assert sf.exists()
 
 
+class TestFilePermissions:
+    """S7 — NamedTemporaryFile defaults to 0o600; os.replace inherits the
+    source's mode. Without explicit chmod, the first save would silently
+    downgrade an 0o644 state file and break readers on a different uid.
+    """
+
+    def test_preserves_existing_file_mode(self, tmp_path):
+        sf = tmp_path / "pipeline_state.json"
+        state = create_initial_state("x", phase_count=1)
+        save_state(state, sf)
+        # Bump the mode to 0o644 explicitly (simulates a state file that
+        # was created via `touch` or checked in from another uid).
+        os.chmod(sf, 0o644)
+
+        # A subsequent save must preserve 0o644, not drop it to 0o600.
+        save_state(state, sf)
+        assert (sf.stat().st_mode & 0o777) == 0o644
+
+    def test_fresh_file_gets_readable_mode(self, tmp_path):
+        sf = tmp_path / "pipeline_state.json"
+        state = create_initial_state("x", phase_count=1)
+        save_state(state, sf)
+        # No prior file → default 0o644 (not 0o600 from NamedTemporaryFile).
+        assert (sf.stat().st_mode & 0o777) == 0o644
+
+
 class TestValidateState:
     def test_fresh_state_is_valid(self):
         state = create_initial_state("x", phase_count=2)

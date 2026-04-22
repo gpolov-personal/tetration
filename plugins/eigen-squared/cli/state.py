@@ -40,18 +40,27 @@ def load_state(state_file: str | Path) -> Optional[PipelineState]:
 
 
 def save_state(state: PipelineState, state_file: str | Path) -> None:
-    """Serialize PipelineState to JSON and write to disk atomically.
+    """Serialize PipelineState to JSON and write to disk via atomic rename.
 
     1.1 — writes the new content to a temporary file in the same directory
     and then ``os.replace()``-s it into place. On POSIX this is an atomic
-    rename within a single filesystem, so a crash mid-write can never
-    leave ``pipeline_state.json`` truncated or half-written: any reader
-    either sees the previous complete file or the new complete file,
-    never a partial one.
+    rename within a single filesystem, so a concurrent reader either sees
+    the previous complete file or the new complete file, never a partial
+    one. (Note: full crash durability across power loss additionally
+    requires an ``fsync`` on the parent directory; we don't do that here
+    because the pipeline_state.json can always be rebuilt from the
+    on-disk manifests + git log if a hard crash lands between rename and
+    directory flush — atomicity vs. readers is the invariant we need.)
 
     ``tempfile.NamedTemporaryFile(dir=parent)`` guarantees the temp file
     lands on the same filesystem as the target — required for the
     rename to be atomic.
+
+    S7 — mirror the *existing* file's mode onto the tempfile before the
+    rename. ``NamedTemporaryFile`` creates at 0o600, and ``os.replace``
+    preserves the source's mode on POSIX, so without this step the first
+    post-merge save would silently downgrade an 0o644 state file to
+    0o600 and break downstream readers running under a different uid.
 
     Sets updated_at to current UTC time before writing.
     """
@@ -59,6 +68,15 @@ def save_state(state: PipelineState, state_file: str | Path) -> None:
     path = Path(state_file)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(state.to_dict(), indent=2) + "\n"
+
+    # Capture the current mode (if the file exists) so we can restore it
+    # after os.replace. Fall back to 0o644 for freshly-created states —
+    # matches the default umask on most deploys and is what `touch` would
+    # produce.
+    try:
+        target_mode = path.stat().st_mode & 0o777
+    except FileNotFoundError:
+        target_mode = 0o644
 
     # delete=False because we rename it ourselves; the context manager
     # only exists so the file handle is closed before the rename.
@@ -75,9 +93,10 @@ def save_state(state: PipelineState, state_file: str | Path) -> None:
         os.fsync(tmp.fileno())
         tmp_path = tmp.name
     try:
+        os.chmod(tmp_path, target_mode)
         os.replace(tmp_path, path)
     except OSError:
-        # Best-effort cleanup if the rename itself failed.
+        # Best-effort cleanup if the chmod or rename itself failed.
         try:
             os.unlink(tmp_path)
         except OSError:
