@@ -9,6 +9,7 @@ against the real filesystem.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,30 @@ from .epic_manifest import load_epic_order
 
 # Commands that run on integration branches (feat/P<N>.E<M>)
 INTEGRATION_BRANCH_COMMANDS = {"orchestrate_swarm", "review_swarm_pr"}
+
+
+def _manifest_belongs_to_epic(
+    manifest_file: Path, phase_num: int, epic_num: int
+) -> bool:
+    """B2 — open the on-disk swarm-manifest.json and verify its
+    ``epic_id`` matches ``P<phase>.E<epic>`` before trusting it.
+
+    The 2.1 reconcile-against-disk gate upstream treats *any* manifest
+    at the canonical path as authoritative. Without validation, a
+    stale manifest from a reverted phase, a partial file from a
+    crashed writer, or a leftover from a manually aborted epic would
+    route the pipeline to ``orchestrate_swarm`` against the wrong
+    task IDs. Keep the check conservative: on I/O / JSON / schema
+    failure, treat the manifest as absent (return False) so the
+    upstream decision falls through to ``create_issues_from_plan_swarm``
+    and regenerates it instead of silently mis-routing.
+    """
+    expected_id = f"P{phase_num}.E{epic_num}"
+    try:
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and data.get("epic_id") == expected_id
 
 
 def next_for_convergence_pair(
@@ -201,8 +226,16 @@ def determine_next(
                     / f"epic_{epic_num}"
                     / "swarm-manifest.json"
                 )
-                if expected.exists():
-                    manifest_path = str(expected.relative_to(eigen_root))
+                # B2 — validate the manifest content (not just existence)
+                # before trusting it. A stale / partial / cross-epic
+                # manifest must not be treated as this epic's manifest.
+                # `.as_posix()` emits POSIX separators into the JSON
+                # regardless of the host OS so the value round-trips
+                # safely across platforms.
+                if expected.exists() and _manifest_belongs_to_epic(
+                    expected, phase_num, epic_num
+                ):
+                    manifest_path = expected.relative_to(eigen_root).as_posix()
 
             if manifest_path is None and swarm.get("status") == "not_started":
                 return (
