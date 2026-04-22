@@ -104,6 +104,23 @@ class TestCommitState:
         # (the no-op path).
         assert commit_state("noop", str(repo), state_file="state.json") is True
 
+    # --- 1.4: detached HEAD / empty current_branch → refuse push ---
+
+    def test_refuses_push_from_detached_head(self, repo, capsys):
+        # Detach HEAD at the seed commit so current_branch() returns
+        # "HEAD". commit_state must then refuse to push and return False.
+        head_sha = run_git(["rev-parse", "HEAD"], cwd=str(repo)).stdout.strip()
+        _git(["checkout", "-q", "--detach", head_sha], cwd=repo)
+        state = repo / "state.json"
+        state.write_text('{"ok": true}')
+        assert commit_state("detached", str(repo), state_file="state.json") is False
+        # The local commit still happened (we only refused the push).
+        log = run_git(["log", "--oneline"], cwd=str(repo)).stdout
+        assert "detached" in log
+        captured = capsys.readouterr()
+        assert "refusing to push" in captured.err
+        assert "HEAD" in captured.err
+
 
 class TestIntegrationBranchName:
     def test_format(self):

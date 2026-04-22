@@ -259,12 +259,25 @@ def commit_state(
     if result.returncode != 0:
         return False
 
+    # 1.4 — refuse to silently skip the push when we cannot resolve a real
+    # branch to push to. Previously an empty current_branch (rev-parse
+    # failure) or "HEAD" (detached HEAD) made commit_state return True
+    # without pushing, leaving the remote behind and the pipeline state
+    # on the feature branch only — exactly the shape that let P2.E1 land
+    # its CONVERGED commit on an ephemeral local branch before the squash
+    # collapsed it. If the caller has no legitimate target, surface it.
     push_branch = branch or current_branch(eigen_root)
-    if push_branch:
-        result = run_git(["push", "origin", push_branch], cwd=eigen_root)
-        return result.returncode == 0
+    if not push_branch or push_branch == "HEAD":
+        sys.stderr.write(
+            "[commit_state] refusing to push: no branch resolved "
+            f"(current_branch={push_branch!r}). The commit landed locally "
+            "but was NOT pushed — call commit_state with an explicit "
+            "branch= or check out a named branch before committing.\n"
+        )
+        return False
 
-    return True
+    result = run_git(["push", "origin", push_branch], cwd=eigen_root)
+    return result.returncode == 0
 
 
 def integration_branch_name(phase: int, epic: int) -> str:
