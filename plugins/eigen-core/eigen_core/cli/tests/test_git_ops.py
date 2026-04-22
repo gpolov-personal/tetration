@@ -75,3 +75,31 @@ class TestIntegrationBranchName:
     def test_format(self):
         assert integration_branch_name(1, 2) == "feat/P1.E2"
         assert integration_branch_name(7, 13) == "feat/P7.E13"
+
+
+class TestRunGitErrorPropagation:
+    """Failing git commands must surface their stderr to sys.stderr by default
+    (1.7) so invoking callers see the real error instead of a silent bool.
+    """
+
+    def test_failure_emits_stderr_to_process_stderr(self, repo, capsys):
+        result = run_git(["rev-parse", "--verify", "refs/heads/missing-branch"], cwd=str(repo))
+        assert result.returncode != 0
+        captured = capsys.readouterr()
+        assert "[git rev-parse --verify refs/heads/missing-branch]" in captured.err
+
+    def test_silent_suppresses_stderr(self, repo, capsys):
+        result = run_git(
+            ["rev-parse", "--verify", "refs/heads/missing-branch"],
+            cwd=str(repo),
+            silent=True,
+        )
+        assert result.returncode != 0
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_success_does_not_emit(self, repo, capsys):
+        result = run_git(["rev-parse", "HEAD"], cwd=str(repo))
+        assert result.returncode == 0
+        captured = capsys.readouterr()
+        assert captured.err == ""

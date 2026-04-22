@@ -7,19 +7,38 @@ previously scattered across every command prompt.
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 
-def run_git(args: list[str], cwd: str = "", check: bool = False) -> subprocess.CompletedProcess:
-    """Run a git command and return the result."""
+def run_git(
+    args: list[str],
+    cwd: str = "",
+    check: bool = False,
+    silent: bool = False,
+) -> subprocess.CompletedProcess:
+    """Run a git command and return the result.
+
+    When the command fails (returncode != 0) and ``silent=False``, writes
+    ``result.stderr`` to ``sys.stderr`` so the invoking caller (or the LLM
+    that invoked the CLI) can see the actual git error instead of only a
+    boolean. ``silent=True`` is for call-sites that use returncode as a
+    condition check (e.g. ``git diff --quiet`` returns 1 when there are
+    staged changes — not an error).
+    """
     cmd = ["git"] + args
-    return subprocess.run(
+    result = subprocess.run(
         cmd,
         cwd=cwd or None,
         capture_output=True,
         text=True,
         check=check,
     )
+    if result.returncode != 0 and not silent:
+        stderr = result.stderr.strip()
+        if stderr:
+            sys.stderr.write(f"[git {' '.join(args)}] {stderr}\n")
+    return result
 
 
 def sync(branch: str, eigen_root: str) -> bool:
@@ -105,7 +124,7 @@ def commit_state(
     if result.returncode != 0:
         return False
 
-    status = run_git(["diff", "--cached", "--quiet"], cwd=eigen_root)
+    status = run_git(["diff", "--cached", "--quiet"], cwd=eigen_root, silent=True)
     if status.returncode == 0:
         return True
 
