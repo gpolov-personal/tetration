@@ -63,12 +63,20 @@ export EIGEN_TELEGRAM_CHAT_ID="${EIGEN_TELEGRAM_CHAT_ID:-}"
 # already has its own sync (1.3) and the guards in Capa 2 catch the
 # staleness another way. But we log WARN so the operator can tell that
 # the pre-sync was skipped this tick.
+# S1 — wrap git network ops in `timeout` so a black-holed TCP
+# connection (common on flaky VPNs / corporate proxies) cannot stall
+# the watchdog tick for the OS default (75-120s). At a 60s cron
+# interval stalled ticks would pile up until the next `flock -n 9`
+# exclusion kicks in. The Python-side `run_git` already enforces
+# 120s (patch 1.8) but this shell path bypasses it. 10s is long
+# enough for a healthy fetch and short enough to still leave budget
+# for the rest of the tick.
 if [ -d "$EIGEN_ROOT/.git" ]; then
-    if ! git -C "$EIGEN_ROOT" fetch --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
-        echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH failed (offline or auth)"
+    if ! timeout 10 git -C "$EIGEN_ROOT" fetch --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
+        echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH failed (offline, auth, or timed out after 10s)"
     fi
-    if ! git -C "$EIGEN_ROOT" pull --ff-only --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
-        echo "[$(date -u +%FT%TZ)] WARN: git pull --ff-only $EIGEN_BRANCH failed (local diverged or offline) — local state may be stale this tick"
+    if ! timeout 10 git -C "$EIGEN_ROOT" pull --ff-only --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
+        echo "[$(date -u +%FT%TZ)] WARN: git pull --ff-only $EIGEN_BRANCH failed (local diverged, offline, or timed out after 10s) — local state may be stale this tick"
     fi
 fi
 
