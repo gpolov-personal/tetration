@@ -114,26 +114,109 @@ def checkout_branch(
 ) -> bool:
     """Checkout a branch, optionally creating it from base_branch.
 
-    When create=True and base_branch is set, first checks out and pulls
-    the base branch to ensure the new branch includes all prior work.
+    Preconditions and error semantics (1.10):
 
-    Returns True if checkout succeeded.
+    * **Clean working tree required.** If `git status --porcelain` reports
+      any untracked/uncommitted changes, refuse the checkout with a clear
+      stderr message rather than silently carrying changes across branches.
+    * **create=True refuses collisions.** If the branch already exists
+      either locally or on ``origin/``, abort loudly instead of falling
+      through to a silent re-checkout of an existing branch (the old
+      behavior leaked partial side-effects from the `checkout base` +
+      `pull base` that precede the `-b`).
+    * **create=False with fetch fallback.** If a direct checkout fails,
+      try `fetch origin <branch>` once and retry. On second failure,
+      distinguish "branch does not exist on origin" (via `ls-remote
+      --exit-code`) from network/auth errors and emit a differentiated
+      stderr message.
+
+    Returns True on success, False on any refused or failed step. Failure
+    reasons are always surfaced to sys.stderr so invoking callers see why.
     """
-    if create and base_branch:
-        run_git(["checkout", base_branch], cwd=eigen_root)
-        run_git(["pull", "origin", base_branch, "--quiet"], cwd=eigen_root)
+    # 1. Clean-tree precondition — never carry uncommitted work across branches.
+    dirty = run_git(["status", "--porcelain"], cwd=eigen_root, silent=True)
+    if dirty.returncode == 0 and dirty.stdout.strip():
+        sys.stderr.write(
+            f"[checkout_branch] refusing to checkout '{branch}': working "
+            "tree has uncommitted changes. Commit, stash, or reset first.\n"
+        )
+        return False
 
-    args = ["checkout"]
     if create:
-        args.append("-b")
-    args.append(branch)
+        # 2. Branch must not already exist anywhere when creating.
+        local_exists = (
+            run_git(
+                ["rev-parse", "--verify", f"refs/heads/{branch}"],
+                cwd=eigen_root,
+                silent=True,
+            ).returncode
+            == 0
+        )
+        remote_exists = (
+            run_git(
+                ["rev-parse", "--verify", f"refs/remotes/origin/{branch}"],
+                cwd=eigen_root,
+                silent=True,
+            ).returncode
+            == 0
+        )
+        if local_exists or remote_exists:
+            where = " and ".join(
+                part
+                for part, flag in (("local", local_exists), ("origin", remote_exists))
+                if flag
+            )
+            sys.stderr.write(
+                f"[checkout_branch] refusing to create '{branch}': already "
+                f"exists ({where}). Delete it first or call with create=False.\n"
+            )
+            return False
 
-    result = run_git(args, cwd=eigen_root)
-    if result.returncode != 0 and not create:
-        run_git(["fetch", "origin", branch, "--quiet"], cwd=eigen_root)
-        result = run_git(["checkout", branch], cwd=eigen_root)
+        if base_branch:
+            # Switch to base and pull it (ff-only) so the new branch starts
+            # from a remote-synced tip. Failures here are fatal for create.
+            base_checkout = run_git(["checkout", base_branch], cwd=eigen_root)
+            if base_checkout.returncode != 0:
+                return False
+            base_pull = run_git(
+                ["pull", "--ff-only", "origin", base_branch, "--quiet"],
+                cwd=eigen_root,
+            )
+            if base_pull.returncode != 0:
+                return False
 
-    return result.returncode == 0
+        # Finally, create the new branch.
+        return run_git(["checkout", "-b", branch], cwd=eigen_root).returncode == 0
+
+    # create=False: try to switch to an existing branch.
+    first = run_git(["checkout", branch], cwd=eigen_root, silent=True)
+    if first.returncode == 0:
+        return True
+
+    # Local checkout failed — maybe we just haven't fetched the ref yet.
+    fetched = run_git(["fetch", "origin", branch, "--quiet"], cwd=eigen_root, silent=True)
+    if fetched.returncode != 0:
+        # ls-remote --exit-code returns 2 when the ref is missing on origin
+        # (as opposed to a network/auth error which usually returns 128).
+        probe = run_git(
+            ["ls-remote", "--exit-code", "--heads", "origin", branch],
+            cwd=eigen_root,
+            silent=True,
+        )
+        if probe.returncode == 2:
+            sys.stderr.write(
+                f"[checkout_branch] branch '{branch}' does not exist "
+                "locally or on origin.\n"
+            )
+        else:
+            sys.stderr.write(
+                f"[checkout_branch] fetch of 'origin/{branch}' failed: "
+                f"{fetched.stderr.strip() or probe.stderr.strip()}\n"
+            )
+        return False
+
+    # Fetch succeeded; retry checkout, now noisily so the real reason shows.
+    return run_git(["checkout", branch], cwd=eigen_root).returncode == 0
 
 
 def commit_state(

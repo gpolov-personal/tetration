@@ -47,6 +47,40 @@ class TestCheckoutBranch:
         assert checkout_branch("feature", str(repo)) is True
         assert current_branch(str(repo)) == "feature"
 
+    # --- 1.10: clean-tree precondition ---
+
+    def test_refuses_checkout_with_dirty_tree(self, repo, capsys):
+        _git(["checkout", "-q", "-b", "feature"], cwd=repo)
+        _git(["checkout", "-q", "main"], cwd=repo)
+        # Leave an untracked file so the working tree is "dirty".
+        (repo / "dirty.txt").write_text("x")
+        assert checkout_branch("feature", str(repo)) is False
+        assert current_branch(str(repo)) == "main"  # did not switch
+        captured = capsys.readouterr()
+        assert "uncommitted changes" in captured.err
+
+    # --- 1.10: create-collision refused ---
+
+    def test_create_refused_when_branch_exists_locally(self, repo, capsys):
+        _git(["checkout", "-q", "-b", "feat/existing"], cwd=repo)
+        _git(["checkout", "-q", "main"], cwd=repo)
+        assert checkout_branch("feat/existing", str(repo), create=True) is False
+        captured = capsys.readouterr()
+        assert "already exists" in captured.err
+        assert "local" in captured.err
+
+    # --- 1.10: missing branch reports a clear error ---
+
+    def test_checkout_missing_branch_reports_not_found(self, repo, capsys):
+        # No remote configured — ls-remote probe returns 128, so the
+        # message falls into the "fetch failed" bucket rather than
+        # "not found on origin". Either way, the branch clearly does not
+        # exist locally, and the returned bool is False.
+        assert checkout_branch("feat/nowhere", str(repo)) is False
+        captured = capsys.readouterr()
+        assert "feat/nowhere" in captured.err
+        assert current_branch(str(repo)) == "main"
+
 
 class TestCommitState:
     def test_no_paths_returns_false(self, repo):
