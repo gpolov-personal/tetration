@@ -63,20 +63,30 @@ export EIGEN_TELEGRAM_CHAT_ID="${EIGEN_TELEGRAM_CHAT_ID:-}"
 # already has its own sync (1.3) and the guards in Capa 2 catch the
 # staleness another way. But we log WARN so the operator can tell that
 # the pre-sync was skipped this tick.
-# S1 — wrap git network ops in `timeout` so a black-holed TCP
-# connection (common on flaky VPNs / corporate proxies) cannot stall
-# the watchdog tick for the OS default (75-120s). At a 60s cron
-# interval stalled ticks would pile up until the next `flock -n 9`
-# exclusion kicks in. The Python-side `run_git` already enforces
-# 120s (patch 1.8) but this shell path bypasses it. 10s is long
-# enough for a healthy fetch and short enough to still leave budget
-# for the rest of the tick.
+# S1 + N4 — wrap git network ops in `timeout` so a black-holed TCP
+# connection cannot stall the tick. `--kill-after=5` sends SIGKILL
+# after a 5s grace period if SIGTERM is ignored (happens when git is
+# blocked in an uninterruptible `read()` on a black-holed socket).
+# 30s matches `_DEFAULT_TIMEOUT` in git_ops.py; the original 10s
+# was 12× stricter than the Python-side 120s and caused ~5-15%
+# false-timeout rate on legitimate VPN/proxy connections.
+# Exit-code branching: `timeout` returns 124 on timeout, allowing
+# the log to distinguish "timed out" from "auth failed" / "diverged".
 if [ -d "$EIGEN_ROOT/.git" ]; then
-    if ! timeout 10 git -C "$EIGEN_ROOT" fetch --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
-        echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH failed (offline, auth, or timed out after 10s)"
+    timeout --kill-after=5 30 git -C "$EIGEN_ROOT" fetch --quiet origin "$EIGEN_BRANCH" 2>/dev/null
+    rc=$?
+    if [ $rc -eq 124 ]; then
+        echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH timed out after 30s"
+    elif [ $rc -ne 0 ]; then
+        echo "[$(date -u +%FT%TZ)] WARN: git fetch origin $EIGEN_BRANCH failed (rc=$rc; offline or auth)"
     fi
-    if ! timeout 10 git -C "$EIGEN_ROOT" pull --ff-only --quiet origin "$EIGEN_BRANCH" 2>/dev/null; then
-        echo "[$(date -u +%FT%TZ)] WARN: git pull --ff-only $EIGEN_BRANCH failed (local diverged, offline, or timed out after 10s) — local state may be stale this tick"
+
+    timeout --kill-after=5 30 git -C "$EIGEN_ROOT" pull --ff-only --quiet origin "$EIGEN_BRANCH" 2>/dev/null
+    rc=$?
+    if [ $rc -eq 124 ]; then
+        echo "[$(date -u +%FT%TZ)] WARN: git pull --ff-only $EIGEN_BRANCH timed out after 30s — local state may be stale this tick"
+    elif [ $rc -ne 0 ]; then
+        echo "[$(date -u +%FT%TZ)] WARN: git pull --ff-only $EIGEN_BRANCH failed (rc=$rc; diverged or offline) — local state may be stale this tick"
     fi
 fi
 
