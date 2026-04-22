@@ -103,3 +103,27 @@ class TestRunGitErrorPropagation:
         assert result.returncode == 0
         captured = capsys.readouterr()
         assert captured.err == ""
+
+
+class TestRunGitTimeout:
+    """run_git must enforce a timeout (1.8) so a hung network call does
+    not block the CLI indefinitely. Timeouts surface as returncode=124
+    with a TIMEOUT marker on stderr.
+    """
+
+    def test_timeout_surfaces_as_rc_124(self, repo, capsys):
+        # timeout=0 forces TimeoutExpired immediately on any git command
+        # without requiring a real hung remote.
+        result = run_git(["log", "--oneline"], cwd=str(repo), timeout=0)
+        assert result.returncode == 124
+        captured = capsys.readouterr()
+        assert "TIMEOUT after 0s" in captured.err
+
+    def test_timeout_silent_suppresses_stderr(self, repo, capsys):
+        result = run_git(["log", "--oneline"], cwd=str(repo), timeout=0, silent=True)
+        assert result.returncode == 124
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        # The synthesized CompletedProcess still carries the message
+        # internally so programmatic callers can inspect it.
+        assert "TIMEOUT" in result.stderr

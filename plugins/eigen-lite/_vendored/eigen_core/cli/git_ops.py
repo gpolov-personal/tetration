@@ -11,11 +11,27 @@ import sys
 from pathlib import Path
 
 
+# Default timeouts (seconds) — enforced on every git invocation so a
+# hung ssh handshake or unreachable remote cannot block the CLI forever.
+# Network-touching verbs get a larger budget than local-only ones.
+_DEFAULT_TIMEOUT = 30
+_NETWORK_TIMEOUT = 120
+_NETWORK_VERBS = {"pull", "push", "fetch", "clone", "ls-remote"}
+
+
+def _timeout_for(args: list[str]) -> int:
+    for arg in args:
+        if arg in _NETWORK_VERBS:
+            return _NETWORK_TIMEOUT
+    return _DEFAULT_TIMEOUT
+
+
 def run_git(
     args: list[str],
     cwd: str = "",
     check: bool = False,
     silent: bool = False,
+    timeout: int | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a git command and return the result.
 
@@ -25,15 +41,43 @@ def run_git(
     boolean. ``silent=True`` is for call-sites that use returncode as a
     condition check (e.g. ``git diff --quiet`` returns 1 when there are
     staged changes — not an error).
+
+    ``timeout`` caps wall time. When omitted, a default is chosen based on
+    the verb: 120s for network-touching commands (pull/push/fetch/...),
+    30s otherwise. A timeout surfaces as returncode=124 + a stderr
+    message so the failure is visible even when silent=False would
+    otherwise be quiet.
     """
     cmd = ["git"] + args
-    result = subprocess.run(
-        cmd,
-        cwd=cwd or None,
-        capture_output=True,
-        text=True,
-        check=check,
-    )
+    effective_timeout = timeout if timeout is not None else _timeout_for(args)
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd or None,
+            capture_output=True,
+            text=True,
+            check=check,
+            timeout=effective_timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        msg = f"[git {' '.join(args)}] TIMEOUT after {effective_timeout}s"
+        if not silent:
+            sys.stderr.write(msg + "\n")
+        # Synthesize a CompletedProcess-like result with returncode 124
+        # (the conventional exit code used by coreutils `timeout(1)`).
+        def _to_str(value: object) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return str(value)
+
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=124,
+            stdout=_to_str(exc.stdout),
+            stderr=_to_str(exc.stderr) + msg,
+        )
     if result.returncode != 0 and not silent:
         stderr = result.stderr.strip()
         if stderr:
