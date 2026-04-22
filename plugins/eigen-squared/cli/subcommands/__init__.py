@@ -712,6 +712,57 @@ def cmd_get_context(args: Namespace) -> int:
                 )
                 return EXIT_IDEMPOTENT_NOOP
 
+            # 2.4 — guard review_swarm_pr against re-entry after convergence
+            # and against chasing an already-merged or closed PR.
+            if cmd == "review_swarm_pr":
+                if sw.convergence.converged:
+                    print(
+                        f"ERROR: review_swarm_pr P{phase}.E{epic} refused: "
+                        f"swarm_execution.convergence.converged is True. "
+                        f"The review loop has already completed. If "
+                        "you need to re-review, reset the convergence "
+                        "flag and start a new iteration manually.",
+                        file=sys.stderr,
+                    )
+                    return EXIT_IDEMPOTENT_NOOP
+                # PR-state probe via gh. Advisory — if gh is missing,
+                # errors, or times out, we fall through to normal entry.
+                if sw.pr_number:
+                    import subprocess
+                    try:
+                        probe = subprocess.run(
+                            [
+                                "gh", "pr", "view", str(sw.pr_number),
+                                "--json", "state",
+                            ],
+                            cwd=_eigen_root() or None,
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                        )
+                    except (FileNotFoundError, subprocess.TimeoutExpired):
+                        probe = None
+                    if probe is not None and probe.returncode == 0:
+                        try:
+                            pr_data = json.loads(probe.stdout or "{}")
+                        except json.JSONDecodeError:
+                            pr_data = {}
+                        pr_state = pr_data.get("state")
+                        if pr_state in ("MERGED", "CLOSED"):
+                            print(
+                                f"ERROR: review_swarm_pr P{phase}.E{epic} "
+                                f"refused: PR #{sw.pr_number} is "
+                                f"{pr_state}. Pipeline state still "
+                                f"reports swarm_execution.status="
+                                f"'{sw.status}' — local JSON is stale. "
+                                f"Run `git -C {_eigen_root()} fetch "
+                                f"origin {_eigen_branch()} && git pull "
+                                f"--ff-only origin {_eigen_branch()}` "
+                                "to reconcile.",
+                                file=sys.stderr,
+                            )
+                            return EXIT_IDEMPOTENT_NOOP
+
             context["branch"] = sw.integration_branch or git_ops.integration_branch_name(phase, epic)
             context["manifest_path"] = sw.manifest_path
             context["swarm_status"] = sw.status
