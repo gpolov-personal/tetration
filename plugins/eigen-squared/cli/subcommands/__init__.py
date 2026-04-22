@@ -690,6 +690,28 @@ def cmd_get_context(args: Namespace) -> int:
             context["recommendations"] = recs
 
         else:  # orchestrate_swarm, review_swarm_pr
+            # 2.3 — guard against re-entering orchestrate_swarm after the
+            # PR has been created and no fixups are pending. The cron
+            # watchdog can schedule orchestrate_swarm twice back-to-back
+            # if the state on local dev is stale (the scenario seen on
+            # 2026-04-22 P2.E1 when four orchestrate_swarm runs followed
+            # the re-run of create_issues). A legitimate fixup re-run
+            # shows status == "iterating" (set by review_swarm_pr when
+            # it tells orchestrate to go apply fixups), not
+            # status == "pr_created".
+            if cmd == "orchestrate_swarm" and sw.status == "pr_created":
+                print(
+                    f"ERROR: orchestrate_swarm P{phase}.E{epic} refused: "
+                    f"swarm_execution.status is 'pr_created' (PR "
+                    f"#{sw.pr_number}). Either the pipeline already "
+                    "created the PR and is awaiting review, or the "
+                    "local state is stale. If you intend a fixup re-run, "
+                    "review_swarm_pr must set status to 'iterating' "
+                    "first.",
+                    file=sys.stderr,
+                )
+                return EXIT_IDEMPOTENT_NOOP
+
             context["branch"] = sw.integration_branch or git_ops.integration_branch_name(phase, epic)
             context["manifest_path"] = sw.manifest_path
             context["swarm_status"] = sw.status
