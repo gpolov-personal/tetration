@@ -308,7 +308,7 @@ def _sync_and_reload(
             f"be stale; refusing to proceed ({caller}).",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
 
     post_state = load_state(sf)
     if post_state:
@@ -324,7 +324,7 @@ def _sync_and_reload(
                     f"stale; refusing to proceed ({caller}).",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
     return None
 
 
@@ -364,9 +364,9 @@ def cmd_get_context(args: Namespace) -> int:
     root = _eigen_root()
     sf = _state_file(args)
 
-    # N6 — apply the same S2 TOCTOU-safe two-phase sync that cmd_next
-    # received in bedcca4. The previous one-shot form resolved branch
-    # from pre-sync state and ignored the sync return value.
+    # N6 — apply the same S2 TOCTOU-safe two-phase sync as cmd_next.
+    # The previous one-shot form resolved branch from pre-sync state
+    # and ignored the sync return value.
     err = _sync_and_reload(root, sf, caller="cmd_get_context")
     if err is not None:
         return err

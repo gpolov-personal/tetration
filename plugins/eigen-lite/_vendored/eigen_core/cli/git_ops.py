@@ -27,18 +27,23 @@ def _timeout_for(args: list[str]) -> int:
     return _DEFAULT_TIMEOUT
 
 
-# S9 + N3 — git errors sometimes echo the full remote URL.
-# 1.7 routes stderr to sys.stderr where the claude-tasks transcript
-# captures it. Scrub any embedded userinfo before emitting.
+# S9 + N3 + B-R3-2 — scrub credential URLs from git stderr.
 #
-# N3: the original regex required `user:token@` — it missed the two
-# most common real-world forms emitted by git-credential-store and
-# `gh auth setup-git`:
-#   - token-only: `https://ghp_TOKEN@github.com/...`
-#   - password-only: `https://:ghp_TOKEN@github.com/...`
-# The broadened pattern matches any `scheme://...@` userinfo block
-# (RFC 3986 §3.2.1), covering all three variants.
-_CREDENTIAL_URL_RE = re.compile(r"(\w+)://[^/@\s]+@")
+# Must catch: user:pass@, :pass@, bare PAT tokens (ghp_..., 20+ chars).
+# Must NOT mangle: ssh://git@github.com (standard SSH user principal,
+# not a secret — scrubbing it is a debugging regression).
+#
+# Two-branch regex:
+# 1. Any userinfo containing `:` — covers user:pass@ and :token@ forms
+# 2. Bare 20+ char alphanum token — covers ghp_TOKEN@ without `:`,
+#    while excluding short well-known principals like `git@`.
+_CREDENTIAL_URL_RE = re.compile(
+    r"(\w+)://"
+    r"(?:"
+    r"[^/@\s]*:[^@\s]*@"
+    r"|[^/@\s:]{20,}@"
+    r")"
+)
 
 
 def _scrub_credentials(text: str) -> str:

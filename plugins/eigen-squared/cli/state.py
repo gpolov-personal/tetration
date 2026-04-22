@@ -62,8 +62,9 @@ def locked_state(state_file: str | Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.parent / (path.name + ".lock")
     # O_CREAT|O_WRONLY is enough — flock attaches to the open file
-    # description, not to the file contents.
-    fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY, 0o644)
+    # description, not to the file contents. O_NOFOLLOW prevents a
+    # symlink-clobber if someone pre-creates the lock path as a symlink.
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield

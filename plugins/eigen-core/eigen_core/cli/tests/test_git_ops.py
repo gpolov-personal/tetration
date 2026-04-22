@@ -162,12 +162,12 @@ class TestCredentialScrubbing:
         assert "https://***@github.com/org/repo/" in out
 
     def test_scrub_token_only(self):
-        """N3 — token-only form (no colon) used by gh auth setup-git."""
+        """N3 — bare PAT token (20+ chars, no colon)."""
         from eigen_core.cli.git_ops import _scrub_credentials
 
-        src = "fatal: cannot access 'https://ghp_PROD_TOKEN@github.com/org/repo'"
+        src = "fatal: cannot access 'https://ghp_PROD_TOKEN_ABCDEFG@github.com/org/repo'"
         out = _scrub_credentials(src)
-        assert "ghp_PROD_TOKEN" not in out
+        assert "ghp_PROD_TOKEN_ABCDEFG" not in out
         assert "https://***@github.com/org/repo" in out
 
     def test_scrub_password_only(self):
@@ -189,6 +189,14 @@ class TestCredentialScrubbing:
         from eigen_core.cli.git_ops import _scrub_credentials
 
         src = "remote: https://github.com/org/repo"
+        assert _scrub_credentials(src) == src
+
+    def test_scrub_preserves_ssh_git_at(self):
+        """B-R3-2 — ssh://git@github.com is a standard SSH principal,
+        not a secret. Scrubbing it is a debugging regression."""
+        from eigen_core.cli.git_ops import _scrub_credentials
+
+        src = "fatal: could not read from 'ssh://git@github.com/org/repo.git'"
         assert _scrub_credentials(src) == src
 
     def test_scrub_applied_when_emitting_stderr(self, repo, capsys, monkeypatch):
