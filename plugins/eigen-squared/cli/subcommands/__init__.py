@@ -948,6 +948,22 @@ def cmd_complete(args: Namespace) -> int:
             return 1
         pk, ek = str(phase), str(epic)
         sw = state.phases[pk].plans[ek].swarm_execution
+        # 2.6 — refuse to bump review_iteration when the review has
+        # already converged. Without this guard a stray re-invocation
+        # of `complete review_swarm_pr` (e.g. from a retry loop or a
+        # cross-branch race) would keep incrementing the counter past
+        # the iteration_limit, desynchronize it from the on-disk
+        # review_report_iteration_N.md filenames, and confuse the
+        # convergence-with-residual-P3 accounting (see 79b3e42).
+        if sw.convergence.converged:
+            print(
+                f"ERROR: cannot complete review_swarm_pr for P{phase}.E{epic}: "
+                "swarm_execution.convergence.converged is already True. "
+                "The review loop is complete; further iterations are "
+                "not counted.",
+                file=sys.stderr,
+            )
+            return EXIT_IDEMPOTENT_NOOP
         sw.review_iteration += 1
         # Status stays as-is here (pr_created). The command decides:
         # - If findings remain: set-swarm-status iterating (creates fixup tasks)
