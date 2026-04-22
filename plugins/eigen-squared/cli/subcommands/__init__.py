@@ -190,9 +190,30 @@ def cmd_status(args: Namespace) -> int:
 
 
 def cmd_next(args: Namespace) -> int:
+    root = _eigen_root()
+
+    # 1.3 — auto-sync before reading state.
+    # cmd_next is the main entry point for the watchdog, so a stale local
+    # view here is what let the 2026-04-22 P2.E1 regression re-launch
+    # `create_issues_from_plan_swarm` against a `swarm_execution.status ==
+    # not_started` snapshot that had already been superseded on `origin/dev`.
+    # Mirrors the auto-sync block in cmd_get_context (225-230): resolve
+    # which branch owns the decision, pull it (ff-only via 1.5), then
+    # re-load state so determine_next sees the freshest JSON.
+    sf = _state_file(args)
+    if sf.exists():
+        pre_state = load_state(sf)
+        if pre_state:
+            pre_raw = pre_state.to_dict()
+            pre_branch = resolve_branch(
+                pre_raw, eigen_branch=_eigen_branch(), eigen_root=root
+            )
+            if pre_branch and root:
+                git_ops.sync(pre_branch, root)
+
     state, _ = _load_or_die(args)
     raw = state.to_dict()
-    result = determine_next(raw, eigen_root=_eigen_root())
+    result = determine_next(raw, eigen_root=root)
 
     if result is None:
         if getattr(args, "as_json", False):
@@ -202,7 +223,7 @@ def cmd_next(args: Namespace) -> int:
         return 0
 
     cmd, ctx = result
-    branch = resolve_branch(raw, eigen_branch=_eigen_branch(), eigen_root=_eigen_root())
+    branch = resolve_branch(raw, eigen_branch=_eigen_branch(), eigen_root=root)
     ctx["branch"] = branch
 
     if getattr(args, "as_json", False):
