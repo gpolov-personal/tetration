@@ -376,6 +376,110 @@ class TestDetermineNext:
             result = determine_next(state)
         assert result[0] == "create_issues_from_plan_swarm"
 
+    # --- 2.1 reality-check: disk wins over a stale manifest_path: None ---
+
+    def test_21_disk_manifest_reconciles_stale_null(self, tmp_path):
+        """When pipeline_state.json records manifest_path=None but the
+        swarm-manifest.json actually exists on disk (e.g. the state
+        update commit was lost in a squash-merge), the transition must
+        recognize the real state and route to orchestrate_swarm instead
+        of re-creating the manifest via create_issues_from_plan_swarm.
+        """
+        # Materialize the manifest on disk at the canonical path. B2
+        # requires the manifest's epic_id to match P<N>.E<M> for the
+        # reconcile to trust it.
+        epic_dir = tmp_path / "eigen_initiative" / "phases" / "phase_1" / "epic_1"
+        epic_dir.mkdir(parents=True)
+        (epic_dir / "swarm-manifest.json").write_text('{"epic_id": "P1.E1"}')
+
+        epic = make_epic_plan(
+            plan_status="completed", plan_converged=True,
+            swarm_status="not_started", manifest_path=None,
+        )
+        phase = make_phase(plans={"1": epic})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch("cli.transitions.load_epic_order", return_value=[1]):
+            result = determine_next(state, eigen_root=str(tmp_path))
+
+        # With the reality-check, swarm.status == "not_started" +
+        # manifest present on disk flows into next_for_swarm_pair,
+        # which returns "run_orchestrate" for not_started.
+        assert result[0] == "orchestrate_swarm"
+
+    # --- B2: manifest must belong to the right epic ---
+
+    def test_b2_manifest_without_epic_id_is_rejected(self, tmp_path):
+        """A manifest missing the `epic_id` field (partial write, older
+        schema) must be treated as absent — the transition must route
+        to create_issues_from_plan_swarm to regenerate it, not blindly
+        to orchestrate_swarm against a mystery file.
+        """
+        epic_dir = tmp_path / "eigen_initiative" / "phases" / "phase_1" / "epic_1"
+        epic_dir.mkdir(parents=True)
+        (epic_dir / "swarm-manifest.json").write_text('{"tasks": []}')
+
+        epic = make_epic_plan(
+            plan_status="completed", plan_converged=True,
+            swarm_status="not_started", manifest_path=None,
+        )
+        phase = make_phase(plans={"1": epic})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch("cli.transitions.load_epic_order", return_value=[1]):
+            result = determine_next(state, eigen_root=str(tmp_path))
+        assert result[0] == "create_issues_from_plan_swarm"
+
+    def test_b2_manifest_with_wrong_epic_id_is_rejected(self, tmp_path):
+        """A stale manifest from a different epic (e.g. leftover from a
+        reverted phase where the same path was reused) must not be
+        trusted for this epic.
+        """
+        epic_dir = tmp_path / "eigen_initiative" / "phases" / "phase_1" / "epic_1"
+        epic_dir.mkdir(parents=True)
+        (epic_dir / "swarm-manifest.json").write_text('{"epic_id": "P3.E2"}')
+
+        epic = make_epic_plan(
+            plan_status="completed", plan_converged=True,
+            swarm_status="not_started", manifest_path=None,
+        )
+        phase = make_phase(plans={"1": epic})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch("cli.transitions.load_epic_order", return_value=[1]):
+            result = determine_next(state, eigen_root=str(tmp_path))
+        assert result[0] == "create_issues_from_plan_swarm"
+
+    def test_b2_corrupt_manifest_is_rejected(self, tmp_path):
+        """An unparseable manifest (crashed writer, truncated file) must
+        be treated as absent rather than crashing determine_next.
+        """
+        epic_dir = tmp_path / "eigen_initiative" / "phases" / "phase_1" / "epic_1"
+        epic_dir.mkdir(parents=True)
+        (epic_dir / "swarm-manifest.json").write_text("{not json")
+
+        epic = make_epic_plan(
+            plan_status="completed", plan_converged=True,
+            swarm_status="not_started", manifest_path=None,
+        )
+        phase = make_phase(plans={"1": epic})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch("cli.transitions.load_epic_order", return_value=[1]):
+            result = determine_next(state, eigen_root=str(tmp_path))
+        assert result[0] == "create_issues_from_plan_swarm"
+
+    def test_21_no_disk_manifest_still_routes_to_create_issues(self, tmp_path):
+        """Conversely, when manifest_path is None AND the file does NOT
+        exist on disk, the transition keeps the original behavior and
+        routes to create_issues_from_plan_swarm.
+        """
+        epic = make_epic_plan(
+            plan_status="completed", plan_converged=True,
+            swarm_status="not_started", manifest_path=None,
+        )
+        phase = make_phase(plans={"1": epic})
+        state = make_pipeline_state(phases={"1": phase})
+        with patch("cli.transitions.load_epic_order", return_value=[1]):
+            result = determine_next(state, eigen_root=str(tmp_path))
+        assert result[0] == "create_issues_from_plan_swarm"
+
     def test_all_phases_approved_returns_none(self):
         phase = make_phase(phase_review_status="approved")
         state = make_pipeline_state(phases={"1": phase})

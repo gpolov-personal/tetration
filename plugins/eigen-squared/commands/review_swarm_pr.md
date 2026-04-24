@@ -430,25 +430,75 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iter
 
 **Skip this section entirely if not converged.**
 
-When converged, automatically merge the PR and prepare for the next epic:
+When converged, atomically merge the PR, reconcile `$EIGEN_BRANCH`, and
+verify the post-merge state reflects convergence. **Every step must
+succeed; a failure aborts 7.2 loudly so the next watchdog tick does not
+race against a half-applied merge.** This is the fix for the
+2026-04-22 P2.E1 regression, where a silent failure in this block left
+local `$EIGEN_BRANCH` stale and triggered an auto re-run of
+`create_issues_from_plan_swarm`.
 
 ```bash
-# Merge the PR (squash to keep history clean, --delete-branch removes remote branch)
-gh pr merge <pr_number> --squash --delete-branch
+# Precondition: working tree must be clean before merging. If 7.1's
+# commit-state left anything unstaged, stop here and fix it first.
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "ERROR: working tree is dirty before Stage 7.2 merge. Aborting."
+    exit 1
+fi
 
-# Return to $EIGEN_BRANCH and pull the merged changes
-git checkout $EIGEN_BRANCH
-git pull origin $EIGEN_BRANCH
+# Merge the PR (squash to keep history clean, --delete-branch removes remote branch).
+# Abort on any failure — a failed merge must NOT be followed by the checkout/pull sequence.
+gh pr merge <pr_number> --squash --delete-branch || {
+    echo "ERROR: gh pr merge failed for PR #<pr_number>. Stage 7.2 aborted."
+    exit 1
+}
 
-# Delete local integration branch (safety net if --delete-branch didn't clean up)
-git branch -d feat/P<N>.E<M> 2>/dev/null
+# Return to $EIGEN_BRANCH. Use --ff-only on the pull so a diverged local
+# branch fails loudly instead of producing a silent merge commit that
+# masks the real state.
+git fetch origin $EIGEN_BRANCH || {
+    echo "ERROR: git fetch origin $EIGEN_BRANCH failed post-merge."
+    exit 1
+}
+git checkout $EIGEN_BRANCH || {
+    echo "ERROR: checkout $EIGEN_BRANCH failed post-merge."
+    exit 1
+}
+git pull --ff-only origin $EIGEN_BRANCH || {
+    echo "ERROR: ff-only pull of $EIGEN_BRANCH failed after merging PR. Local state is DIVERGED — manual reconciliation required before the next tick."
+    exit 1
+}
+
+# Verify the post-merge pipeline_state.json reflects convergence on
+# $EIGEN_BRANCH. If it does not, the squash either didn't carry the
+# state update or the state was committed to a different branch — either
+# way, downstream decisions would be wrong.
+converged=$(eigen-squared status --json 2>/dev/null | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+sw = (d.get('phases', {})
+       .get('<phase>', {})
+       .get('plans', {})
+       .get('<epic>', {})
+       .get('swarm_execution', {}))
+print(sw.get('convergence', {}).get('converged', False))
+")
+if [ "$converged" != "True" ]; then
+    echo "ERROR: swarm_execution.convergence.converged is not True on $EIGEN_BRANCH after merge for P<phase>.E<epic>. Stage 7 did not reach a consistent state. Manual reconciliation required (likely: state update commit was lost in the squash)."
+    exit 1
+fi
+
+# Delete local integration branch. Use -D (force) because a squash-merge
+# is not a traditional merge from git's perspective — `git branch -d`
+# would refuse with "not fully merged" even though the content landed.
+git branch -D feat/P<N>.E<M> 2>/dev/null || true
 ```
 
 This ensures:
-1. The PR is merged automatically — no manual step needed
-2. `$EIGEN_BRANCH` has the latest code including this epic's changes
-3. The next epic's `/plan_epic_converge` reads the correct pipeline state
-4. The integration branch is cleaned up (both remote and local)
+1. The merge, checkout, pull, and state-verification are **fail-fast** — a failure at any step leaves a loud error for the watchdog/operator instead of silently proceeding to Stage 7.3.
+2. `$EIGEN_BRANCH` is actually up to date with the squash (`--ff-only` guarantees this or errors).
+3. The next epic's `/plan_epic_converge` and the next watchdog `cmd_next` read the correct pipeline state.
+4. The integration branch is cleaned up both remotely (`--delete-branch`) and locally (`branch -D`).
 
 ### 7.3 Report
 

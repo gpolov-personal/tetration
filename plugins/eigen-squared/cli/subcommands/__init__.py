@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from argparse import Namespace
 from datetime import datetime, timezone
@@ -20,6 +21,7 @@ from ..models import (
 from ..state import (
     create_initial_state,
     load_state,
+    locked_state,
     resolve_state_file,
     save_state,
     validate_state,
@@ -37,9 +39,69 @@ from ..scheduler import (
 from .. import git_ops
 
 
+# ---------------------------------------------------------------------------
+# Exit-code convention (2.5)
+# ---------------------------------------------------------------------------
+#
+# 0  — success; caller proceeds normally
+# 1  — generic error; caller retries / surfaces / aborts
+# 2  — stalled (max retries reached; operator action required). Used by
+#      cmd_schedule_next and observed by the watchdog.
+# 3  — idempotent-noop. The requested command has already been completed
+#      and re-executing it would be a no-op (e.g. an epic whose PR is
+#      already merged, or a swarm whose state is `converged`). Distinct
+#      from 1 so the watchdog can advance past the slot instead of
+#      retrying it. Returned by the guards in 2.2 / 2.3 / 2.4.
+#
+# Downstream consumers:
+#   - eigen-watchdog.sh treats exit 3 as "not-an-error; advance next
+#     tick without warnings".
+#   - The LLM invoked by the scheduler sees exit 3 from
+#     `eigen-squared get-context` and exits the skill immediately.
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_STALLED = 2
+EXIT_IDEMPOTENT_NOOP = 3
+
+
 def _shell_escape(val: str) -> str:
     """Escape a value for safe inclusion in a double-quoted shell string."""
     return val.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+
+
+def _gh_probe_json(
+    gh_args: list[str], cwd: str = "", timeout: int = 15
+):
+    """S18 — advisory-mode ``gh`` probe that returns parsed JSON.
+
+    Returns the parsed JSON payload on success, or ``None`` when the
+    probe could not complete (``gh`` missing, timed out, non-zero exit,
+    invalid JSON, OS-level error). The three 2.2 / 2.4 / 2.7 guards
+    previously inlined this same shape; consolidating removes ~60 LoC
+    of near-duplicated subprocess plumbing and makes the advisory
+    semantics (``None`` ≠ failure) a single, greppable contract.
+
+    Callers must decide what ``None`` means locally. For the phase-
+    approval check we keep the existing "gh unreachable → don't block"
+    policy; for the swarm-entry guards the same policy preserves local
+    offline testing.
+    """
+    try:
+        probe = subprocess.run(
+            ["gh"] + gh_args,
+            cwd=cwd or None,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if probe.returncode != 0:
+        return None
+    try:
+        return json.loads(probe.stdout or "null")
+    except json.JSONDecodeError:
+        return None
 
 
 def _eigen_root() -> str:
@@ -56,7 +118,7 @@ def _state_file(args: Namespace) -> Path:
     root = _eigen_root()
     if not root:
         print("ERROR: EIGEN_ROOT not set", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
     return resolve_state_file(root)
 
 
@@ -65,8 +127,31 @@ def _load_or_die(args: Namespace) -> tuple[PipelineState, Path]:
     state = load_state(sf)
     if state is None:
         print(f"ERROR: Cannot load {sf}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
     return state, sf
+
+
+def _with_state_lock(handler):
+    """B1 — decorator that acquires the pipeline_state.json flock for the
+    full duration of a mutating handler.
+
+    Applied at dispatch time (see ``dispatch`` below) so the handler
+    bodies stay unchanged. The lock serializes concurrent
+    ``load_state → mutate → save_state`` cycles — 1.1's atomic rename
+    prevents torn *reads* but not lost *updates* when two writers race
+    (e.g. watchdog-spawned LLM task + a manual
+    ``eigen-squared add-recommendation``). The held region covers the
+    entire handler, so a ``sys.exit`` inside ``_load_or_die`` still
+    releases the lock via ``locked_state``'s ``finally``.
+    """
+
+    def wrapped(args: Namespace) -> int:
+        sf = _state_file(args)
+        with locked_state(sf):
+            return handler(args)
+
+    wrapped.__name__ = handler.__name__
+    return wrapped
 
 
 def _now() -> str:
@@ -93,33 +178,38 @@ CONVERGE_COMMANDS = {"plan_epic_converge", "bootstrap_converge", "space_split_co
 
 
 def dispatch(args: Namespace) -> int:
-    """Route to the appropriate subcommand handler."""
+    """Route to the appropriate subcommand handler.
+
+    Commands that mutate ``pipeline_state.json`` (load→save cycles)
+    are wrapped with ``_with_state_lock`` so concurrent invocations
+    cannot produce lost updates.
+    """
     handlers = {
-        "init": cmd_init,
+        "init": _with_state_lock(cmd_init),
         "status": cmd_status,
         "next": cmd_next,
         "get-context": cmd_get_context,
-        "complete": cmd_complete,
-        "mark-converged": cmd_mark_converged,
-        "add-recommendation": cmd_add_recommendation,
-        "clear-recommendations": cmd_clear_recommendations,
-        "set-swarm-status": cmd_set_swarm_status,
-        "add-review-report": cmd_add_review_report,
-        "init-plan": cmd_init_plan,
-        "set-phase-review": cmd_set_phase_review,
-        "commit-state": cmd_commit_state,
+        "complete": _with_state_lock(cmd_complete),
+        "mark-converged": _with_state_lock(cmd_mark_converged),
+        "add-recommendation": _with_state_lock(cmd_add_recommendation),
+        "clear-recommendations": _with_state_lock(cmd_clear_recommendations),
+        "set-swarm-status": _with_state_lock(cmd_set_swarm_status),
+        "add-review-report": _with_state_lock(cmd_add_review_report),
+        "init-plan": _with_state_lock(cmd_init_plan),
+        "set-phase-review": _with_state_lock(cmd_set_phase_review),
+        "commit-state": _with_state_lock(cmd_commit_state),
         "sync": cmd_sync,
         "resolve-branch": cmd_resolve_branch,
         "checkout-branch": cmd_checkout_branch,
         "schedule-next": cmd_schedule_next,
-        "validate": cmd_validate,
+        "validate": _with_state_lock(cmd_validate),
         "install": cmd_install,
         "write-env": cmd_write_env,
     }
     handler = handlers.get(args.command)
     if not handler:
         print(f"Unknown command: {args.command}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     return handler(args)
 
 
@@ -132,7 +222,7 @@ def cmd_init(args: Namespace) -> int:
     sf = _state_file(args)
     if sf.exists():
         print(f"ERROR: {sf} already exists. Delete it first to re-initialize.", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     state = create_initial_state(args.initiative, args.phase_count)
     save_state(state, sf)
     print(json.dumps({"status": "created", "state_file": str(sf), "phase_count": args.phase_count}))
@@ -189,10 +279,66 @@ def cmd_status(args: Namespace) -> int:
     return 0
 
 
+def _sync_and_reload(
+    root: str, sf: Path, caller: str,
+) -> int | None:
+    """S2 + N6 — TOCTOU-safe two-phase sync shared by cmd_next and
+    cmd_get_context.
+
+    1. Sync $EIGEN_BRANCH (canonical source of truth for
+       pipeline_state.json).
+    2. Reload state, re-resolve the decision branch — if it points at
+       an integration branch (swarm commands), sync that too.
+
+    Returns ``None`` on success (caller should proceed), or an int
+    exit code if the sync failed (caller should return it).
+
+    Skips silently when there is no ``.git`` directory (tests, local
+    scaffolds without a remote).
+    """
+    has_git = bool(root) and (Path(root) / ".git").exists()
+    if not has_git or not sf.exists():
+        return None
+
+    eigen_branch = _eigen_branch()
+    if not git_ops.sync(eigen_branch, root):
+        print(
+            f"ERROR: git pull --ff-only origin {eigen_branch} failed "
+            "(diverged history, network, or auth). Local state may "
+            f"be stale; refusing to proceed ({caller}).",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    post_state = load_state(sf)
+    if post_state:
+        post_raw = post_state.to_dict()
+        resolved = resolve_branch(
+            post_raw, eigen_branch=eigen_branch, eigen_root=root
+        )
+        if resolved and resolved != eigen_branch:
+            if not git_ops.sync(resolved, root):
+                print(
+                    f"ERROR: git pull --ff-only origin {resolved} "
+                    "failed. Local integration-branch state may be "
+                    f"stale; refusing to proceed ({caller}).",
+                    file=sys.stderr,
+                )
+                return EXIT_ERROR
+    return None
+
+
 def cmd_next(args: Namespace) -> int:
+    root = _eigen_root()
+    sf = _state_file(args)
+
+    err = _sync_and_reload(root, sf, caller="cmd_next")
+    if err is not None:
+        return err
+
     state, _ = _load_or_die(args)
     raw = state.to_dict()
-    result = determine_next(raw, eigen_root=_eigen_root())
+    result = determine_next(raw, eigen_root=root)
 
     if result is None:
         if getattr(args, "as_json", False):
@@ -202,7 +348,7 @@ def cmd_next(args: Namespace) -> int:
         return 0
 
     cmd, ctx = result
-    branch = resolve_branch(raw, eigen_branch=_eigen_branch(), eigen_root=_eigen_root())
+    branch = resolve_branch(raw, eigen_branch=_eigen_branch(), eigen_root=root)
     ctx["branch"] = branch
 
     if getattr(args, "as_json", False):
@@ -216,20 +362,15 @@ def cmd_next(args: Namespace) -> int:
 
 def cmd_get_context(args: Namespace) -> int:
     root = _eigen_root()
-
-    # Step 1: Auto-sync — pull from the correct branch before reading state.
-    # Resolves the branch first (integration branch for swarm commands,
-    # EIGEN_BRANCH for everything else), then pulls.
     sf = _state_file(args)
-    if sf.exists():
-        pre_state = load_state(sf)
-        if pre_state:
-            raw = pre_state.to_dict()
-            branch = resolve_branch(raw, eigen_branch=_eigen_branch(), eigen_root=root)
-            if branch and root:
-                git_ops.sync(branch, root)
 
-    # Step 2: Reload state after sync (may have changed from pull)
+    # N6 — apply the same S2 TOCTOU-safe two-phase sync as cmd_next.
+    # The previous one-shot form resolved branch from pre-sync state
+    # and ignored the sync return value.
+    err = _sync_and_reload(root, sf, caller="cmd_get_context")
+    if err is not None:
+        return err
+
     state, _ = _load_or_die(args)
     cmd = args.target_command
     phase = args.phase
@@ -246,11 +387,11 @@ def cmd_get_context(args: Namespace) -> int:
         elif result and result[0] != cmd:
             print(f"ERROR: Next command is {result[0]}, not {cmd}. "
                   f"Run `eigen-squared next` to see what should run.", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
 
     if phase is None and cmd not in ("time_split", "deepen_time_split"):
         print(f"ERROR: --phase required for {cmd}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     # Step 4: Resolve branch for this command's context
     branch = _eigen_branch()
@@ -280,7 +421,7 @@ def cmd_get_context(args: Namespace) -> int:
                     f"No re-run needed.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
             context["iteration"] = ts.iteration + 1
             context["current_iteration"] = ts.iteration
             context["is_first_run"] = ts.iteration == 0
@@ -300,14 +441,14 @@ def cmd_get_context(args: Namespace) -> int:
                         f"Run /deepen_time_split first to generate feedback before re-running.",
                         file=sys.stderr,
                     )
-                    return 1
+                    return EXIT_ERROR
                 if ts.feedback_consumed and feedback_exists:
                     print(
                         f"ERROR: Feedback already processed in iteration {ts.iteration}. "
                         f"Run /deepen_time_split again for fresh review before re-running.",
                         file=sys.stderr,
                     )
-                    return 1
+                    return EXIT_ERROR
                 if not ts.feedback_consumed and feedback_exists:
                     context["should_process_feedback"] = True
                     context["feedback_path"] = dts.feedback_path
@@ -318,7 +459,7 @@ def cmd_get_context(args: Namespace) -> int:
                         f"Run /deepen_time_split to generate it.",
                         file=sys.stderr,
                     )
-                    return 1
+                    return EXIT_ERROR
             else:
                 context["should_process_feedback"] = False
 
@@ -335,14 +476,14 @@ def cmd_get_context(args: Namespace) -> int:
                     f"{ts.convergence.reason}). No further review needed.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
             if ts.status == "not_started":
                 print(
                     "ERROR: time_split has not run yet. "
                     "Run /time_split first to generate the phase split.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
 
             context["iteration"] = dts.iteration + 1
             context["main_command_iteration"] = ts.iteration
@@ -394,16 +535,16 @@ def cmd_get_context(args: Namespace) -> int:
             f"Use /{replacement} instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
 
     elif cmd == "bootstrap_converge":
         if phase is None:
             print("ERROR: --phase required for bootstrap_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         bc = state.phases[pk].bootstrap_converge
 
         if bc.convergence.converged:
@@ -413,7 +554,7 @@ def cmd_get_context(args: Namespace) -> int:
                 f"No re-run needed.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
         # Self-converging command: no should_process_feedback flag, no
         # main↔deepen feedback lifecycle. The internal swarm loop manages
@@ -445,11 +586,11 @@ def cmd_get_context(args: Namespace) -> int:
     elif cmd == "space_split_converge":
         if phase is None:
             print("ERROR: --phase required for space_split_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ssc = state.phases[pk].space_split_converge
 
         if ssc.convergence.converged:
@@ -459,7 +600,7 @@ def cmd_get_context(args: Namespace) -> int:
                 f"No re-run needed.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
         context["iteration"] = ssc.iteration + 1
         context["current_iteration"] = ssc.iteration
@@ -484,11 +625,11 @@ def cmd_get_context(args: Namespace) -> int:
     elif cmd == "plan_epic_converge":
         if epic is None:
             print("ERROR: --epic required for plan_epic_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ph = state.phases[pk]
 
         if ek not in ph.plans:
@@ -523,7 +664,7 @@ def cmd_get_context(args: Namespace) -> int:
                 f"No re-run needed.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_ERROR
 
         context["iteration"] = pec.iteration + 1
         context["current_iteration"] = pec.iteration
@@ -546,11 +687,11 @@ def cmd_get_context(args: Namespace) -> int:
     elif cmd in ("create_issues_from_plan_swarm", "orchestrate_swarm", "review_swarm_pr"):
         if phase is None or epic is None:
             print(f"ERROR: --phase and --epic required for {cmd}", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases or ek not in state.phases[pk].plans:
             print(f"ERROR: Plan P{phase}.E{epic} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ep = state.phases[pk].plans[ek]
         sw = ep.swarm_execution
 
@@ -562,7 +703,7 @@ def cmd_get_context(args: Namespace) -> int:
                     f"Run /plan_epic_converge first.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
             # Guard: manifest must NOT exist
             if sw.manifest_path is not None:
                 print(
@@ -570,7 +711,48 @@ def cmd_get_context(args: Namespace) -> int:
                     f"This epic has already been task-ified.",
                     file=sys.stderr,
                 )
-                return 1
+                return EXIT_ERROR
+            # 2.2 — Guard C: reject re-run after the PR has already been
+            # merged on $EIGEN_BRANCH. This is the fingerprint of the
+            # 2026-04-22 P2.E1 regression: pipeline_state.json shows
+            # manifest_path == None on stale local state, but the squash
+            # of the converged PR already landed on origin/dev. Without
+            # this guard, create_issues would happily re-build the
+            # manifest and re-launch the swarm against a state that has
+            # in fact already completed.
+            #
+            # Implemented as an advisory guard: if `gh` is unavailable
+            # or errors, the guard becomes a no-op (returncode != 0 →
+            # skip), preserving today's behavior for environments
+            # without gh. Exits with EXIT_IDEMPOTENT_NOOP (3) so the
+            # watchdog treats this as "advance, don't retry".
+            branch_name = git_ops.integration_branch_name(phase, epic)
+            eigen_branch = _eigen_branch()
+            merged = _gh_probe_json(
+                [
+                    "pr", "list",
+                    "--state", "merged",
+                    "--base", eigen_branch,
+                    "--head", branch_name,
+                    "--json", "number,mergedAt",
+                    "--limit", "1",
+                ],
+                cwd=_eigen_root() or "",
+            )
+            if merged:
+                pr = merged[0]
+                print(
+                    f"ERROR: PR #{pr.get('number')} for branch "
+                    f"'{branch_name}' is already MERGED (mergedAt="
+                    f"{pr.get('mergedAt')}). Pipeline state is "
+                    f"stale — run `git -C {_eigen_root()} fetch "
+                    f"origin {eigen_branch} && git pull --ff-only "
+                    f"origin {eigen_branch}` and retry, or delete "
+                    "the integration branch if re-run is truly "
+                    "intentional.",
+                    file=sys.stderr,
+                )
+                return EXIT_IDEMPOTENT_NOOP
             context["branch"] = git_ops.integration_branch_name(phase, epic)
             context["plan_file"] = ep.plan_epic_converge.output_paths.get("plan_file", f"phases/phase_{phase}/epic_{epic}/plan.md")
             context["epic_file"] = f"phases/phase_{phase}/epic_{epic}/epic.md"
@@ -591,6 +773,65 @@ def cmd_get_context(args: Namespace) -> int:
             context["recommendations"] = recs
 
         else:  # orchestrate_swarm, review_swarm_pr
+            # 2.3 — guard against re-entering orchestrate_swarm after the
+            # PR has been created and no fixups are pending. The cron
+            # watchdog can schedule orchestrate_swarm twice back-to-back
+            # if the state on local dev is stale (the scenario seen on
+            # 2026-04-22 P2.E1 when four orchestrate_swarm runs followed
+            # the re-run of create_issues). A legitimate fixup re-run
+            # shows status == "iterating" (set by review_swarm_pr when
+            # it tells orchestrate to go apply fixups), not
+            # status == "pr_created".
+            if cmd == "orchestrate_swarm" and sw.status == "pr_created":
+                print(
+                    f"ERROR: orchestrate_swarm P{phase}.E{epic} refused: "
+                    f"swarm_execution.status is 'pr_created' (PR "
+                    f"#{sw.pr_number}). Either the pipeline already "
+                    "created the PR and is awaiting review, or the "
+                    "local state is stale. If you intend a fixup re-run, "
+                    "review_swarm_pr must set status to 'iterating' "
+                    "first.",
+                    file=sys.stderr,
+                )
+                return EXIT_IDEMPOTENT_NOOP
+
+            # 2.4 — guard review_swarm_pr against re-entry after convergence
+            # and against chasing an already-merged or closed PR.
+            if cmd == "review_swarm_pr":
+                if sw.convergence.converged:
+                    print(
+                        f"ERROR: review_swarm_pr P{phase}.E{epic} refused: "
+                        f"swarm_execution.convergence.converged is True. "
+                        f"The review loop has already completed. If "
+                        "you need to re-review, reset the convergence "
+                        "flag and start a new iteration manually.",
+                        file=sys.stderr,
+                    )
+                    return EXIT_IDEMPOTENT_NOOP
+                # PR-state probe via gh. Advisory — if gh is missing,
+                # errors, or times out, we fall through to normal entry.
+                if sw.pr_number:
+                    pr_data = _gh_probe_json(
+                        ["pr", "view", str(sw.pr_number), "--json", "state"],
+                        cwd=_eigen_root() or "",
+                    )
+                    if isinstance(pr_data, dict):
+                        pr_state = pr_data.get("state")
+                        if pr_state in ("MERGED", "CLOSED"):
+                            print(
+                                f"ERROR: review_swarm_pr P{phase}.E{epic} "
+                                f"refused: PR #{sw.pr_number} is "
+                                f"{pr_state}. Pipeline state still "
+                                f"reports swarm_execution.status="
+                                f"'{sw.status}' — local JSON is stale. "
+                                f"Run `git -C {_eigen_root()} fetch "
+                                f"origin {_eigen_branch()} && git pull "
+                                f"--ff-only origin {_eigen_branch()}` "
+                                "to reconcile.",
+                                file=sys.stderr,
+                            )
+                            return EXIT_IDEMPOTENT_NOOP
+
             context["branch"] = sw.integration_branch or git_ops.integration_branch_name(phase, epic)
             context["manifest_path"] = sw.manifest_path
             context["swarm_status"] = sw.status
@@ -658,16 +899,16 @@ def cmd_complete(args: Namespace) -> int:
             f"Use /{replacement} instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
 
     elif cmd == "space_split_converge":
         if phase is None:
             print("ERROR: --phase required for space_split_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ssc = state.phases[pk].space_split_converge
         ssc.status = "completed"
         ssc.iteration += 1
@@ -694,11 +935,11 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "bootstrap_converge":
         if phase is None:
             print("ERROR: --phase required for bootstrap_converge", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk = str(phase)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         bc = state.phases[pk].bootstrap_converge
         bc.status = "completed"
         bc.iteration += 1
@@ -720,11 +961,11 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "plan_epic_converge":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         if ek not in state.phases[pk].plans:
             state.phases[pk].plans[ek] = EpicPlan()
         pec = state.phases[pk].plans[ek].plan_epic_converge
@@ -743,11 +984,11 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "create_issues_from_plan_swarm":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         if pk not in state.phases:
             print(f"ERROR: Phase {phase} not found", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         ph = state.phases[pk]
         if ek not in ph.plans:
             ph.plans[ek] = EpicPlan()
@@ -760,7 +1001,7 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "orchestrate_swarm":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         sw = state.phases[pk].plans[ek].swarm_execution
         sw.status = "pr_created"
@@ -773,9 +1014,25 @@ def cmd_complete(args: Namespace) -> int:
     elif cmd == "review_swarm_pr":
         if phase is None or epic is None:
             print("ERROR: --phase and --epic required", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
         pk, ek = str(phase), str(epic)
         sw = state.phases[pk].plans[ek].swarm_execution
+        # 2.6 — refuse to bump review_iteration when the review has
+        # already converged. Without this guard a stray re-invocation
+        # of `complete review_swarm_pr` (e.g. from a retry loop or a
+        # cross-branch race) would keep incrementing the counter past
+        # the iteration_limit, desynchronize it from the on-disk
+        # review_report_iteration_N.md filenames, and confuse the
+        # convergence-with-residual-P3 accounting.
+        if sw.convergence.converged:
+            print(
+                f"ERROR: cannot complete review_swarm_pr for P{phase}.E{epic}: "
+                "swarm_execution.convergence.converged is already True. "
+                "The review loop is complete; further iterations are "
+                "not counted.",
+                file=sys.stderr,
+            )
+            return EXIT_IDEMPOTENT_NOOP
         sw.review_iteration += 1
         # Status stays as-is here (pr_created). The command decides:
         # - If findings remain: set-swarm-status iterating (creates fixup tasks)
@@ -788,7 +1045,7 @@ def cmd_complete(args: Namespace) -> int:
 
     else:
         print(f"ERROR: Unknown command or missing --phase: {cmd}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     save_state(state, sf)
     print(json.dumps({"status": "completed", "command": cmd}))
@@ -813,7 +1070,7 @@ def cmd_mark_converged(args: Namespace) -> int:
             "Use `eigen-squared mark-converged bootstrap_converge --phase N` instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
     elif cmd == "bootstrap_converge" and phase is not None:
         caller = "bootstrap_converge"  # self-marking, like plan_epic_converge
         target = state.phases[str(phase)].bootstrap_converge
@@ -824,7 +1081,7 @@ def cmd_mark_converged(args: Namespace) -> int:
             "Use `eigen-squared mark-converged space_split_converge --phase N` instead.",
             file=sys.stderr,
         )
-        return 1
+        return EXIT_ERROR
     elif cmd == "space_split_converge" and phase is not None:
         caller = "space_split_converge"  # self-marking, like bootstrap_converge
         target = state.phases[str(phase)].space_split_converge
@@ -844,7 +1101,7 @@ def cmd_mark_converged(args: Namespace) -> int:
         return 0
     else:
         print(f"ERROR: Cannot converge {cmd} with given args", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     target.convergence.converged = True
     target.convergence.decided_by = caller
@@ -862,10 +1119,10 @@ def cmd_add_recommendation(args: Namespace) -> int:
     allowed_targets = RECOMMENDATION_MATRIX.get(args.from_cmd)
     if allowed_targets is None:
         print(f"ERROR: {args.from_cmd} is not a valid recommendation source", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     if args.target not in allowed_targets:
         print(f"ERROR: {args.from_cmd} cannot recommend to {args.target}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     if args.target not in state.recommendations:
         state.recommendations[args.target] = []
@@ -878,7 +1135,7 @@ def cmd_add_recommendation(args: Namespace) -> int:
     ]
     if len(existing) >= MAX_RECOMMENDATIONS_PER_PAIR:
         print(f"WARNING: Max {MAX_RECOMMENDATIONS_PER_PAIR} recommendations from {args.from_cmd} to {args.target}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     rec = Recommendation(
         from_cmd=args.from_cmd,
@@ -914,10 +1171,10 @@ def cmd_set_swarm_status(args: Namespace) -> int:
     pk, ek = str(args.phase), str(args.epic)
     if pk not in state.phases or ek not in state.phases[pk].plans:
         print(f"ERROR: Plan P{args.phase}.E{args.epic} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     if args.status_value not in VALID_SWARM_STATUSES:
         print(f"ERROR: Invalid status: {args.status_value}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     sw = state.phases[pk].plans[ek].swarm_execution
     sw.status = args.status_value
@@ -950,7 +1207,7 @@ def cmd_init_plan(args: Namespace) -> int:
     pk, ek = str(args.phase), str(args.epic)
     if pk not in state.phases:
         print(f"ERROR: Phase {args.phase} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     if ek in state.phases[pk].plans:
         print(f"Plan P{args.phase}.E{args.epic} already exists")
         return 0
@@ -965,8 +1222,103 @@ def cmd_set_phase_review(args: Namespace) -> int:
     pk = str(args.phase)
     if pk not in state.phases:
         print(f"ERROR: Phase {args.phase} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     pr = state.phases[pk].phase_review
+
+    # 2.7 — before approving a phase, verify every epic swarm has a
+    # merged PR on $EIGEN_BRANCH. The old behavior accepted
+    # --review-status approved purely on the operator's word, with no
+    # cross-check against GitHub. That let a human respond "Yes" in
+    # eigen_continue Mode 2 even when the PRs were still open — the
+    # pipeline would advance to phase N+1 on an inconsistent base.
+    #
+    # The check runs only for status=approved and degrades gracefully
+    # when `gh` is absent (no-op). Can be bypassed by passing
+    # --force-approve for operator discretion (e.g. manual merges done
+    # via CLI, not via PR).
+    if args.review_status == "approved" and not getattr(args, "force_approve", False):
+        phase = state.phases[pk]
+
+        # S6 — an epic with status ∈ {pr_created, iterating, converged}
+        # but no recorded pr_number is a state/GitHub desync: the
+        # orchestrate/review loop got far enough to set a non-terminal
+        # status but the pr_number was never persisted (likely
+        # orchestrate_swarm crashed between creating the PR and
+        # committing state, or a pre-pr_number release wrote the state).
+        # The prior code silently `continue`-d past such epics; with
+        # them excluded, ``probed_any`` could end up False and the
+        # approval passed. Treat them as a blocker regardless of the
+        # gh probe outcome.
+        desynced: list[str] = []
+        for ek, ep in phase.plans.items():
+            sw = ep.swarm_execution
+            if not sw.pr_number and sw.status in (
+                "pr_created", "iterating", "converged",
+            ):
+                desynced.append(ek)
+        if desynced:
+            details = ", ".join(f"P{args.phase}.E{ek}" for ek in desynced)
+            print(
+                f"ERROR: cannot approve phase {args.phase}: the "
+                f"following epic(s) have swarm_execution.status in "
+                f"{{pr_created, iterating, converged}} but no recorded "
+                f"pr_number: {details}. This indicates a state/GitHub "
+                "desync — the PR may exist on origin without having "
+                "been recorded, or the local state is stale. "
+                "Reconcile before approving (pull latest, or pass "
+                "--force-approve if the merges were performed "
+                "out-of-band).",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
+        # S11 — single batched `gh pr list` instead of N sequential
+        # `gh pr view`s. At N=20 epics this is ~15s vs. ~400-800ms.
+        # `--state all` covers OPEN/MERGED/CLOSED so we can classify
+        # each recorded pr_number without another round-trip.
+        eigen_branch = _eigen_branch()
+        all_prs = _gh_probe_json(
+            [
+                "pr", "list",
+                "--base", eigen_branch,
+                "--state", "all",
+                "--json", "number,state",
+                "--limit", "200",
+            ],
+            cwd=_eigen_root() or "",
+        )
+        unmerged: list[tuple[str, int]] = []
+        probed_any = isinstance(all_prs, list)
+        if probed_any:
+            states_by_number = {
+                p.get("number"): p.get("state")
+                for p in all_prs  # type: ignore[union-attr]
+                if isinstance(p, dict)
+            }
+            for ek, ep in phase.plans.items():
+                sw = ep.swarm_execution
+                if not sw.pr_number:
+                    continue
+                # Absence from the batched result is treated as unmerged
+                # (pessimistic): either the PR has a different --base,
+                # was deleted, or fell outside the --limit. Any of those
+                # warrants a stop-and-reconcile.
+                if states_by_number.get(sw.pr_number) != "MERGED":
+                    unmerged.append((ek, sw.pr_number))
+        if probed_any and unmerged:
+            details = ", ".join(
+                f"P{args.phase}.E{ek} (PR #{n})" for ek, n in unmerged
+            )
+            print(
+                f"ERROR: cannot approve phase {args.phase}: the "
+                f"following epic PR(s) are not MERGED: {details}. "
+                "Either merge them via `gh pr merge` (or GitHub UI) "
+                "and re-run, or pass --force-approve if the merges "
+                "were performed out-of-band.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
     pr.status = args.review_status
     now = _now()
     if args.review_status == "testing":
@@ -995,7 +1347,7 @@ def cmd_commit_state(args: Namespace) -> int:
         print(json.dumps({"status": "committed"}))
         return 0
     print("ERROR: git commit/push failed", file=sys.stderr)
-    return 1
+    return EXIT_ERROR
 
 
 def cmd_sync(args: Namespace) -> int:
@@ -1005,8 +1357,18 @@ def cmd_sync(args: Namespace) -> int:
     if ok:
         print(json.dumps({"status": "synced", "branch": branch}))
         return 0
-    print(f"WARNING: git pull from {branch} failed (may be offline)", file=sys.stderr)
-    return 0  # Non-fatal
+    # 1.5 — a failed ff-only pull means the local branch is either behind
+    # the remote in a way that cannot fast-forward (diverged history,
+    # force-push upstream) or unreachable. Either way, decisions made
+    # against the stale local state are unsafe — surface it with a real
+    # non-zero exit so the watchdog / invoking LLM treats it as an error
+    # instead of continuing on a silent warning.
+    print(
+        f"ERROR: git pull --ff-only origin {branch} failed "
+        "(diverged history, network, or auth). Local state may be stale.",
+        file=sys.stderr,
+    )
+    return EXIT_ERROR
 
 
 def cmd_resolve_branch(args: Namespace) -> int:
@@ -1032,7 +1394,7 @@ def cmd_checkout_branch(args: Namespace) -> int:
         print(json.dumps({"status": "checked_out", "branch": branch}))
         return 0
     print(f"ERROR: Failed to checkout {branch}", file=sys.stderr)
-    return 1
+    return EXIT_ERROR
 
 
 def cmd_schedule_next(args: Namespace) -> int:
@@ -1067,14 +1429,14 @@ def cmd_schedule_next(args: Namespace) -> int:
                             "context_key": context_key, "attempt": attempt}),
                 file=sys.stderr,
             )
-            return 2  # Distinct exit code: stalled
+            return EXIT_STALLED
         return 0  # Dedup — not an error
     context["_attempt"] = attempt
 
     api = os.environ.get("CLAUDE_TASKS_API", "")
     if not api:
         print("ERROR: CLAUDE_TASKS_API not set", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     success = schedule_command(
         command, context,
@@ -1103,7 +1465,7 @@ def cmd_validate(args: Namespace) -> int:
         return 0
 
     print(json.dumps({"valid": False, "errors": errors}))
-    return 1
+    return EXIT_ERROR
 
 
 def cmd_write_env(args: Namespace) -> int:
@@ -1111,18 +1473,18 @@ def cmd_write_env(args: Namespace) -> int:
     root = _eigen_root()
     if not root:
         print("ERROR: EIGEN_ROOT not set", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     settings_path = Path(root) / ".claude" / "settings.json"
     if not settings_path.exists():
         print(f"ERROR: {settings_path} not found", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     try:
         settings = json.loads(settings_path.read_text())
     except (json.JSONDecodeError, OSError) as e:
         print(f"ERROR: Failed to read settings: {e}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     env_vars = settings.get("env", {})
 

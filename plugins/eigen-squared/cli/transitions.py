@@ -1,11 +1,16 @@
 """Pipeline state machine — determine the next command to run.
 
 Ported from hooks/pipeline_controller.py (lines 159-456).
-Pure functions: no I/O, no side effects, fully testable.
+Mostly pure functions; the single I/O touch point is a
+`swarm-manifest.json` existence probe in the create-issues gate (2.1),
+which lets the transition reconcile a stale `manifest_path: null`
+against the real filesystem.
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Optional
 
 from .models import PipelineState
@@ -14,6 +19,35 @@ from .epic_manifest import load_epic_order
 
 # Commands that run on integration branches (feat/P<N>.E<M>)
 INTEGRATION_BRANCH_COMMANDS = {"orchestrate_swarm", "review_swarm_pr"}
+
+
+def _manifest_belongs_to_epic(
+    manifest_file: Path, phase_num: int, epic_num: int
+) -> bool:
+    """B2 — open the on-disk swarm-manifest.json and verify its
+    ``epic_id`` matches ``P<phase>.E<epic>`` before trusting it.
+
+    The 2.1 reconcile-against-disk gate upstream treats *any* manifest
+    at the canonical path as authoritative. Without validation, a
+    stale manifest from a reverted phase, a partial file from a
+    crashed writer, or a leftover from a manually aborted epic would
+    route the pipeline to ``orchestrate_swarm`` against the wrong
+    task IDs. Keep the check conservative: on I/O / JSON / schema
+    failure, treat the manifest as absent (return False) so the
+    upstream decision falls through to ``create_issues_from_plan_swarm``
+    and regenerates it instead of silently mis-routing.
+    """
+    expected_id = f"P{phase_num}.E{epic_num}"
+    try:
+        # N16 — size bound: a pathologically large file could crash
+        # json.loads with RecursionError or eat memory. Swarm manifests
+        # are typically 5-50 KB; 1 MB is a generous ceiling.
+        if manifest_file.stat().st_size > 1_000_000:
+            return False
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, RecursionError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("epic_id") == expected_id
 
 
 def next_for_convergence_pair(
@@ -175,10 +209,40 @@ def determine_next(
 
             # ── Create issues ──
             swarm = plan.get("swarm_execution", {})
-            if (
-                swarm.get("manifest_path") is None
-                and swarm.get("status") == "not_started"
-            ):
+
+            # 2.1 reality-check — reconcile a stale `manifest_path: null`
+            # against the actual filesystem. The 2026-04-22 P2.E1
+            # regression proved this is required: a squash-merge can
+            # land a freshly-created manifest on `$EIGEN_BRANCH` while
+            # the pre-merge local snapshot of pipeline_state.json still
+            # records `manifest_path: null`, and the stale JSON makes
+            # this branch fire again, re-creating the manifest and
+            # re-launching the swarm. If the file already exists on
+            # disk, treat it as present regardless of what the JSON
+            # says — the swarm-pair logic below then routes correctly
+            # based on status alone.
+            manifest_path = swarm.get("manifest_path")
+            if manifest_path is None and eigen_root:
+                expected = (
+                    Path(eigen_root)
+                    / "eigen_initiative"
+                    / "phases"
+                    / f"phase_{phase_num}"
+                    / f"epic_{epic_num}"
+                    / "swarm-manifest.json"
+                )
+                # B2 — validate the manifest content (not just existence)
+                # before trusting it. A stale / partial / cross-epic
+                # manifest must not be treated as this epic's manifest.
+                # `.as_posix()` emits POSIX separators into the JSON
+                # regardless of the host OS so the value round-trips
+                # safely across platforms.
+                if expected.exists() and _manifest_belongs_to_epic(
+                    expected, phase_num, epic_num
+                ):
+                    manifest_path = expected.relative_to(eigen_root).as_posix()
+
+            if manifest_path is None and swarm.get("status") == "not_started":
                 return (
                     "create_issues_from_plan_swarm",
                     {"scope": "epic", "phase": phase_num, "epic": epic_num},
