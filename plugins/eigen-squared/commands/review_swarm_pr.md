@@ -199,13 +199,31 @@ Assemble for all review agents:
 
 ### 1.1 Select Agents
 
-**Always spawn (universal):**
-- `security-sentinel`, `architecture-strategist`, `code-simplicity-reviewer`, `data-integrity-guardian`, `test-practices-researcher-no-vs`
+The agent roster is **locked at iteration 0** for the lifetime of the epic's PR. This guarantees that any cross-iteration growth in apparent finding counts reflects genuine new code-quality regressions, not late-discovered latent issues from a newly-added reviewer type.
 
-**Conditionally spawn (from language-profiles skill Stack-Specific Skills):**
-- Matched language/domain skills
-- `performance-oracle` — if acceptance criteria mention performance or diff > 500 lines
-- `pattern-recognition-specialist` — if diff > 500 lines
+**If `review_iteration == 0`** — compute the roster:
+
+  **Always spawn (universal):**
+  - `security-sentinel`, `architecture-strategist`, `code-simplicity-reviewer`, `data-integrity-guardian`, `test-practices-researcher-no-vs`
+
+  **Conditionally spawn (from language-profiles skill Stack-Specific Skills):**
+  - Matched language/domain skills
+  - `performance-oracle` — if acceptance criteria mention performance or diff > 500 lines
+  - `pattern-recognition-specialist` — if diff > 500 lines
+
+  Persist the resolved roster to the iteration-0 review report's YAML front-matter (Stage 5.2) under the `agents_used` key so subsequent iterations can read it back verbatim.
+
+**If `review_iteration >= 1`** — reuse the iter-0 roster:
+
+  Read `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_0.md` from the integration branch and parse its YAML front-matter. Use `agents_used` verbatim. Ignore the conditional triggers (diff size, performance-mention) entirely — even if the diff has grown past 500 lines or new acceptance criteria mention performance, **do not add agents**.
+
+  If the iter-0 report is missing or its front-matter does not contain an `agents_used` list, **STOP** with:
+
+  ```
+  ERROR: review_report_iteration_0.md not found on integration branch (or missing agents_used front-matter) — agent roster cannot be reconstructed for iteration <N>.
+  ```
+
+  Do not silently recompute the roster. A missing iter-0 report indicates a force-push regression of the integration branch and must be surfaced to the operator.
 
 ### 1.2 Spawn All in Parallel
 
@@ -482,6 +500,22 @@ If no findings (Case 1.1 — converged clean): post a simple approval comment.
 ### 5.2 Write Review Report
 
 Write `eigen_initiative/phases/phase_N/epic_M/review_report_iteration_<N>.md` with:
+
+**YAML front-matter** (machine-readable; required on every iteration):
+```yaml
+---
+iteration: <N>
+epic_id: "P<phase>.E<epic>"
+agents_used:
+  - <agent_id>
+  - <agent_id>
+  - ...
+---
+```
+
+The `agents_used` list MUST be the exact set of agents spawned in Stage 1. On iteration 0 this is the freshly-computed roster; on iteration ≥ 1 it is the verbatim list read from `review_report_iteration_0.md`. Downstream iterations and tooling depend on this field — never omit it.
+
+**Body**:
 - Iteration number, PR info, agents used, tech stack
 - All findings (approved and skipped)
 - Cross-iteration comparison (if iteration 2+)
@@ -698,4 +732,5 @@ Next steps:
 - **Merge is automatic on convergence**: when converged, the command merges the PR via `gh pr merge --squash --delete-branch`, checks out `$EIGEN_BRANCH`, pulls, and deletes the local branch. No manual step needed.
 - **Post-merge state**: after auto-merge, the working directory is on `$EIGEN_BRANCH` with all epic artifacts (code, tasks, manifest, pipeline_state, reports) merged in.
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
+- **Agent roster is locked at iteration 0**: the set of review agents spawned for an epic's PR is computed once on iteration 0 and persisted to that iteration's report front-matter. Iterations ≥ 1 reuse the iter-0 roster verbatim. Conditional triggers (diff size, performance-mention) are evaluated only on iteration 0. Any new reviewer type only takes effect starting from the next epic. This guarantees that growth in apparent finding count across iterations of the same epic reflects genuine new regressions, not late-discovered latent issues from an expanded roster.
 
