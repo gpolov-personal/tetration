@@ -166,7 +166,14 @@ Validate:
 
 1. Read the manifest from the integration branch.
 2. Extract: `tasks`, `shared_files`, `e2e_config`, `epic_id`.
-3. Build `scope_files` — union of all `files_owned`, `test_files_owned`, `shared_files`, and `e2e_config.e2e_test_dir` files.
+3. Build `scope_files` — union of:
+   - `files_owned` and `test_files_owned` of the **original T-tasks only** (tasks whose `id` matches `P<N>.E<M>.T<K>` — exclude R-tasks and the integration task),
+   - `shared_files`,
+   - `e2e_config.e2e_test_dir` files.
+
+   `scope_files` is **invariant across iterations of the same epic**. R-task ownership is a subset of T-task ownership by construction, so review-fixup waves never expand scope. On iteration ≥ 1, recompute `scope_files` the same way (from the same T-tasks) and assert it equals the iter-0 set; if it differs, **STOP** with `ERROR: scope_files drift detected at iteration <N> — original T-task ownership has been mutated.`
+
+4. **Load prior out-of-scope discards** (iteration ≥ 1 only). Read `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_discards.json` if it exists. The file lists every finding previously dropped as out-of-scope, with the iteration that dropped it. These are re-applied deterministically in Stage 2.1.
 
 ### 0.3 Read Epic and Plan Context
 
@@ -257,10 +264,43 @@ Wait for ALL agents.
 
 ### 2.1 Scope Filter
 
-For each finding:
-- File in `scope_files`? If not → discard.
-- In-scope justification references real acceptance criterion? If vague → downgrade to P3.
-- Deduplicate across agents.
+For each finding, in order:
+
+1. **Prior-discard match (iteration ≥ 1)**: compute the finding's match key `(normalized_file_path, category, normalized_title)` — same normalization rules as the regression-signature scheme in Stage 4.6 (POSIX-relative path, lowercase category, lowercased/whitespace-collapsed/trailing-punctuation-stripped title). If the key matches any entry in `review_discards.json` from a prior iteration, **drop** the finding with reason `previously discarded in iter <K> (<original_reason>)`. Do NOT re-evaluate against the current `scope_files` — prior discards are sticky. Promoting a previously-discarded finding requires an explicit promotion step that does not exist in Tier 1.
+
+2. **Scope membership**: file in `scope_files`? If not → drop with reason `file not in scope_files (T-task ownership)`.
+
+3. **Justification quality**: in-scope justification references a real acceptance criterion? If vague → downgrade to P3 (do not drop).
+
+4. **Deduplicate** across agents.
+
+Every finding dropped by rules 1 or 2 is appended (with its match key, severity, category, agent, title, reason, and current `iteration`) to a sidecar:
+
+```
+eigen_initiative/phases/phase_<phase>/epic_<epic>/review_discards.json
+```
+
+Schema:
+
+```json
+{
+  "epic_id": "P<N>.E<M>",
+  "discards": [
+    {
+      "iteration": 0,
+      "file": "server/ai/tool-dispatcher.ts",
+      "severity": "P3",
+      "category": "performance",
+      "agent": "performance-oracle",
+      "title": "default 10s timeout vs 60s confirmation",
+      "match_key": "<normalized_file>|<category>|<normalized_title>",
+      "reason": "file not in scope_files (T-task ownership)"
+    }
+  ]
+}
+```
+
+Append-only — never rewrite existing entries. The file is committed to the integration branch in Stage 4.7 (or, on Case 1.1 converged-clean, in Stage 5.2 alongside the report).
 
 ### 2.2 Cross-Iteration Comparison (iteration 2+)
 
@@ -460,6 +500,8 @@ After Stage 4.6 completes, **skip Stage 4.7 (commit/push of fixup tasks — ther
 
 ### 4.7 Commit and Push (Cases 1.2 and 1.3 only)
 
+The `git add` covers the fixup task files, manifest update, and `review_discards.json` (any new discards appended in Stage 2.1 of this iteration).
+
 ```bash
 git add eigen_initiative/phases/phase_N/epic_M/
 git commit -m "chore: review iteration <N> — <M> fixup tasks for P<N>.E<M>"
@@ -518,9 +560,12 @@ The `agents_used` list MUST be the exact set of agents spawned in Stage 1. On it
 **Body**:
 - Iteration number, PR info, agents used, tech stack
 - All findings (approved and skipped)
+- **Discards summary** — count of findings dropped by Stage 2.1 in this iteration, broken down by reason (`previously discarded in iter K` vs. `file not in scope_files`). Reference `review_discards.json` for the full list.
 - Cross-iteration comparison (if iteration 2+)
 - Convergence status
 - Manifest update summary
+
+If `review_discards.json` was modified this iteration and it has not yet been committed (Case 1.1 — converged clean, where Stage 4.7 is skipped), include it in the same `git add` as the report so the discard ledger never lags behind the report.
 
 Commit:
 ```bash
@@ -733,4 +778,5 @@ Next steps:
 - **Post-merge state**: after auto-merge, the working directory is on `$EIGEN_BRANCH` with all epic artifacts (code, tasks, manifest, pipeline_state, reports) merged in.
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
 - **Agent roster is locked at iteration 0**: the set of review agents spawned for an epic's PR is computed once on iteration 0 and persisted to that iteration's report front-matter. Iterations ≥ 1 reuse the iter-0 roster verbatim. Conditional triggers (diff size, performance-mention) are evaluated only on iteration 0. Any new reviewer type only takes effect starting from the next epic. This guarantees that growth in apparent finding count across iterations of the same epic reflects genuine new regressions, not late-discovered latent issues from an expanded roster.
+- **Scope is locked at iteration 0**: `scope_files` is computed once from the **original T-tasks'** `files_owned` and `test_files_owned` (plus `shared_files` and `e2e_config`) and is invariant across iterations of the same epic. R-task ownership is a subset by construction and never expands scope. Out-of-scope findings discarded in iteration K are persisted in `review_discards.json` and re-applied as discards in all subsequent iterations — promoting a previously-discarded finding requires an explicit promotion step (Tier 2 enhancement), not a silent re-admission.
 
