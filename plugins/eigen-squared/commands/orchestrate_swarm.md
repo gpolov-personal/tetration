@@ -65,9 +65,11 @@ Example JSON (this command gets the swarm-specific context):
 | `phase`, `epic` | Which epic's swarm to orchestrate. |
 | `branch` | Integration branch (feat/P<N>.E<M>). You must be on this branch. |
 | `manifest_path` | Path to swarm-manifest.json. |
-| `swarm_status` | Current status: "not_started" (first run) or "iterating" (fixup run). |
+| `swarm_status` | Current status: "not_started" (first run) or "iterating" (fixup run, including the P3 sweep — see manifest's `p3_sweep` block to disambiguate). |
 | `review_iteration` | How many review cycles have occurred. |
 | `pr_number`, `pr_url` | Existing PR info (null on first run, set after creating PR). |
+
+**Read `swarm-manifest.json.p3_sweep` on entry.** This field signals whether the current iteration is a bounded P3-sweep round (set by `review_swarm_pr` when entering Case 1.2). Default to `{ "active": false, ... }` if absent. When `p3_sweep.active == true`, every fixup task in the next-to-execute wave is a P3-sweep task and **must** receive the P3-SWEEP CONSTRAINT block in its worker spawn prompt (see Stage 1, Worker Spawn Prompt). The leader does not need to do anything else differently — wave execution, integration, and PR-update logic are unchanged. The post-sweep `review_swarm_pr` enforces the bounded-loop invariant; orchestrate_swarm just runs the workers.
 
 ---
 
@@ -349,6 +351,40 @@ INTERFACE STUBS AVAILABLE:
 Import directly from the stub file path. Accept dependencies via constructor/function params.
 Do NOT instantiate concrete implementations directly. See "Import / Dependency Rules" in the
 language-profiles skill for language-specific import conventions.
+</if>
+
+<if swarm-manifest.json.p3_sweep.active == true AND task.priority == 'P3' AND task.labels contains 'review-finding':>
+P3-SWEEP CONSTRAINT — read carefully:
+You are fixing a non-blocking P3 finding during this epic's BOUNDED P3 sweep. The sweep is
+one-shot — there will be NO further fixup iterations after the next review_swarm_pr round,
+regardless of how many findings remain. The post-sweep review enforces this invariant
+autonomously by auto-reverting the entire sweep if your fix introduces any new P1 or P2
+finding.
+
+You MUST NOT introduce any P1 or P2 issues while solving this P3. Specifically, your fix
+must not:
+  - Open or weaken any security/validation/authorization control (regex bypasses,
+    deserialization holes, broken authn/z gates, SQL injection vectors, etc.).
+  - Introduce type-safety regressions: `as any`, `@ts-ignore`, `@ts-expect-error`, Python
+    `typing.cast`, reflection into private/`__`-prefixed members, monkey-patching of
+    typed interfaces.
+  - Break any acceptance criterion of any prior task in this epic, or any
+    previously-passing test.
+  - Add a runtime-correctness gap in code that downstream tasks depend on.
+
+If your fix would require any of the above, STOP and create a [QUESTION] task to team-lead
+explaining the trade-off. A residual P3 is acceptable; a regression is not. The leader
+will decide whether to skip this P3 (recording it as residual) or accept the trade-off.
+
+Worked example: if the P3 says "remove unnecessary type annotation in foo.ts" and removing
+it forces you to use `as any` to compile, do NOT remove the annotation — return [QUESTION]
+saying "removing the annotation requires `as any` here; recommend skip". The auto-revert
+mechanism will revert the entire sweep if you push a regression, undoing the work of every
+other P3 worker in this wave. Be conservative.
+
+This block is injected by orchestrate_swarm only when (a) the manifest's `p3_sweep.active`
+is true AND (b) your task is a P3 review-finding task. It does not appear for normal
+P1/P2 fixup iterations.
 </if>
 
 COMMUNICATION RULES:
