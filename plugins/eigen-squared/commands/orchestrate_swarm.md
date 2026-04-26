@@ -410,18 +410,37 @@ Prior convergence ledger: eigen_initiative/phases/phase_<phase>/epic_<epic>/revi
   (machine-readable signatures + per-iteration finding metadata; consult this for any
   signature whose location intersects your files_owned)
 
-Findings raised in prior iteration(s) that touch YOUR owned files (filtered subset):
-<for each prior finding F where F.file ∈ task.files_owned ∪ task.test_files_owned:>
+Findings raised in prior iteration(s) that touch YOUR owned files — INLINE LIST is filtered for
+prompt-size discipline. The full ledger is at the path above; consult it on demand.
+
+INLINE filter (kept compact on purpose):
+  - severity ∈ {P1, P2} (P3 ledger entries are NOT inlined — they live in the ledger file)
+  - last_seen_iteration == <review_iteration - 1> (just-prior pass only — older history is in the ledger)
+
+<for each prior finding F where F.file ∈ task.files_owned ∪ task.test_files_owned
+                            AND F.severity ∈ {P1, P2}
+                            AND F.last_seen_iteration == review_iteration - 1:>
 - [<F.severity>] <F.file>: <F.title>
   signature: <F.sig>
   last seen iter: <F.last_seen_iteration>
   category: <F.category>
 </for>
-(If the list is empty, no prior finding touches your owned files — no extra constraints,
-but still avoid re-introducing any signature listed in the ledger.)
 
-Lessons accumulated for this scope (filtered by affected_files ∩ files_owned):
-<for each lesson L where L.affected_files ∩ task.files_owned ≠ ∅:>
+<if there are >0 prior findings touching files_owned that did NOT make the inline cut
+   (P3, OR last seen earlier than the just-prior iteration):>
++ <count_overflow> additional prior finding(s) touch your owned files but were filtered out
+  of the inline list (P3 severity OR last_seen_iteration < <review_iteration - 1>). Read
+  review_convergence_state.json — search for entries where file ∈ your files_owned — if
+  you suspect your fix could regress one of them. The DO-NOT-REGRESS clause below applies
+  to ALL signatures in the ledger, not just the inlined ones.
+</if>
+
+(If the inline list is empty, no immediately-prior P1/P2 finding touches your owned files —
+but the DO-NOT-REGRESS clause below still applies to every signature in the ledger.)
+
+Lessons accumulated for this scope (filtered by affected_files ∩ files_owned, capped at 5
+most-recent — older lessons available in eigen_lessons/review_swarm_pr/):
+<for each lesson L where L.affected_files ∩ task.files_owned ≠ ∅, sorted by L.created_at desc, top 5:>
 - <L.title> (<L.lesson_path>)
   Summary: <L.summary>
 </for>
