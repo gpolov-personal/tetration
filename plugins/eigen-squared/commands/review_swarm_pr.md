@@ -102,11 +102,59 @@ The CLI context provides `review_iteration` and `swarm_status`:
 
 Read `swarm-manifest.json.p3_sweep` (default `{ "active": false, "entered_at_iteration": null, "base_ref": null, "aborted": false, "regression_signatures": [] }` if absent) to detect whether this iteration is reviewing the output of a P3 sweep round.
 
-If a previous review report exists (`review_report_iteration_<review_iteration - 1>.md`), read it for cross-iteration comparison.
+Load the prior **convergence state ledger** at `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_convergence_state.json` (default `{ "epic_id": "P<N>.E<M>", "iterations": [] }` if absent). Each entry has the structure:
+
+```json
+{
+  "iteration": <int>,
+  "agents_used": ["<agent_id>", "..."],
+  "findings": [
+    {
+      "id": "F<n>",
+      "sig": "<sha1 of normalized_file|category|normalized_title>",
+      "file": "<path>",
+      "category": "<category>",
+      "severity": "P1|P2|P3",
+      "title": "<finding title>"
+    }
+  ]
+}
+```
+
+This ledger is the source of truth for cross-iteration finding tracking. Stage 2.2's set operations and the oscillation circuit-breaker (below) read from it; Stage 2.4 appends to it.
+
+If a previous review report exists (`review_report_iteration_<review_iteration - 1>.md`), read it for human-readable cross-iteration narrative — but the **machine-readable** comparison is computed from `review_convergence_state.json`, not from re-parsing the markdown.
 
 ### Convergence Decision (after collecting findings, Stage 3)
 
-The pipeline runs as a small state machine over `(p1, p2, p3, p3_sweep.active)`. Apply the case that matches the current substate; both cases are mutually exclusive.
+The pipeline runs as a small state machine over `(p1, p2, p3, p3_sweep.active)`. Evaluate the rules below in order: the **oscillation circuit-breaker** runs first; if it does not fire, dispatch to Case 1 or Case 2 depending on `p3_sweep.active`. Cases 1 and 2 are mutually exclusive.
+
+#### Oscillation circuit-breaker (always evaluated first)
+
+After Stage 2.4 has appended the current iteration's findings to `review_convergence_state.json`, group every finding ever recorded for this epic by its **`(file, category)` pair** — derive both fields from each finding's `sig` (or directly from the `file` and `category` columns if present). For each pair, count the number of **distinct iterations** in which it appeared.
+
+If **any** `(file, category)` pair appears in **≥ 3 distinct iterations** within this epic:
+
+- **Decision is CONVERGED**, with the special tag `CAPPED_BY_OSCILLATION`.
+- Skip Cases 1 and 2 entirely. Skip Stage 4 (no fixup tasks created — the oscillation proves more fixups will not help).
+- Set `swarm_execution.convergence.reason` to:
+  ```
+  CAPPED_BY_OSCILLATION: <pair_count> (file, category) pair(s) appeared in 3+ iterations: <pair1>, <pair2>, ... — accepting current state to break the loop. Logged to compound_improve.
+  ```
+- Record the oscillating signatures and pairs in the iteration's `review_convergence_state.json` entry under a top-level `oscillation` key:
+  ```json
+  {
+    "oscillation": {
+      "triggered_at_iteration": <current_iteration>,
+      "pairs": [
+        {"file": "<path>", "category": "<category>", "iterations": [0, 1, 2], "signatures": ["<sha1>", "..."]}
+      ]
+    }
+  }
+  ```
+- This branch terminates with `swarm_status == converged` and a non-empty residual P3 list (whatever was current). The PR is merged in Stage 7.2 as in Case 1.1, with the residual list disclosed and the oscillation reason surfaced.
+
+This rule is **load-bearing**: without it, the same `(file, category)` pair can ping-pong forever across iterations (the P2.E3 SQL whack-a-mole pattern). Three iterations is the minimum signal — fewer might be a legitimate iterative fix; three says the same vector keeps coming back.
 
 #### Case 1 — Normal iteration (`p3_sweep.active == false`)
 
@@ -266,13 +314,20 @@ Wait for ALL agents.
 
 For each finding, in order:
 
-1. **Prior-discard match (iteration ≥ 1)**: compute the finding's match key `(normalized_file_path, category, normalized_title)` — same normalization rules as the regression-signature scheme in Stage 4.6 (POSIX-relative path, lowercase category, lowercased/whitespace-collapsed/trailing-punctuation-stripped title). If the key matches any entry in `review_discards.json` from a prior iteration, **drop** the finding with reason `previously discarded in iter <K> (<original_reason>)`. Do NOT re-evaluate against the current `scope_files` — prior discards are sticky. Promoting a previously-discarded finding requires an explicit promotion step that does not exist in Tier 1.
+1. **Compute the signature.** The signature is `sha1("<normalized_file_path>|<category>|<normalized_title>")` (hex digest), where:
+   - `normalized_file_path` is the POSIX-style relative path with case preserved,
+   - `category` is the lowercase short category (`security`, `data-integrity`, `test-quality`, ...),
+   - `normalized_title` is the title lowercased, whitespace-collapsed, and stripped of trailing punctuation.
 
-2. **Scope membership**: file in `scope_files`? If not → drop with reason `file not in scope_files (T-task ownership)`.
+   The pre-signature triple `(normalized_file_path, category, normalized_title)` is also the **match_key** used by the prior-discard rule below. The same scheme is used by Stage 4.6 (auto-revert regression signatures) and by `swarm_execution.findings_history` — all three artifacts agree iteration-for-iteration.
 
-3. **Justification quality**: in-scope justification references a real acceptance criterion? If vague → downgrade to P3 (do not drop).
+2. **Prior-discard match (iteration ≥ 1)**: if the finding's match_key matches any entry in `review_discards.json` from a prior iteration, **drop** the finding with reason `previously discarded in iter <K> (<original_reason>)`. Do NOT re-evaluate against the current `scope_files` — prior discards are sticky. Promoting a previously-discarded finding requires an explicit promotion step that does not exist in Tier 1.
 
-4. **Deduplicate** across agents.
+3. **Scope membership**: file in `scope_files`? If not → drop with reason `file not in scope_files (T-task ownership)`.
+
+4. **Justification quality**: in-scope justification references a real acceptance criterion? If vague → downgrade to P3 (do not drop).
+
+5. **Deduplicate** across agents — **by signature**, not by free-text title. Findings sharing a signature are merged (keep the highest severity; concatenate the agent list).
 
 Every finding dropped by rules 1 or 2 is appended (with its match key, severity, category, agent, title, reason, and current `iteration`) to a sidecar:
 
@@ -302,13 +357,22 @@ Schema:
 
 Append-only — never rewrite existing entries. The file is committed to the integration branch in Stage 4.7 (or, on Case 1.1 converged-clean, in Stage 5.2 alongside the report).
 
-### 2.2 Cross-Iteration Comparison (iteration 2+)
+### 2.2 Cross-Iteration Comparison (iteration 1+)
 
-If this is iteration 2 or later, compare with previous review report:
-- **Addressed**: findings from previous iteration now resolved
-- **Persistent**: findings still present unchanged
-- **Regressed**: findings that were fixed but reappeared
-- **New**: findings not in previous iteration
+Compute signature-set differences against `review_convergence_state.json`. Let:
+- `current` = set of signatures kept after Stage 2.1 (this iteration).
+- `prev` = set of signatures from the most recent prior `iterations[]` entry (empty on iter 0 / first run).
+- `ever_seen_pre_prev` = union of signatures across all `iterations[]` entries strictly before the immediately-prior one.
+
+Then:
+- **Addressed**: `prev \ current` — present in prior iteration, gone now.
+- **Persistent**: `prev ∩ current` — present in both.
+- **Regressed**: `(ever_seen_pre_prev \ prev) ∩ current` — fixed at some earlier point, then reappeared.
+- **New**: `current \ (prev ∪ ever_seen_pre_prev)` — never seen before this iteration.
+
+For the report (Stage 5.2) and the PR comment (Stage 5.1), each bucket lists **finding IDs from the iteration where the signature was last seen** alongside the current iteration's IDs (e.g., `Persistent: [iter1.F3 → iter2.F2]`). This lets a human reader trace the trajectory of a single finding across iterations without re-parsing markdown.
+
+If `review_convergence_state.json.iterations` is empty (first review), this stage is a no-op except for setting all current findings as "New".
 
 ### 2.3 Triage Summary
 
@@ -317,9 +381,34 @@ Print:
 Review Findings (Iteration <N>):
   Total raw: <N>, After scope filter: <M>
   P1: <x>, P2: <y>, P3: <z>
-  <if iteration 2+:>
+  <if iteration 1+:>
   vs. Previous: <addressed> fixed, <persistent> remaining, <regressed> regressed, <new> new
+  Signature trajectory: <persistent_count> signatures shared with iter <N-1>; <regressed_count> regressed from earlier iterations.
 ```
+
+### 2.4 Append to Convergence State Ledger
+
+After Stage 2.2 has computed buckets, append the current iteration to `review_convergence_state.json`:
+
+```json
+{
+  "iteration": <current_iteration>,
+  "agents_used": [<from Stage 1.1's resolved roster>],
+  "findings": [
+    { "id": "F<n>", "sig": "<sha1>", "file": "<path>", "category": "<category>", "severity": "P1|P2|P3", "title": "<title>" }
+  ]
+}
+```
+
+`F<n>` is a 1-indexed local ID assigned in stable order (e.g., by signature lex order so iter-N's F1 is reproducible). Persist the **kept** post-filter findings only; discards live in `review_discards.json` instead.
+
+If the oscillation circuit-breaker (Convergence Protocol) fires this iteration, also write the top-level `oscillation` block alongside `iterations`.
+
+The file is committed to the integration branch:
+- In Cases 1.2 / 1.3 (CONTINUE): in Stage 4.7 alongside the new fixup tasks.
+- In Cases 1.1 / 2.1 / 2.2 / oscillation (CONVERGED): in Stage 5.2 alongside the report.
+
+Append-only — never rewrite existing iteration entries (idempotent retry replaces only the entry for the current iteration, mirroring the CLI's `findings_history` semantics).
 
 ---
 
@@ -331,6 +420,7 @@ The decision dispatches Stage 4's behavior:
 
 | Case | Decision | Stage 4 behavior |
 |---|---|---|
+| **Oscillation circuit-breaker** (any `(file, category)` pair in ≥ 3 iterations) | **CONVERGED — `CAPPED_BY_OSCILLATION`** | Skip Stage 4 entirely; proceed to Stage 5. Reason cites oscillating pairs and signatures. Evaluated **before** Cases 1 / 2. |
 | Case 1.1 (clean: `p1=p2=p3=0`) | **CONVERGED** | Skip Stage 4 entirely; proceed to Stage 5. |
 | Case 1.2 (entering sweep: `p1=p2=0, p3>0`) | **CONTINUE — sweep entry** | Stage 4 generates one fixup task per P3 finding in a single `p3-sweep` wave; sets `p3_sweep.active=true` in manifest. |
 | Case 1.3 (normal iter: `p1>0 OR p2>0`) | **CONTINUE — iterating** | Stage 4 generates fixup tasks for P1+P2 only. P3s recorded in `residual_p3`. |
@@ -500,7 +590,7 @@ After Stage 4.6 completes, **skip Stage 4.7 (commit/push of fixup tasks — ther
 
 ### 4.7 Commit and Push (Cases 1.2 and 1.3 only)
 
-The `git add` covers the fixup task files, manifest update, and `review_discards.json` (any new discards appended in Stage 2.1 of this iteration).
+The `git add` covers the fixup task files, manifest update, `review_discards.json` (any new discards appended in Stage 2.1), and `review_convergence_state.json` (the iteration entry appended in Stage 2.4).
 
 ```bash
 git add eigen_initiative/phases/phase_N/epic_M/
@@ -532,8 +622,10 @@ The review body must include:
   - `Sweep state: entering — <p3_count> P3 fixup task(s) queued in wave <N>` (Case 1.2)
   - `Sweep state: post-sweep clean — <addressed> P3 resolved, <residual> remaining` (Case 2.1)
   - `Sweep state: post-sweep ABORTED — sweep introduced <p1_new> P1 / <p2_new> P2; reverted <revert_count> commit(s) to <base_ref:0:7>. See "Sweep Aborted" in the report.` (Case 2.2)
-- **Convergence status** — CONVERGED / CONTINUE — with the case identifier (e.g., "Case 1.2 — sweep entry").
-- **Next steps** — directives for the watchdog: "run /orchestrate_swarm" (Cases 1.2/1.3) or "merging now" (Cases 1.1/2.1/2.2).
+- **Convergence status** — CONVERGED / CONTINUE — with the case identifier (e.g., "Case 1.2 — sweep entry", or "CAPPED_BY_OSCILLATION" for the oscillation circuit-breaker).
+- **Oscillation line** (only if the circuit-breaker fired):
+  - `Oscillation: CAPPED_BY_OSCILLATION — pair(s) repeated across 3+ iterations: (<file>, <category>) [iters: 0,1,2], ... See review_convergence_state.json.oscillation.`
+- **Next steps** — directives for the watchdog: "run /orchestrate_swarm" (Cases 1.2/1.3) or "merging now" (Cases 1.1/2.1/2.2/oscillation).
 
 Use `event: "COMMENT"`.
 
@@ -565,7 +657,7 @@ The `agents_used` list MUST be the exact set of agents spawned in Stage 1. On it
 - Convergence status
 - Manifest update summary
 
-If `review_discards.json` was modified this iteration and it has not yet been committed (Case 1.1 — converged clean, where Stage 4.7 is skipped), include it in the same `git add` as the report so the discard ledger never lags behind the report.
+If `review_discards.json` or `review_convergence_state.json` was modified this iteration and has not yet been committed (Cases 1.1 / 2.1 / 2.2 / oscillation — converged-clean, where Stage 4.7 is skipped), include them in the same `git add` as the report so the ledgers never lag behind the report.
 
 Commit:
 ```bash
@@ -600,13 +692,23 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/review_swarm_pr/`.
 
 ### 7.1 Update Pipeline State
 
-Use the CLI to update pipeline state. The exact calls depend on the Stage 3 case. `swarm_status` is set to `"iterating"` for any case that creates fixup tasks (Cases 1.2 and 1.3) and to `"converged"` for any terminal case (1.1, 2.1, 2.2). The Convergence Protocol's substate (`p3_sweep.active`, `aborted`, `regression_signatures`) lives in `swarm-manifest.json` already (committed via Stage 4) and is not duplicated here.
+Use the CLI to update pipeline state. The exact calls depend on the Stage 3 case. `swarm_status` is set to `"iterating"` for any case that creates fixup tasks (Cases 1.2 and 1.3) and to `"converged"` for any terminal case (1.1, 2.1, 2.2, oscillation). The Convergence Protocol's substate (`p3_sweep.active`, `aborted`, `regression_signatures`) lives in `swarm-manifest.json` already (committed via Stage 4) and is not duplicated here.
 
-The `--reason` string MUST mention residual P3 count when `p3 > 0` and MUST mention sweep abort when applicable so downstream commands and the PR-comment renderer can parse/display it.
+The `--reason` string MUST mention residual P3 count when `p3 > 0`, sweep abort when applicable, and the `CAPPED_BY_OSCILLATION` tag on oscillation, so downstream commands and the PR-comment renderer can parse/display it.
+
+**`--findings-detail` is required on every case.** Before running the CLI, write a small per-iteration detail file:
+
+```bash
+cat > /tmp/eigen_findings_iter_<N>.json <<EOF
+{"iteration": <N>, "p1": <x>, "p2": <y>, "p3": <z>, "signatures": [<sigs from Stage 2.4>]}
+EOF
+```
+
+`<N>` is the iteration just completed (the same number used in `review_report_iteration_<N>.md`); `signatures` is the array of every kept finding's signature from Stage 2.4. The CLI validates `iteration` matches `swarm_execution.review_iteration - 1` after the bump and refuses on mismatch — this catches stale or skewed detail files.
 
 **Case 1.1 — converged clean (`p1=p2=p3=0`):**
 ```bash
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}'
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "All findings resolved."
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
@@ -614,14 +716,14 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONV
 **Case 1.2 — entering P3 sweep (`p1=p2=0, p3>0`, sweep tasks queued):**
 ```bash
 # Substate transition: still "iterating" from the watchdog's perspective so it auto-runs orchestrate_swarm next.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}'
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, ENTER P3 SWEEP (<z> P3 task(s) queued)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 **Case 1.3 — continuing iteration (`p1>0 OR p2>0`):**
 ```bash
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}'
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
@@ -629,23 +731,32 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iter
 **Case 2.1 — post-sweep clean (`p1=p2=0`, sweep succeeded):**
 ```bash
 # Use the original residual P3 count (the count *before* the sweep ran; many P3s may now be addressed).
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}'
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "P3 sweep completed. <addressed> P3 finding(s) resolved; <z> recorded as residual."
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (post-sweep)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 **Case 2.2 — post-sweep aborted (`p1>0 OR p2>0`, sweep regressed):**
 
-Stage 4.6 has already auto-reverted the sweep commits and updated `swarm-manifest.json.p3_sweep.aborted=true`. The findings_summary reported here uses the **pre-sweep** counts (which by definition were `p1=0, p2=0` and the original residual P3 list) since the branch is now back at `base_ref` content-wise.
+Stage 4.6 has already auto-reverted the sweep commits and updated `swarm-manifest.json.p3_sweep.aborted=true`. The findings_summary reported here uses the **pre-sweep** counts (which by definition were `p1=0, p2=0` and the original residual P3 list) since the branch is now back at `base_ref` content-wise. The `signatures` in `--findings-detail` are the **pre-sweep** signatures (matching the pre-sweep counts), so `findings_history` reflects the post-revert state, not the rejected sweep.
 
 ```bash
 # <z> here is the original residual P3 count from before the sweep ran.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}'
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "P3 sweep introduced <x> P1 / <y> P2 finding(s). Auto-reverted to base ref <base_ref:0:7>. Converging with original residual P3 list (<z>). Sweep aborted; regression recorded for compound_improve."
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (sweep aborted)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
-In Cases 2.1 and 2.2, also write a lesson to `eigen_initiative/eigen_lessons/review_swarm_pr/` capturing whichever signal applies (clean sweep success, regression vectors). This is consumed by `compound_improve` on its next pass and is the only persistent record of the sweep outcome outside of `swarm-manifest.json.p3_sweep`.
+**Oscillation circuit-breaker — `CAPPED_BY_OSCILLATION` (any `(file, category)` pair in ≥ 3 iterations):**
+
+```bash
+# <x>, <y>, <z> are this iteration's pre-cap counts — recorded as-is so findings_history captures the final iteration that triggered the cap.
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
+eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "CAPPED_BY_OSCILLATION: <pair_count> (file, category) pair(s) appeared in 3+ iterations: <pair1>, <pair2>, ... — accepting current state to break the loop. Logged to compound_improve."
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (CAPPED_BY_OSCILLATION)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+```
+
+In Cases 2.1, 2.2, and the oscillation cap, also write a lesson to `eigen_initiative/eigen_lessons/review_swarm_pr/` capturing whichever signal applies (clean sweep success, regression vectors, or oscillating-pair vectors). This is consumed by `compound_improve` on its next pass and is the only persistent record of the sweep / oscillation outcome outside of `swarm-manifest.json.p3_sweep` and `review_convergence_state.json`.
 
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
 
@@ -731,23 +842,25 @@ Branch: feat/P<N>.E<M> → $EIGEN_BRANCH
 
 Findings:
   P1: <x>, P2: <y>, P3: <z>
-  <if iteration 2+:>
-  vs Previous: <addressed> fixed, <persistent> remaining, <new> new
+  <if iteration 1+:>
+  vs Previous: <addressed> fixed, <persistent> remaining, <regressed> regressed, <new> new
   <if Case 2.1 or 1.1 with z > 0:>
   Residual (non-blocking): P3 × <z> — recorded in swarm-manifest.json.residual_p3 and pipeline_state.json
   <if Case 2.2 (sweep aborted):>
   Sweep regression: <x_new> P1 + <y_new> P2 introduced; auto-reverted <revert_count> commit(s) to <base_ref:0:7>.
+  <if oscillation cap fired:>
+  Oscillation: <pair_count> (file, category) pair(s) repeated in 3+ iterations — see review_convergence_state.json.oscillation.
 
 Sweep state: <not entered | entering — z P3 fixup task(s) queued | post-sweep clean | post-sweep ABORTED>
 
-Convergence: <CONVERGED — Case 1.1 | CONTINUE — Case 1.2 sweep entry | CONTINUE — Case 1.3 iterating | CONVERGED — Case 2.1 post-sweep | CONVERGED — Case 2.2 sweep aborted>
+Convergence: <CONVERGED — Case 1.1 | CONTINUE — Case 1.2 sweep entry | CONTINUE — Case 1.3 iterating | CONVERGED — Case 2.1 post-sweep | CONVERGED — Case 2.2 sweep aborted | CONVERGED — CAPPED_BY_OSCILLATION>
 
 Next steps:
   Case 1.2 / 1.3 (CONTINUE):
     Stay on this branch and run /orchestrate_swarm.
     The manifest has been updated — only new review tasks will execute. In Case 1.2, the new tasks are P3-sweep tasks and the leader will inject the P3-SWEEP CONSTRAINT block into each worker's spawn prompt.
     After fixups complete, run /review_swarm_pr again (iteration <N+1>).
-  Case 1.1 / 2.1 / 2.2 (CONVERGED):
+  Case 1.1 / 2.1 / 2.2 / CAPPED_BY_OSCILLATION (CONVERGED):
     PR #<pr_number> merged to $EIGEN_BRANCH. Branch feat/P<N>.E<M> deleted.
     Now on $EIGEN_BRANCH with latest changes.
     If more epics remain in this phase: proceeding to next epic.
@@ -771,7 +884,7 @@ Next steps:
 - **No code modifications**: this command reviews, creates tasks, updates manifest. No source code changes.
 - **Runs from the integration branch**: same branch as orchestrate_swarm. All artifacts committed to `feat/P<N>.E<M>`.
 - **Review task IDs**: `P<N>.E<M>.R<K>` format (R for Review).
-- **Convergence**: all P1 and P2 findings must be resolved. Residual P3 findings are allowed and recorded in `pipeline_state.json` (`swarm_execution.findings_summary.p3` and `swarm_execution.convergence.reason`) and in `swarm-manifest.json.residual_p3`. Max 8 iterations. Oscillation breaks the cycle.
+- **Convergence**: all P1 and P2 findings must be resolved. Residual P3 findings are allowed and recorded in `pipeline_state.json` (`swarm_execution.findings_summary.p3` and `swarm_execution.convergence.reason`) and in `swarm-manifest.json.residual_p3`. Max 8 iterations. **Oscillation circuit-breaker** terminates the loop earlier when any `(file, category)` pair appears in ≥ 3 distinct iterations — finding ledger lives in `review_convergence_state.json`, signatures in `swarm_execution.findings_history`.
 - **P3 fixup policy**: P3 findings do **not** trigger per-iteration fixup tasks. They are addressed in **one bounded P3-sweep round** that runs after all P1/P2 are resolved (Case 1.2). The post-sweep review (Case 2.1 / 2.2) **always** terminates: either it converges cleanly, or — if the sweep introduced new P1/P2 — the sweep commits are auto-reverted (Stage 4.6) and the epic converges with the original residual P3 list and `sweep_aborted: true`. The pipeline never re-enters fixup mode after a sweep, even if the sweep regressed. Sweep regressions are recorded for `compound_improve` learning, not for human escalation — the loop is fully autonomous and bounded by construction.
 - **Push after every commit**: the PR updates automatically when the branch is pushed.
 - **Merge is automatic on convergence**: when converged, the command merges the PR via `gh pr merge --squash --delete-branch`, checks out `$EIGEN_BRANCH`, pulls, and deletes the local branch. No manual step needed.
@@ -779,4 +892,5 @@ Next steps:
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
 - **Agent roster is locked at iteration 0**: the set of review agents spawned for an epic's PR is computed once on iteration 0 and persisted to that iteration's report front-matter. Iterations ≥ 1 reuse the iter-0 roster verbatim. Conditional triggers (diff size, performance-mention) are evaluated only on iteration 0. Any new reviewer type only takes effect starting from the next epic. This guarantees that growth in apparent finding count across iterations of the same epic reflects genuine new regressions, not late-discovered latent issues from an expanded roster.
 - **Scope is locked at iteration 0**: `scope_files` is computed once from the **original T-tasks'** `files_owned` and `test_files_owned` (plus `shared_files` and `e2e_config`) and is invariant across iterations of the same epic. R-task ownership is a subset by construction and never expands scope. Out-of-scope findings discarded in iteration K are persisted in `review_discards.json` and re-applied as discards in all subsequent iterations — promoting a previously-discarded finding requires an explicit promotion step (Tier 2 enhancement), not a silent re-admission.
+- **Findings are tracked by signature, not by free-text title**: every kept finding has `sig = sha1("<normalized_file_path>|<category>|<normalized_title>")`. Cross-iteration comparison (Stage 2.2), the oscillation circuit-breaker, the auto-revert regression list (Stage 4.6), and `swarm_execution.findings_history` all use the same scheme so they agree iteration-for-iteration. The full per-iteration ledger lives in `review_convergence_state.json` (next to the report) with `{file, category, severity, title}` for human readers; the CLI mirror in `findings_history` keeps just `{iteration, p1, p2, p3, signatures}` for the oscillation rule and downstream consumers.
 
