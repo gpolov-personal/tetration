@@ -493,6 +493,12 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
    - Add appropriate error handling
    - Include docstrings/comments for complex logic
    - Ensure type hints are correct
+   - **Type-escape ban (FORBIDDEN in BOTH production and test code)**: do NOT use any of the following to make code or tests compile/pass — they defeat the type system that the rest of the pipeline relies on for correctness. Needing one of these is a `[QUESTION]` to team-lead, not a silent escape hatch.
+       - TypeScript: `as any`, `as unknown as <T>` (chained casts), `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, declaring a parameter as `any`
+       - Python: `typing.cast(Any, ...)` to satisfy a checker, `# type: ignore` (without an issue link / specific error code), `Any` parameter types when a real Protocol exists, reflective access via `getattr(obj, "_<dunder_or_private>")` to bypass encapsulation
+       - Go: `interface{}` parameter types when a typed alternative exists; `unsafe.Pointer` outside the narrow set of approved low-level packages
+       - Any language: monkey-patching of typed interfaces in tests; mutating frozen / dataclass / record structures via `__dict__` or equivalent; reflection into `_`/`__`-prefixed members of code you do not own
+     **Why this is a hard rule**: review-agents (security-sentinel, data-integrity-guardian, architecture-strategist) flag these as P1/P2 in every iteration they appear. The pipeline's oscillation circuit-breaker treats their reappearance as evidence that the loop is stuck. If your tests "pass" because of a `as any` cast that shadows a missing implementation, the next review will catch it and the iteration count goes up. If you genuinely need an escape, the `[QUESTION]` to leader documents the trade-off explicitly so the reviewer can either approve it or propose an alternative.
 
 4. **Design Decision Escalation**
 
@@ -617,10 +623,20 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
    - Is there proper separation of concerns?
    - Are there any code smells or anti-patterns?
 
-   If issues found:
+   If issues found AND `<task_type> != REVIEW_FINDING`:
    - Refactor the implementation (within `<files_owned>` only)
    - Ensure validation tests still pass
    - Update unit tests if needed
+
+   **Minimum-viable-fix gate (REVIEW_FINDING tasks only)**:
+
+   If `<task_type> == REVIEW_FINDING`, the refactor branch above is **disabled**. You may only modify what is required to make the new validation tests pass. Resist the urge to "clean up" adjacent code, rename, restructure, or improve patterns — even if the surrounding code has obvious smells. Reasoning:
+
+   - Review-fixup waves run in parallel across many R-tasks; refactors increase the surface area of conflicts at integration time and the surface area of new findings the next reviewer catches.
+   - Each adjacent refactor is itself an opportunity to introduce a regression that triggers the auto-revert (P3 sweep) or contributes to the oscillation count.
+   - The original task that "owned" the refactored code already shipped its own validation tests; reshaping its internals from a fixup task is out of scope.
+
+   If you genuinely believe a structural change is required to fix the finding correctly (not just to make the code prettier), raise a `[QUESTION]` to team-lead explaining what the change is, why the minimal fix is insufficient, and what the smaller alternative would look like. The leader can either approve the wider scope or split it into a separate follow-up task.
 
    **Checkpoint: post-unit-tests** — Update working notes with unit test files/counts and Next Step.
 
