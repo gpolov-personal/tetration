@@ -238,6 +238,39 @@ Sidecar: a richer JSON artifact `eigen_initiative/phases/phase_N/epic_M/review_c
 
 Both `orchestrate_swarm` and `review_swarm_pr` run on the integration branch (`feat/P<N>.E<M>`). Pipeline state updates are committed to this branch and merge to `$EIGEN_BRANCH` when the PR is merged.
 
+### swarm_execution.convergence.reason — taxonomy
+
+`convergence.reason` is a free-text field (no CLI-side enum validation), but `review_swarm_pr` writes one of the prefixes below so downstream commands and the PR-comment renderer can dispatch on the leading token. The prefix is followed by a `:` and human-readable details.
+
+| Prefix | Producer | Status set | Semantics |
+|---|---|---|---|
+| `All findings resolved` | review_swarm_pr Case 1.1 | converged | Clean convergence; no residual findings. |
+| `P3 sweep completed` | review_swarm_pr Case 2.1 | converged | Bounded P3 sweep ran successfully; residual P3 list disclosed. |
+| `P3 sweep introduced` | review_swarm_pr Case 2.2 | converged | Sweep introduced P1 / P2; commits auto-reverted to `p3_sweep.base_ref`. `swarm-manifest.json.p3_sweep.aborted=true`. |
+| `CAPPED_BY_OSCILLATION` | review_swarm_pr oscillation circuit-breaker | converged | Same `(file, category)` pair appeared in ≥ 3 iterations — accepting current state to break the loop. Pairs and signatures recorded in `review_convergence_state.json.oscillation`. |
+| `P1_REGRESSION_PERSISTENT` | review_swarm_pr Monotonicity rule M1 — third firing | converged | P1 count grew in three iterations; `monotonicity-violation` + `blocker-real-dep` task tagging did not stabilize the fix. Counter at `swarm-manifest.json.monotonicity.m1_firings == 2` going into the firing iteration. |
+| `DIVERGING_LOOP` | review_swarm_pr Monotonicity rule M2 | converged | `p3` count rose while `p1+p2` did not improve across the most recent two iterations (iteration ≥ 2). Trajectory of the last three iterations recorded in `review_convergence_state.json.monotonicity.trajectory`. |
+| `Maximum review iterations` | review_swarm_pr outer safety net | converged | Iteration cap (8) hit. Treated as Case 1.1 regardless of finding counts. |
+| `<p1+p2> blocking findings remain` | review_swarm_pr Case 1.3 / Case M1 (firings 1–2) | iterating | Continuation; new R-tasks created. M1 firings 1–2 prepend `M1 firing #<count>:` to the reason text and tag tasks. |
+| `Entering one-shot P3 sweep` | review_swarm_pr Case 1.2 | iterating | Sweep entry; `swarm-manifest.json.p3_sweep.active=true`. |
+
+`compound_improve` reads these prefixes (and the structured sidecar files referenced by them) when rolling cross-epic patterns into the next-project context.
+
+### swarm-manifest.json.monotonicity (per-epic)
+
+Sibling to `swarm-manifest.json.p3_sweep` and `swarm-manifest.json.residual_p3`. Tracks the M1 firing counter so the third firing converges:
+
+```json
+{
+  "monotonicity": {
+    "m1_firings": <int>,
+    "last_fired_at_iteration": <int|null>
+  }
+}
+```
+
+Initialized lazily (default `{ "m1_firings": 0, "last_fired_at_iteration": null }`) when M1 first fires. Read on entry to each iteration's Convergence Decision. Incremented in `review_swarm_pr` Stage 4.5 step 7 in Case M1. M2 does not write to this field.
+
 ---
 
 ## Recommendations

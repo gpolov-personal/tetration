@@ -127,7 +127,14 @@ If a previous review report exists (`review_report_iteration_<review_iteration -
 
 ### Convergence Decision (after collecting findings, Stage 3)
 
-The pipeline runs as a small state machine over `(p1, p2, p3, p3_sweep.active)`. Evaluate the rules below in order: the **oscillation circuit-breaker** runs first; if it does not fire, dispatch to Case 1 or Case 2 depending on `p3_sweep.active`. Cases 1 and 2 are mutually exclusive.
+The pipeline runs as a small state machine over `(p1, p2, p3, p3_sweep.active)` plus the cross-iteration history in `findings_history`. Evaluate the rules below **in order**, stopping at the first match:
+
+1. **Oscillation circuit-breaker** — strongest historical signal (3+ iterations with same `(file, category)` pair). CONVERGED with `CAPPED_BY_OSCILLATION`.
+2. **Monotonicity rule M1** — P1 must not grow between iterations. Tags the next iteration's fixup tasks with `monotonicity-violation` + `blocker-real-dep`. Caps at 2 consecutive firings; the third firing CONVERGES with `P1_REGRESSION_PERSISTENT`.
+3. **Monotonicity rule M2** — diverging-loop detector. CONVERGES with `DIVERGING_LOOP` when `p3` grows while `p1+p2` is flat or worse across iterations.
+4. **Cases 1 / 2** — dispatch to Case 1 (normal iteration) or Case 2 (post-sweep iteration) depending on `p3_sweep.active`. Cases 1 and 2 are mutually exclusive.
+
+M1 and M2 read `pipeline_state.json.swarm_execution.findings_history` (Tier 1 Step 4 ledger) to compare prior iterations against the just-collected counts. Both are no-ops on iteration 0 (no prior history) and skipped during post-sweep iterations (Case 2.x has its own auto-revert plumbing in Stage 4.6).
 
 #### Oscillation circuit-breaker (always evaluated first)
 
@@ -155,6 +162,73 @@ If **any** `(file, category)` pair appears in **≥ 3 distinct iterations** with
 - This branch terminates with `swarm_status == converged` and a non-empty residual P3 list (whatever was current). The PR is merged in Stage 7.2 as in Case 1.1, with the residual list disclosed and the oscillation reason surfaced.
 
 This rule is **load-bearing**: without it, the same `(file, category)` pair can ping-pong forever across iterations (the P2.E3 SQL whack-a-mole pattern). Three iterations is the minimum signal — fewer might be a legitimate iterative fix; three says the same vector keeps coming back.
+
+#### Monotonicity rule M1 — P1 must not grow (evaluated after oscillation)
+
+Skip this rule if the oscillation circuit-breaker fired or if `review_iteration == 0` (no prior iteration to compare). Skip during post-sweep iterations (`p3_sweep.active == true`) — Case 2.x's auto-revert (Stage 4.6) already handles regression there.
+
+Read `pipeline_state.json.swarm_execution.findings_history`. Let `prev_p1 = findings_history[-1].p1` (the most recent prior iteration's P1 count) and `current_p1 = <P1 count from Stage 2.1's kept findings>`.
+
+If `current_p1 > prev_p1`: the prior iteration's fixup commits introduced or unmasked a P1 finding. The fix is not trusted.
+
+- Read `swarm-manifest.json.monotonicity` (default `{ "m1_firings": 0, "last_fired_at_iteration": null }` if absent).
+- **If `m1_firings >= 2`**: this is the third firing — the monotonicity rule has not converged the loop. **Decision is CONVERGED** with `convergence.reason` set to:
+  ```
+  P1_REGRESSION_PERSISTENT: P1 grew in <m1_firings + 1> iterations (last at iter <current_iteration>); architectural escalation could not stabilize the fix. Logged to compound_improve.
+  ```
+  Skip Cases 1 / 2 and Stage 4.
+- **Otherwise (`m1_firings < 2`)**: the rule fires but does not converge.
+  - Set `swarm-manifest.json.monotonicity = { "m1_firings": <m1_firings + 1>, "last_fired_at_iteration": <current_iteration> }` (Stage 4.5 step 7 below persists this).
+  - **Decision is CONTINUE — monotonicity violation**. Stage 4 generates fixup tasks for **P1 + P2 findings only** (same selection as Case 1.3) but every R-task created this iteration carries the `monotonicity-violation` label and a body section that instructs the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's existing autonomous-mode `design_decision` policy (orchestrate_swarm.md, "Decision guidelines" section) handles the response without escalating to the user.
+  - Rationale: "P1 grew from <prev_p1> to <current_p1>; M1 firing #<m1_firings + 1> — fixup tasks tagged for architectural escalation."
+
+The `monotonicity-violation` label is also persisted in the iteration's `review_convergence_state.json` entry under a top-level `monotonicity` key alongside `oscillation`:
+
+```json
+{
+  "monotonicity": {
+    "m1_fired_at_iteration": <current_iteration>,
+    "m1_firings_total": <count_after_increment>,
+    "prev_p1": <prev_p1>,
+    "current_p1": <current_p1>
+  }
+}
+```
+
+#### Monotonicity rule M2 — Diverging-loop detector (evaluated after M1)
+
+Skip this rule if any prior rule already fired, if `review_iteration < 2` (need ≥ 2 prior iterations for trajectory), or if `p3_sweep.active == true`.
+
+Read the last two entries of `pipeline_state.json.swarm_execution.findings_history`. Let:
+- `prev = findings_history[-1]` (iteration N-1)
+- `curr = { "p1": <current_p1>, "p2": <current_p2>, "p3": <current_p3> }` (this iteration, just collected)
+
+If **all** of the following hold:
+- `curr.p3 > prev.p3` (P3 backlog grew)
+- `curr.p1 + curr.p2 >= prev.p1 + prev.p2` (severity-weighted blocking findings did not improve)
+
+then the loop is not converging — total severity-weighted findings are flat or rising while the P3 backlog grows.
+
+- **Decision is CONVERGED** with `convergence.reason`:
+  ```
+  DIVERGING_LOOP: trajectory across iterations <N-2..N> shows p3 rising (<p3_{N-2}> → <p3_{N-1}> → <curr.p3>) while p1+p2 did not improve (<sum_{N-1}> → <sum_N>). Accepting current state and surfacing for compound_improve.
+  ```
+- Skip Cases 1 / 2 and Stage 4.
+- Persist the trajectory in the iteration's `review_convergence_state.json` entry under a top-level `monotonicity` key:
+  ```json
+  {
+    "monotonicity": {
+      "m2_fired_at_iteration": <current_iteration>,
+      "trajectory": [
+        {"iteration": <N-2>, "p1": <int>, "p2": <int>, "p3": <int>},
+        {"iteration": <N-1>, "p1": <int>, "p2": <int>, "p3": <int>},
+        {"iteration": <N>,   "p1": <int>, "p2": <int>, "p3": <int>}
+      ]
+    }
+  }
+  ```
+
+M1 and M2 are complementary: M1 acts on a **single-iteration** signal (P1 grew this round) by tagging tasks; M2 acts on a **multi-iteration** signal (the trajectory is going nowhere) by converging. Together with the oscillation circuit-breaker, they form a three-tier safety net — signature-level, count-level single-step, and count-level trajectory.
 
 #### Case 1 — Normal iteration (`p3_sweep.active == false`)
 
@@ -439,7 +513,10 @@ The decision dispatches Stage 4's behavior:
 
 | Case | Decision | Stage 4 behavior |
 |---|---|---|
-| **Oscillation circuit-breaker** (any `(file, category)` pair in ≥ 3 iterations) | **CONVERGED — `CAPPED_BY_OSCILLATION`** | Skip Stage 4 entirely; proceed to Stage 5. Reason cites oscillating pairs and signatures. Evaluated **before** Cases 1 / 2. |
+| **Oscillation circuit-breaker** (any `(file, category)` pair in ≥ 3 iterations) | **CONVERGED — `CAPPED_BY_OSCILLATION`** | Skip Stage 4 entirely; proceed to Stage 5. Reason cites oscillating pairs and signatures. Evaluated **first**. |
+| **M1 — P1 regression, firing 3+** (`current_p1 > prev_p1` AND `m1_firings >= 2`) | **CONVERGED — `P1_REGRESSION_PERSISTENT`** | Skip Stage 4; proceed to Stage 5. The third M1 firing converges. |
+| **M1 — P1 regression, firings 1–2** (`current_p1 > prev_p1` AND `m1_firings < 2`) | **CONTINUE — monotonicity violation** | Stage 4 generates fixup tasks for **P1 + P2** (Case 1.3 selection). Tasks carry the `monotonicity-violation` label and a body section forcing `[QUESTION] type: design_decision` before patching. Counter incremented in Stage 4.5. |
+| **M2 — diverging loop** (`p3` grew AND `p1+p2` flat-or-worse, iter ≥ 2) | **CONVERGED — `DIVERGING_LOOP`** | Skip Stage 4; proceed to Stage 5. Trajectory (last 3 iterations) recorded in the convergence ledger. |
 | Case 1.1 (clean: `p1=p2=p3=0`) | **CONVERGED** | Skip Stage 4 entirely; proceed to Stage 5. |
 | Case 1.2 (entering sweep: `p1=p2=0, p3>0`) | **CONTINUE — sweep entry** | Stage 4 generates one fixup task per P3 finding in a single `p3-sweep` wave; sets `p3_sweep.active=true` in manifest. |
 | Case 1.3 (normal iter: `p1>0 OR p2>0`) | **CONTINUE — iterating** | Stage 4 generates fixup tasks for P1+P2 only. P3s recorded in `residual_p3`. |
@@ -447,7 +524,7 @@ The decision dispatches Stage 4's behavior:
 | Case 2.2 (post-sweep regression: `p3_sweep.active=true`, `p1>0 OR p2>0`) | **CONVERGED — sweep aborted** | Skip 4.1–4.5; execute Stage 4.6 (auto-revert) only. Manifest's `p3_sweep.aborted=true` and `regression_signatures` populated. Then Stage 5. |
 | Iteration cap (`review_iteration >= 8`) | **CONVERGED** | Same as Case 1.1, regardless of counts. |
 
-The post-sweep cases (2.1 / 2.2) **never** spawn another fixup round. The pipeline cannot re-arm the sweep loop.
+The post-sweep cases (2.1 / 2.2) **never** spawn another fixup round. The pipeline cannot re-arm the sweep loop. Monotonicity rules (M1 / M2) are skipped during post-sweep iterations — the sweep auto-revert (Stage 4.6) supersedes them.
 
 ---
 
@@ -456,6 +533,7 @@ The post-sweep cases (2.1 / 2.2) **never** spawn another fixup round. The pipeli
 The behavior of Stage 4 depends on the case selected in Stage 3:
 
 - **Case 1.3 (normal iterating)**: run Stage 4.1–4.7 over **P1 + P2 findings only**. Record P3s in `residual_p3`.
+- **Case M1 (monotonicity violation, firings 1–2)**: run Stage 4.1–4.7 over **P1 + P2 findings only** (same selection as Case 1.3). Stage 4.3 attaches `monotonicity-violation` and `blocker-real-dep` labels to every R-task created. Stage 4.5 increments `monotonicity.m1_firings` in `swarm-manifest.json`.
 - **Case 1.2 (sweep entry)**: run Stage 4.1–4.7 over **P3 findings only**. The new wave has `"type": "p3-sweep"`. Persist `p3_sweep` block in the manifest (Stage 4.5).
 - **Case 2.2 (sweep regression)**: skip Stage 4.1–4.5; run **Stage 4.6 (auto-revert)** then proceed to Stage 5. No new tasks are created.
 
@@ -484,7 +562,7 @@ id: "P<N>.E<M>.R<K>"
 title: "[REVIEW] <Finding Title>"
 type: task
 state: open
-labels: ["review-finding", "severity-<p1|p2|p3>"]
+labels: ["review-finding", "severity-<p1|p2|p3>"<if Case M1>, "monotonicity-violation"<endif>]
 phase: <N>
 epic_id: "P<N>.E<M>"
 priority: <P1/P2/P3>
@@ -527,6 +605,21 @@ updated_at: "<ISO 8601>"
 ### Dependencies
 - **Blocked by**: <or 'none'>
 
+<if Case M1 — include this section verbatim:>
+### Monotonicity Violation (M1) — Architectural Escalation Required
+
+P1 grew between iter <prev_iter> and iter <current_iteration>. The prior fixup is suspected of introducing or unmasking this finding, so surface patching is no longer trusted.
+
+**Before authoring any production-code change**, you MUST raise `[QUESTION] type: design_decision` to the leader. Include:
+1. The threat class this finding belongs to (one sentence).
+2. At least two architectural alternatives to surface patching (e.g., switch from regex to a real parser; introduce an abstraction layer; replace the dependency).
+3. Your recommendation, with rationale.
+
+The leader's autonomous-mode `design_decision` policy will respond with a `[DECISION-AUTONOMOUS]` task. Validation-test changes are permitted before the response (they document the threat class) but tests alone do not satisfy this gate. If you skip this question and write production code anyway, the next review iteration will flag the change and another M1 firing will likely cap convergence with `P1_REGRESSION_PERSISTENT`.
+
+This is M1 firing #<m1_firings_after_increment> for this epic. The third firing converges with `P1_REGRESSION_PERSISTENT`.
+<endif>
+
 ## Comments
 
 ```
@@ -538,10 +631,10 @@ Update the epic's `task_ids` array to include the new review task IDs.
 ### 4.5 Update Manifest
 
 1. Mark original tasks (from previous waves) as `"status": "completed"`.
-2. Append new review tasks with `"status": "pending"` and `"model": "<worker_model>"`.
-3. Append new execution waves. Use `"type": "review-fixup"` for normal iterations (Case 1.3) and `"type": "p3-sweep"` for the single sweep wave (Case 1.2).
+2. Append new review tasks with `"status": "pending"` and `"model": "<worker_model>"`. **In Case M1**: also include `"monotonicity_violation": true` on each new task entry so downstream consumers (e.g. orchestrate_swarm leader) can identify these tasks without parsing the labels array.
+3. Append new execution waves. Use `"type": "review-fixup"` for normal iterations (Case 1.3 and Case M1) and `"type": "p3-sweep"` for the single sweep wave (Case 1.2).
 4. Update `e2e_config.e2e_scenarios` for P1 findings.
-5. **In Case 1.3 only**: refresh `swarm-manifest.json.residual_p3` with the current P3 findings (replace, don't append) so downstream consumers see the live residual list.
+5. **In Case 1.3 and Case M1**: refresh `swarm-manifest.json.residual_p3` with the current P3 findings (replace, don't append) so downstream consumers see the live residual list.
 6. **In Case 1.2 only (sweep entry)**: write `swarm-manifest.json.p3_sweep`:
    ```json
    {
@@ -553,6 +646,16 @@ Update the epic's `task_ids` array to include the new review task IDs.
    }
    ```
    Capture `base_ref` **before** any fixup commits land — this is the rollback target if the sweep regresses.
+7. **In Case M1 only (monotonicity violation, firings 1–2)**: increment `swarm-manifest.json.monotonicity` (default `{ "m1_firings": 0, "last_fired_at_iteration": null }` if absent):
+   ```json
+   {
+     "monotonicity": {
+       "m1_firings": <prior_count + 1>,
+       "last_fired_at_iteration": <current_iteration>
+     }
+   }
+   ```
+   The counter is read on entry to the next iteration's Convergence Decision; the third firing (when `m1_firings == 2` and the rule fires again) converges with `P1_REGRESSION_PERSISTENT` instead of continuing.
 
 ### 4.6 Auto-revert P3 Sweep on Regression (Case 2.2 only)
 
@@ -607,17 +710,17 @@ Record the reverted SHAs and the regression signatures in `review_report_iterati
 
 After Stage 4.6 completes, **skip Stage 4.7 (commit/push of fixup tasks — there are none) and Stage 4.8 (index update — no new tasks)**. Proceed directly to Stage 5.
 
-### 4.7 Commit and Push (Cases 1.2 and 1.3 only)
+### 4.7 Commit and Push (Cases 1.2, 1.3, and M1 only)
 
-The `git add` covers the fixup task files, manifest update, `review_discards.json` (any new discards appended in Stage 2.1), and `review_convergence_state.json` (the iteration entry appended in Stage 2.4).
+The `git add` covers the fixup task files, manifest update (including the `monotonicity` counter in Case M1), `review_discards.json` (any new discards appended in Stage 2.1), and `review_convergence_state.json` (the iteration entry appended in Stage 2.4, including the top-level `monotonicity` block in Case M1).
 
 ```bash
 git add eigen_initiative/phases/phase_N/epic_M/
-git commit -m "chore: review iteration <N> — <M> fixup tasks for P<N>.E<M>"
+git commit -m "chore: review iteration <N> — <M> fixup tasks for P<N>.E<M><if Case M1: ' (M1 firing #<count>)'>"
 git push origin feat/P<N>.E<M>
 ```
 
-### 4.8 Update Initiative Index (Cases 1.2 and 1.3 only)
+### 4.8 Update Initiative Index (Cases 1.2, 1.3, and M1 only)
 
 Update `eigen_initiative/_index.md` with the new review tasks.
 
@@ -641,10 +744,14 @@ The review body must include:
   - `Sweep state: entering — <p3_count> P3 fixup task(s) queued in wave <N>` (Case 1.2)
   - `Sweep state: post-sweep clean — <addressed> P3 resolved, <residual> remaining` (Case 2.1)
   - `Sweep state: post-sweep ABORTED — sweep introduced <p1_new> P1 / <p2_new> P2; reverted <revert_count> commit(s) to <base_ref:0:7>. See "Sweep Aborted" in the report.` (Case 2.2)
-- **Convergence status** — CONVERGED / CONTINUE — with the case identifier (e.g., "Case 1.2 — sweep entry", or "CAPPED_BY_OSCILLATION" for the oscillation circuit-breaker).
+- **Convergence status** — CONVERGED / CONTINUE — with the case identifier (e.g., "Case 1.2 — sweep entry", "CAPPED_BY_OSCILLATION", "Case M1 — monotonicity violation #<count>", "DIVERGING_LOOP").
 - **Oscillation line** (only if the circuit-breaker fired):
   - `Oscillation: CAPPED_BY_OSCILLATION — pair(s) repeated across 3+ iterations: (<file>, <category>) [iters: 0,1,2], ... See review_convergence_state.json.oscillation.`
-- **Next steps** — directives for the watchdog: "run /orchestrate_swarm" (Cases 1.2/1.3) or "merging now" (Cases 1.1/2.1/2.2/oscillation).
+- **Monotonicity line** (only if M1 or M2 fired):
+  - Case M1 (firings 1–2): `Monotonicity: M1 firing #<count> — P1 grew (<prev_p1> → <current_p1>); fixup tasks tagged monotonicity-violation, workers required to raise [QUESTION] type: design_decision. Cap at 3 firings (then converge with P1_REGRESSION_PERSISTENT).`
+  - Case M1 (firing 3, converged): `Monotonicity: P1_REGRESSION_PERSISTENT — M1 fired 3 times; architectural escalation could not stabilize the fix. Logged for compound_improve.`
+  - Case M2 (converged): `Monotonicity: DIVERGING_LOOP — trajectory <p3_{N-2}> → <p3_{N-1}> → <p3_N> (p3 rising) while p1+p2 did not improve (<sum_{N-1}> → <sum_N>). See review_convergence_state.json.monotonicity.`
+- **Next steps** — directives for the watchdog: "run /orchestrate_swarm" (Cases 1.2/1.3/M1) or "merging now" (Cases 1.1/2.1/2.2/oscillation/M1-3rd-firing/M2).
 
 Use `event: "COMMENT"`.
 
@@ -675,8 +782,9 @@ The `agents_used` list MUST be the exact set of agents spawned in Stage 1. On it
 - Cross-iteration comparison (if iteration 2+)
 - Convergence status
 - Manifest update summary
+- **Monotonicity section** (only if M1 or M2 fired): iteration trajectory `(p1, p2, p3)` for the last three iterations, the rule that fired, and the action taken. For M1, list the R-task IDs that received `monotonicity-violation` + `blocker-real-dep` labels and the new value of `swarm-manifest.json.monotonicity.m1_firings`. For M2, quote the trajectory verbatim from `review_convergence_state.json.monotonicity`.
 
-If `review_discards.json` or `review_convergence_state.json` was modified this iteration and has not yet been committed (Cases 1.1 / 2.1 / 2.2 / oscillation — converged-clean, where Stage 4.7 is skipped), include them in the same `git add` as the report so the ledgers never lag behind the report.
+If `review_discards.json` or `review_convergence_state.json` was modified this iteration and has not yet been committed (Cases 1.1 / 2.1 / 2.2 / oscillation / M2 / M1-3rd-firing — converged-clean, where Stage 4.7 is skipped), include them in the same `git add` as the report so the ledgers never lag behind the report.
 
 Commit:
 ```bash
@@ -777,7 +885,36 @@ eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --rea
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (CAPPED_BY_OSCILLATION)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
-In Cases 2.1, 2.2, and the oscillation cap, also write a lesson to `eigen_initiative/eigen_lessons/review_swarm_pr/` capturing whichever signal applies (clean sweep success, regression vectors, or oscillating-pair vectors). This is consumed by `compound_improve` on its next pass and is the only persistent record of the sweep / oscillation outcome outside of `swarm-manifest.json.p3_sweep` and `review_convergence_state.json`.
+**Case M1 — monotonicity violation, firings 1–2 (CONTINUE):**
+
+The pipeline stays `iterating`. The watchdog will run `orchestrate_swarm` next; the leader sees the new R-tasks tagged `monotonicity-violation` + `blocker-real-dep` and applies the existing `[BLOCKER-REAL-DEP]` autonomous-mode policy.
+
+```bash
+# <x>, <y>, <z> are this iteration's counts. The 'monotonicity_m1_firings' value comes from the just-incremented manifest counter.
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
+eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE (M1 firing #<count>: P1 grew <prev_p1> → <x>, fixup tasks tagged blocker-real-dep)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+```
+
+**Case M1 — monotonicity violation, third firing (CONVERGED):**
+
+```bash
+# Same counts; this is the terminal firing — no fixup tasks created.
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
+eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "P1_REGRESSION_PERSISTENT: P1 grew in 3 iterations (last at iter <N>); architectural escalation could not stabilize the fix. Logged to compound_improve."
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (P1_REGRESSION_PERSISTENT)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+```
+
+**Case M2 — diverging loop (CONVERGED):**
+
+```bash
+# <x>, <y>, <z> are this iteration's counts. Recorded as-is so findings_history captures the final iteration of the diverging trajectory.
+eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
+eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "DIVERGING_LOOP: trajectory across iterations <N-2..N> shows p3 rising (<p3_{N-2}> → <p3_{N-1}> → <z>) while p1+p2 did not improve (<sum_{N-1}> → <sum_N>). Accepting current state and surfacing for compound_improve."
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (DIVERGING_LOOP)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+```
+
+In Cases 2.1, 2.2, the oscillation cap, M1 (any firing), and M2, also write a lesson to `eigen_initiative/eigen_lessons/review_swarm_pr/` capturing whichever signal applies (clean sweep success, regression vectors, oscillating-pair vectors, or monotonicity trajectory). For M1 the lesson includes the firing count and the offending P1 signatures; for M2 the lesson includes the three-iteration trajectory. This is consumed by `compound_improve` on its next pass and is the only persistent record of the sweep / oscillation / monotonicity outcome outside of `swarm-manifest.json` and `review_convergence_state.json`.
 
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
 
@@ -871,17 +1008,21 @@ Findings:
   Sweep regression: <x_new> P1 + <y_new> P2 introduced; auto-reverted <revert_count> commit(s) to <base_ref:0:7>.
   <if oscillation cap fired:>
   Oscillation: <pair_count> (file, category) pair(s) repeated in 3+ iterations — see review_convergence_state.json.oscillation.
+  <if M1 fired:>
+  Monotonicity M1: P1 grew <prev_p1> → <x>; firing #<count>/3. <if continued: tagged R-tasks with blocker-real-dep | if 3rd: CONVERGED with P1_REGRESSION_PERSISTENT.>
+  <if M2 fired:>
+  Monotonicity M2: DIVERGING_LOOP — see review_convergence_state.json.monotonicity.
 
 Sweep state: <not entered | entering — z P3 fixup task(s) queued | post-sweep clean | post-sweep ABORTED>
 
-Convergence: <CONVERGED — Case 1.1 | CONTINUE — Case 1.2 sweep entry | CONTINUE — Case 1.3 iterating | CONVERGED — Case 2.1 post-sweep | CONVERGED — Case 2.2 sweep aborted | CONVERGED — CAPPED_BY_OSCILLATION>
+Convergence: <CONVERGED — Case 1.1 | CONTINUE — Case 1.2 sweep entry | CONTINUE — Case 1.3 iterating | CONTINUE — Case M1 monotonicity violation #<count> | CONVERGED — Case 2.1 post-sweep | CONVERGED — Case 2.2 sweep aborted | CONVERGED — CAPPED_BY_OSCILLATION | CONVERGED — P1_REGRESSION_PERSISTENT | CONVERGED — DIVERGING_LOOP>
 
 Next steps:
-  Case 1.2 / 1.3 (CONTINUE):
+  Case 1.2 / 1.3 / M1-firing-1-or-2 (CONTINUE):
     Stay on this branch and run /orchestrate_swarm.
-    The manifest has been updated — only new review tasks will execute. In Case 1.2, the new tasks are P3-sweep tasks and the leader will inject the P3-SWEEP CONSTRAINT block into each worker's spawn prompt.
+    The manifest has been updated — only new review tasks will execute. In Case 1.2, the new tasks are P3-sweep tasks and the leader will inject the P3-SWEEP CONSTRAINT block into each worker's spawn prompt. In Case M1, the new tasks carry the monotonicity-violation label and a body section requiring the worker to raise [QUESTION] type: design_decision before patching; the leader's autonomous-mode design_decision policy handles the response.
     After fixups complete, run /review_swarm_pr again (iteration <N+1>).
-  Case 1.1 / 2.1 / 2.2 / CAPPED_BY_OSCILLATION (CONVERGED):
+  Case 1.1 / 2.1 / 2.2 / CAPPED_BY_OSCILLATION / P1_REGRESSION_PERSISTENT / DIVERGING_LOOP (CONVERGED):
     PR #<pr_number> merged to $EIGEN_BRANCH. Branch feat/P<N>.E<M> deleted.
     Now on $EIGEN_BRANCH with latest changes.
     If more epics remain in this phase: proceeding to next epic.
@@ -905,7 +1046,10 @@ Next steps:
 - **No code modifications**: this command reviews, creates tasks, updates manifest. No source code changes.
 - **Runs from the integration branch**: same branch as orchestrate_swarm. All artifacts committed to `feat/P<N>.E<M>`.
 - **Review task IDs**: `P<N>.E<M>.R<K>` format (R for Review).
-- **Convergence**: all P1 and P2 findings must be resolved. Residual P3 findings are allowed and recorded in `pipeline_state.json` (`swarm_execution.findings_summary.p3` and `swarm_execution.convergence.reason`) and in `swarm-manifest.json.residual_p3`. Max 8 iterations. **Oscillation circuit-breaker** terminates the loop earlier when any `(file, category)` pair appears in ≥ 3 distinct iterations — finding ledger lives in `review_convergence_state.json`, signatures in `swarm_execution.findings_history`.
+- **Convergence**: all P1 and P2 findings must be resolved. Residual P3 findings are allowed and recorded in `pipeline_state.json` (`swarm_execution.findings_summary.p3` and `swarm_execution.convergence.reason`) and in `swarm-manifest.json.residual_p3`. Max 8 iterations. The convergence loop has a three-tier safety net evaluated in this order, all reading the cross-iteration ledger in `swarm_execution.findings_history` and `review_convergence_state.json`:
+  1. **Oscillation circuit-breaker** — `(file, category)` pair in ≥ 3 distinct iterations → CONVERGED with `CAPPED_BY_OSCILLATION`.
+  2. **Monotonicity rule M1** — P1 grew between iterations → tag fixup tasks with `monotonicity-violation` and require the worker to raise `[QUESTION] type: design_decision` before patching (leader's existing autonomous `design_decision` policy responds). Cap at 3 firings; the third converges with `P1_REGRESSION_PERSISTENT`. Counter persisted in `swarm-manifest.json.monotonicity.m1_firings`.
+  3. **Monotonicity rule M2** — `p3` rises while `p1+p2` does not improve across ≥ 2 iterations → CONVERGED with `DIVERGING_LOOP`. Trajectory recorded in `review_convergence_state.json.monotonicity`.
 - **P3 fixup policy**: P3 findings do **not** trigger per-iteration fixup tasks. They are addressed in **one bounded P3-sweep round** that runs after all P1/P2 are resolved (Case 1.2). The post-sweep review (Case 2.1 / 2.2) **always** terminates: either it converges cleanly, or — if the sweep introduced new P1/P2 — the sweep commits are auto-reverted (Stage 4.6) and the epic converges with the original residual P3 list and `sweep_aborted: true`. The pipeline never re-enters fixup mode after a sweep, even if the sweep regressed. Sweep regressions are recorded for `compound_improve` learning, not for human escalation — the loop is fully autonomous and bounded by construction.
 - **Push after every commit**: the PR updates automatically when the branch is pushed.
 - **Merge is automatic on convergence**: when converged, the command merges the PR via `gh pr merge --squash --delete-branch`, checks out `$EIGEN_BRANCH`, pulls, and deletes the local branch. No manual step needed.
