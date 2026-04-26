@@ -196,6 +196,10 @@ Tracks the phase-level review and transition lifecycle:
       "reason": null
     },
     "findings_summary": { "p1": 0, "p2": 0, "p3": 0 },
+    "findings_history": [
+      { "iteration": 0, "p1": 1, "p2": 6, "p3": 14, "signatures": ["<sha1>", "..."] },
+      { "iteration": 1, "p1": 1, "p2": 0, "p3": 19, "signatures": ["<sha1>", "..."] }
+    ],
     "review_reports": []
   }
 }
@@ -209,6 +213,28 @@ Tracks the phase-level review and transition lifecycle:
 - `"converged"` — set by `review_swarm_pr` when zero P1+P2+P3 findings remain (PR ready to merge)
 
 Note: `swarm_execution.findings_summary` uses **`p1/p2/p3`** (not `high/medium/low`).
+
+### swarm_execution.findings_history
+
+Per-iteration ledger appended by `review_swarm_pr` via `eigen-squared complete review_swarm_pr --findings-detail <path-to-json>`. Each entry:
+
+```json
+{ "iteration": <int>, "p1": <int>, "p2": <int>, "p3": <int>, "signatures": ["<sha1>", "..."] }
+```
+
+A finding's signature is `sha1("<normalized_file_path>|<category>|<normalized_title>")` where:
+- `normalized_file_path` is the POSIX-style relative path with case preserved,
+- `category` is the lowercase short category (`security`, `data-integrity`, `test-quality`, ...),
+- `normalized_title` is the title lowercased, whitespace-collapsed, and stripped of trailing punctuation.
+
+`findings_history` and `findings_summary` are coupled: `findings_summary` mirrors the latest `findings_history[-1]` counts. The CLI accepts a JSON file via `--findings-detail` whose `iteration` field MUST match the iteration just completed (i.e. `swarm_execution.review_iteration - 1` after the bump). A mismatch is rejected with a non-zero exit. Re-completing the same iteration replaces the existing entry rather than appending a duplicate.
+
+Consumers:
+- `review_swarm_pr` Convergence Protocol — the **oscillation rule** converges immediately with `CAPPED_BY_OSCILLATION` if any `(file, category)` pair (derived from a signature) appears in ≥ 3 distinct iterations within the same epic.
+- `review_swarm_pr` Stage 0.6 (prior-context threading, Step 5) — review agents and workers read this ledger to know which signatures were raised before so they don't blindly re-raise or re-introduce them.
+- `compound_improve` — historical record for cross-epic learning.
+
+Sidecar: a richer JSON artifact `eigen_initiative/phases/phase_N/epic_M/review_convergence_state.json` stores the same iteration trajectory with full per-finding metadata (file, category, severity, title) the CLI does not need. The signatures in `findings_history` and the signatures in the sidecar are computed from the same scheme and must agree iteration-for-iteration.
 
 Both `orchestrate_swarm` and `review_swarm_pr` run on the integration branch (`feat/P<N>.E<M>`). Pipeline state updates are committed to this branch and merge to `$EIGEN_BRANCH` when the PR is merged.
 

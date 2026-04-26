@@ -103,6 +103,13 @@ class SwarmExecution:
     findings_summary: dict = field(
         default_factory=lambda: {"p1": 0, "p2": 0, "p3": 0}
     )
+    # findings_history is a per-iteration ledger written by review_swarm_pr.
+    # Each entry: {"iteration": int, "p1": int, "p2": int, "p3": int,
+    # "signatures": list[str]}. findings_summary mirrors the last entry.
+    # Consumed by the oscillation rule in review_swarm_pr's Convergence
+    # Protocol — same (file, category) pair appearing in >=3 distinct
+    # iterations triggers CAPPED_BY_OSCILLATION.
+    findings_history: list = field(default_factory=list)
     review_reports: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -116,6 +123,7 @@ class SwarmExecution:
             "review_iteration": self.review_iteration,
             "convergence": self.convergence.to_dict(),
             "findings_summary": self.findings_summary,
+            "findings_history": self.findings_history,
             "review_reports": self.review_reports,
         }
 
@@ -139,6 +147,7 @@ class SwarmExecution:
             review_iteration=int(d.get("review_iteration", 0)),
             convergence=Convergence.from_dict(d.get("convergence")),
             findings_summary=d.get("findings_summary") or {"p1": 0, "p2": 0, "p3": 0},
+            findings_history=list(d.get("findings_history") or []),
             review_reports=list(d.get("review_reports") or []),
         )
 

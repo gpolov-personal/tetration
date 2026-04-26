@@ -48,6 +48,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--output-paths", help="JSON dict of output paths")
     p.add_argument("--feedback-path", help="Feedback file path (deepen + converge commands)")
     p.add_argument("--findings-summary", help="JSON findings summary (deepen + converge commands)")
+    p.add_argument(
+        "--findings-detail",
+        help=(
+            "Path to a JSON file with the current iteration's findings detail "
+            "(review_swarm_pr only). Schema: "
+            '{"iteration": N, "p1": x, "p2": y, "p3": z, "signatures": [...]}. '
+            "Appended to swarm_execution.findings_history."
+        ),
+    )
     p.add_argument("--manifest-path", help="Swarm manifest path")
     p.add_argument("--integration-branch", help="Integration branch name")
     p.add_argument("--pr-url", help="Pull request URL")
