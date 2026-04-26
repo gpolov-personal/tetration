@@ -71,6 +71,14 @@ Example JSON (this command gets the swarm-specific context):
 
 **Read `swarm-manifest.json.p3_sweep` on entry.** This field signals whether the current iteration is a bounded P3-sweep round (set by `review_swarm_pr` when entering Case 1.2). Default to `{ "active": false, ... }` if absent. When `p3_sweep.active == true`, every fixup task in the next-to-execute wave is a P3-sweep task and **must** receive the P3-SWEEP CONSTRAINT block in its worker spawn prompt (see Stage 1, Worker Spawn Prompt). The leader does not need to do anything else differently — wave execution, integration, and PR-update logic are unchanged. The post-sweep `review_swarm_pr` enforces the bounded-loop invariant; orchestrate_swarm just runs the workers.
 
+**On iteration ≥ 1 (`swarm_status == "iterating"`), load the prior review context** so each worker's spawn prompt can include a "PRIOR REVIEW CONTEXT" block (see Stage 1, Worker Spawn Prompt). Read:
+
+- `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_convergence_state.json` — the per-iteration finding ledger (signature, file, category, severity, title). Default to `{ "epic_id": "...", "iterations": [] }` if absent (epics started before Step 4 landed).
+- `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_<N-1>.md` — human-readable narrative of the prior review (referenced by path in the worker prompt; the worker reads it as needed).
+- `eigen_initiative/eigen_lessons/review_swarm_pr/*.json` — accumulated lessons (filter per-worker by `affected_files ∩ task.files_owned`).
+
+If `review_convergence_state.json` is missing on iteration ≥ 1, **continue without error** — the prior-context block degrades to "no machine-readable history available; consult `review_report_iteration_<N-1>.md` directly". This preserves backwards compatibility for in-flight epics. Report-file missing is also non-fatal (omit the path from the worker block).
+
 ---
 
 ## Overview
@@ -385,6 +393,50 @@ other P3 worker in this wave. Be conservative.
 This block is injected by orchestrate_swarm only when (a) the manifest's `p3_sweep.active`
 is true AND (b) your task is a P3 review-finding task. It does not appear for normal
 P1/P2 fixup iterations.
+</if>
+
+<if swarm_status == "iterating" AND review_iteration >= 1:>
+PRIOR REVIEW CONTEXT — read carefully:
+
+This is iteration <review_iteration> of the convergence loop. The previous review pass already
+ran on this branch and identified findings; some that overlap your owned files are listed
+below. Your job is to fix YOUR assigned task without re-introducing or regressing prior
+findings — the next review_swarm_pr round will re-check every signature and treat any
+re-appearance as oscillation evidence (3 distinct iterations triggers CAPPED_BY_OSCILLATION
+and ships the epic with the residue intact).
+
+Prior review report: eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_<review_iteration - 1>.md
+Prior convergence ledger: eigen_initiative/phases/phase_<phase>/epic_<epic>/review_convergence_state.json
+  (machine-readable signatures + per-iteration finding metadata; consult this for any
+  signature whose location intersects your files_owned)
+
+Findings raised in prior iteration(s) that touch YOUR owned files (filtered subset):
+<for each prior finding F where F.file ∈ task.files_owned ∪ task.test_files_owned:>
+- [<F.severity>] <F.file>: <F.title>
+  signature: <F.sig>
+  last seen iter: <F.last_seen_iteration>
+  category: <F.category>
+</for>
+(If the list is empty, no prior finding touches your owned files — no extra constraints,
+but still avoid re-introducing any signature listed in the ledger.)
+
+Lessons accumulated for this scope (filtered by affected_files ∩ files_owned):
+<for each lesson L where L.affected_files ∩ task.files_owned ≠ ∅:>
+- <L.title> (<L.lesson_path>)
+  Summary: <L.summary>
+</for>
+
+DO-NOT-REGRESS clause:
+- If your fix would re-introduce ANY signature listed in the ledger above (same
+  normalized_file_path | category | normalized_title combination), STOP and create a
+  [QUESTION] task to team-lead explaining the trade-off. Do NOT silently re-introduce
+  the issue and hope the next review misses it — the signature scheme catches identical
+  re-appearances even when the surface text differs.
+- If you cannot fix YOUR finding without invalidating a prior fix (i.e. the prior fix is
+  demonstrably wrong, not merely inconvenient), articulate that explicitly in a
+  [QUESTION]. The leader decides whether to invalidate the prior fix on the record.
+- The post-iteration review enforces this; in the P3-sweep case a regression triggers
+  auto-revert of the entire sweep wave.
 </if>
 
 COMMUNICATION RULES:

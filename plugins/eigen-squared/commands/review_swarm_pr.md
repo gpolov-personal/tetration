@@ -247,6 +247,25 @@ Assemble for all review agents:
 - Files in scope, shared files
 - PR metadata
 - **CRITICAL: What is OUT OF SCOPE** — files not listed, missing functionality not in acceptance criteria
+- **Previously-raised findings — DO NOT re-raise unless the fix is demonstrably wrong** (iteration ≥ 1 only). Populate from `review_convergence_state.json` (loaded in the Convergence Protocol's Detect Iteration Context step). For every finding raised in any prior iteration, include:
+  ```
+  - id: <last-seen iteration>.<F-id>   signature: <sha1>
+    severity: <P1|P2|P3>   file: <path>   category: <category>
+    title: <title>
+    last_seen_iteration: <iteration>   status: <addressed | persistent | regressed>
+  ```
+  Status is computed by Stage 2.2's set operations once findings are collected; for the **context document** (which is built before findings are collected), include only `last_seen_iteration` and let Stage 2.2 update the status downstream.
+
+  Agents reviewing this PR are instructed:
+
+  > A finding listed above was raised in a prior review pass. Do **not** re-raise the same signature unless the fix is demonstrably wrong (i.e. the fix is wrong on its own merits, not just incomplete). If you re-raise:
+  > 1. **Cite the prior ID** explicitly in your in-scope justification (e.g., `re-raising iter1.F3 — the fix introduced a new SQL injection vector via OFFSET parameters`).
+  > 2. **Articulate why the prior fix is wrong**, not just "this still seems risky".
+  > 3. If you cannot articulate (1) and (2), **downgrade the finding to P3** — the existence of a prior fix is itself evidence the maintainers considered the issue, so weak re-raises do not warrant blocking severity.
+  >
+  > The signature-based oscillation rule (Convergence Protocol) treats any `(file, category)` pair appearing in ≥ 3 iterations as oscillation and converges with `CAPPED_BY_OSCILLATION` — your re-raise contributes to that count. Re-raise judiciously.
+
+  If `review_convergence_state.json` is missing or its `iterations` array is empty (e.g., epic started before Step 4 landed, or this is iteration 0), this section is omitted. Stage 2.2 falls back to "all findings are New".
 
 ---
 
