@@ -672,15 +672,17 @@ git push origin feat/P<N>.E<M>
 
 ### 6.1 Determine Lesson Scope
 
-Check if the current epic is the **E2E Testing epic** (read `epic_manifest.json` — the E2E epic has `name == "E2E Testing"` and `features == []`).
+Check the cases in this order; the first matching rule wins:
 
-- **If E2E Testing epic**: create lessons for **ALL findings (P1, P2, and P3)**. The E2E Testing epic is the most critical learning opportunity in each phase — every finding here (infrastructure failures, cross-component bugs, integration patterns) is a systemic insight that improves future phases. Do not skip any severity.
+- **If the oscillation circuit-breaker fired (`CAPPED_BY_OSCILLATION`)**: create lessons for **every finding whose signature is part of an oscillating `(file, category)` pair, regardless of severity**. These are the highest-value learning signals in the entire pipeline — they're the exact vectors that defeated the convergence loop. Skipping a P3 here because it's "low severity" loses the signal `compound_improve` needs to fix the upstream prompt that produced the whack-a-mole. Non-oscillating findings from the same iteration follow the regular-epic / E2E rules below.
+
+- **If E2E Testing epic** (read `epic_manifest.json` — the E2E epic has `name == "E2E Testing"` and `features == []`): create lessons for **ALL findings (P1, P2, and P3)**. The E2E Testing epic is the most critical learning opportunity in each phase — every finding here (infrastructure failures, cross-component bugs, integration patterns) is a systemic insight that improves future phases. Do not skip any severity.
 
 - **If regular feature epic**: create lessons for **P1 findings only**.
 
 ### 6.2 Generate Lessons
 
-For each finding in scope (determined by 6.1), create a lesson JSON.
+For each finding in scope (determined by 6.1), create a lesson JSON. For oscillation-driven lessons, include the full iteration trajectory (`iterations: [0, 1, 2]`, `signatures`, prior fix attempts referenced from `review_convergence_state.json`) so `compound_improve` can identify which prompt or worker behavior allowed the same vector through three review passes.
 
 ### 6.3 Deduplicate and Write
 
