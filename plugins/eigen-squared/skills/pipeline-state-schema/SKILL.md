@@ -271,6 +271,34 @@ Sibling to `swarm-manifest.json.p3_sweep` and `swarm-manifest.json.residual_p3`.
 
 Initialized lazily (default `{ "m1_firings": 0, "last_fired_at_iteration": null }`) when M1 first fires. Read on entry to each iteration's Convergence Decision. Incremented in `review_swarm_pr` Stage 4.5 step 7 in Case M1. M2 does not write to this field.
 
+### review_convergence_state.json.iterations[].file_iteration_counts (per-epic, per-iteration)
+
+Streak counter per file used by the **architectural-escalation rule** (Tier 2 Step 2). Each entry records the count of consecutive recent iterations in which the file was modified by worker commits, ending at the iteration's review:
+
+```json
+{
+  "iteration": 2,
+  "file_iteration_counts": {
+    "server/backend/supabase-schema-service.ts": 3,
+    "server/ai/tool-dispatcher.ts": 1
+  }
+}
+```
+
+Computation (in `review_swarm_pr` Stage 2.4):
+1. Find the prior iteration's report addition commit (`git log -1 --diff-filter=A`) — that is the iteration boundary. Iter 0 uses the merge-base with `$EIGEN_BRANCH`.
+2. Run `git diff --name-only <boundary>..HEAD`, filter to `scope_files`.
+3. For each modified file F: `count[F] = prev_count[F] + 1` if F was in iter (N-1)'s counts, else `count[F] = 1`.
+4. Files NOT modified in this window are dropped (their streak is broken).
+
+Consumer: `review_swarm_pr` Stage 4.1.a builds `escalation_files = { F : count[F] >= 2 }`. Each R-task whose `files_owned ∩ escalation_files ≠ ∅` is tagged with `architectural-escalation`. Backwards-compatible — missing field is treated as empty map.
+
+### swarm-manifest.json.tasks[].architectural_escalation (per-task)
+
+Boolean flag on R-task entries (sibling to `monotonicity_violation`). Set by `review_swarm_pr` Stage 4.5 when Stage 4.1.a's predicate fires for the task. Companion field `architectural_escalation_files: [<file>]` lists which file(s) triggered escalation.
+
+Consumer: `orchestrate_swarm` worker spawn — when this flag is `true`, the spawn prompt prepends an ARCHITECTURAL ESCALATION REQUIRED constraint block (sibling to the P3-SWEEP CONSTRAINT block) requiring the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's autonomous `design_decision` handler (orchestrate_swarm autonomous-mode rules) responds with one of: APPROVE INLINE (alternative bounded to files_owned), CONVERT TO SCOPE EXPANSION (alternative requires other files), or REQUEST REVISION (worker's alternatives weren't architectural). After two failed revisions the task is marked `failed` with reason `architectural_escalation_unresolved`.
+
 ---
 
 ## Recommendations

@@ -395,6 +395,49 @@ is true AND (b) your task is a P3 review-finding task. It does not appear for no
 P1/P2 fixup iterations.
 </if>
 
+<if task.architectural_escalation == true:>
+ARCHITECTURAL ESCALATION REQUIRED — read carefully before doing anything else:
+
+The following file(s) in your `files_owned` have been modified by fixup commits in **two or
+more consecutive prior iterations** of this epic's review loop. Surface-level patches are
+no longer trusted on these files — past iterations have shown the loop is on track to
+whack-a-mole.
+
+Escalated file(s): <task.architectural_escalation_files>
+
+**MANDATORY first action**: raise `[QUESTION] type: design_decision` to team-lead BEFORE
+authoring any production-code change. The question MUST contain:
+1. The threat class or bug class your task addresses (one sentence).
+2. **At least two architectural alternatives** to another surface patch. Examples:
+   - Replace a regex-based parser with a real parser (e.g. `libpg_query` for SQL).
+   - Introduce an abstraction layer that constrains the dangerous surface.
+   - Replace the dependency entirely.
+   - Restructure the module so the constraint is enforced by the type system rather than
+     runtime checks.
+3. Your recommendation, with rationale (what's reversible, what minimizes coupling, what
+   doesn't close doors).
+
+Validation-test changes (writing/expanding tests that document the threat class) are
+permitted before the leader's response — they're useful no matter which alternative wins.
+But tests alone do NOT satisfy this gate; you MUST wait for `[DECISION-AUTONOMOUS]` before
+shipping production code.
+
+If your recommended alternative requires modifying files OUTSIDE your `files_owned`,
+declare it explicitly in the question. The leader will either grant temporary scope
+expansion via `[DECISION-AUTONOMOUS]` or convert the task into a scope-expansion request
+for the next iteration (your task is then marked `deferred_for_architectural_change` rather
+than `failed`).
+
+Why this matters: the next review_swarm_pr round computes the streak counter again. If you
+push another surface patch and the same file appears in the diff, the streak grows to
+3 iterations and oscillation will likely cap convergence with `CAPPED_BY_OSCILLATION`,
+shipping the residual finding intact. The design-decision route is the only way out.
+
+This block is injected by orchestrate_swarm only when the manifest's task entry has
+`architectural_escalation: true` (set by review_swarm_pr Stage 4.1.a when the file's
+streak counter reaches ≥ 2 in `review_convergence_state.json`).
+</if>
+
 <if swarm_status == "iterating" AND review_iteration >= 1:>
 PRIOR REVIEW CONTEXT — read carefully:
 
@@ -580,6 +623,11 @@ Design decisions affect architecture and need user approval. Contextualize the q
 **Autonomous Mode (default):** The pipeline runs without a human present. Do NOT use AskUserQuestion at any escalation point. Instead, take the **most conservative and reversible decision** yourself. If `$HUMAN_SWARM_FALLBACK` is `true`, you MAY escalate to the user at decision points marked below — otherwise, always decide autonomously:
 
 - **design_decision**: Choose the option that minimizes coupling, is easiest to revert, and doesn't close doors to alternatives. Create a `[DECISION-AUTONOMOUS]` task documenting: the decision made, rationale, reversibility assessment, and the worker's original question. Respond to the worker and continue.
+  - **`design_decision` raised in response to the ARCHITECTURAL ESCALATION REQUIRED preamble** (worker's task has `architectural_escalation: true` in the manifest): apply the per-case rules below, *all* autonomous — never escalate to the user, even when `$HUMAN_SWARM_FALLBACK == "true"`. The override conditions are deterministic (file-set inclusion, alternative count) and the leader can evaluate them.
+    - **APPROVE INLINE** when the worker proposes ≥ 2 alternatives, identifies a recommendation, and the recommendation is bounded to the worker's `files_owned`: respond `APPROVED — proceed with <chosen alternative>`, record the decision and the chosen alternative in `[DECISION-AUTONOMOUS] type: design_decision_approved`, and unblock the worker. The worker proceeds with the architectural alternative inline (not a surface patch).
+    - **CONVERT TO SCOPE EXPANSION** when the worker's recommendation requires modifying files **outside** `files_owned`: do NOT grant ad-hoc scope. Mark the task `state: deferred_for_architectural_change` (not `failed`) in its YAML front-matter and the manifest entry as `"status": "deferred_for_architectural_change"`. Create a `[DECISION-AUTONOMOUS] type: design_decision_deferred` documenting the recommended alternative and the additional files required; the next `/plan_epic_converge` (or the next iteration of `/review_swarm_pr` Stage 4) plans a properly-scoped fixup. Unblock the worker by skipping the task; remaining tasks in the wave continue.
+    - **REQUEST REVISION** when the worker proposes < 2 alternatives, or none of the alternatives are architectural (all are still surface variants): respond `REVISION REQUESTED — your alternatives are <reason>; please re-analyze` and instruct the worker to retry. Track the retry count on the task's `[DECISION-AUTONOMOUS]` entries. **After two failed revisions** on the same task, escalate by marking the task `state: failed` with reason `"architectural_escalation_unresolved"`, surface the file in the next review iteration's report (review_swarm_pr Stage 5.2 will see the failure and may converge with `DIVERGING_LOOP` or `CAPPED_BY_OSCILLATION`), and let the next pass decide.
+    - **Reasoning**: the architectural-escalation route exists specifically to break whack-a-mole loops; granting silent scope expansion or accepting non-architectural alternatives defeats it. The deferred-for-architectural-change state is the autonomous-mode equivalent of "park this for proper planning" — the file's streak counter is preserved, so the next iteration's review will see it and either re-trigger escalation or accept the new alternative.
 - **fix loop exhausted** (Stage 4.7, 4.8): Accept the current state and proceed to PR creation. Document unresolved failures in a `[DECISION-AUTONOMOUS]` task. `/review_swarm_pr` will capture them as findings.
 - **worker stuck (budget exhausted)**: Mark the task as failed, skip it and its dependents. Create a `[DECISION-AUTONOMOUS]` task with full context. Continue with the rest of the swarm.
 - **ambiguous requirement**: Choose the simpler interpretation. Document the ambiguity in a `[DECISION-AUTONOMOUS]` task so the reviewer can assess.

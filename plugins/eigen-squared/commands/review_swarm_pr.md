@@ -130,7 +130,7 @@ If a previous review report exists (`review_report_iteration_<review_iteration -
 The pipeline runs as a small state machine over `(p1, p2, p3, p3_sweep.active)` plus the cross-iteration history in `findings_history`. Evaluate the rules below **in order**, stopping at the first match:
 
 1. **Oscillation circuit-breaker** — strongest historical signal (3+ iterations with same `(file, category)` pair). CONVERGED with `CAPPED_BY_OSCILLATION`.
-2. **Monotonicity rule M1** — P1 must not grow between iterations. Tags the next iteration's fixup tasks with `monotonicity-violation` + `blocker-real-dep`. Caps at 2 consecutive firings; the third firing CONVERGES with `P1_REGRESSION_PERSISTENT`.
+2. **Monotonicity rule M1** — P1 must not grow between iterations. Tags the next iteration's fixup tasks with `monotonicity-violation` and a body section forcing `[QUESTION] type: design_decision` before patching. Caps at 2 consecutive firings; the third firing CONVERGES with `P1_REGRESSION_PERSISTENT`.
 3. **Monotonicity rule M2** — diverging-loop detector. CONVERGES with `DIVERGING_LOOP` when `p3` grows while `p1+p2` is flat or worse across iterations.
 4. **Cases 1 / 2** — dispatch to Case 1 (normal iteration) or Case 2 (post-sweep iteration) depending on `p3_sweep.active`. Cases 1 and 2 are mutually exclusive.
 
@@ -481,27 +481,63 @@ Review Findings (Iteration <N>):
 
 ### 2.4 Append to Convergence State Ledger
 
-After Stage 2.2 has computed buckets, append the current iteration to `review_convergence_state.json`:
+After Stage 2.2 has computed buckets, compute `file_iteration_counts` for the current iteration as a streak counter per file (used by Stage 4.1's architectural-escalation predicate). Then append the current iteration to `review_convergence_state.json`:
 
 ```json
 {
   "iteration": <current_iteration>,
   "agents_used": [<from Stage 1.1's resolved roster>],
+  "file_iteration_counts": {
+    "server/backend/supabase-schema-service.ts": 3,
+    "server/ai/tool-dispatcher.ts": 1
+  },
   "findings": [
     { "id": "F<n>", "sig": "<sha1>", "file": "<path>", "category": "<category>", "severity": "P1|P2|P3", "title": "<title>" }
   ]
 }
 ```
 
-`F<n>` is a 1-indexed local ID assigned in stable order (e.g., by signature lex order so iter-N's F1 is reproducible). Persist the **kept** post-filter findings only; discards live in `review_discards.json` instead.
+#### Computing `file_iteration_counts`
+
+The counter tracks the length of the current streak of consecutive iterations in which a file was modified by worker commits. Compute it deterministically:
+
+1. Identify the **iteration boundary** for the current iteration N — the SHA of the commit that introduced the prior iteration's review report:
+   ```bash
+   prior_report="eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_<N-1>.md"
+   if [ -f "$prior_report" ]; then
+       boundary=$(git log -1 --diff-filter=A --format=%H -- "$prior_report")
+   else
+       # Iter 0 has no prior report — boundary is the merge-base with $EIGEN_BRANCH (covers T-task commits).
+       boundary=$(git merge-base "$EIGEN_BRANCH" HEAD)
+   fi
+   ```
+   The report is created exactly once per iteration in Stage 5.2 and never modified afterwards, so `git log -1 --diff-filter=A` reliably returns its addition commit.
+
+2. List the files modified in this iteration's window:
+   ```bash
+   modified_files=$(git diff --name-only "${boundary}..HEAD")
+   ```
+   Filter to source files (drop `eigen_initiative/**` artifacts, manifest, reports, tasks). Use the same scope-membership rule as Stage 0.5 — the streak counter only cares about files within the epic's `scope_files`.
+
+3. Read iter `N-1`'s `file_iteration_counts` from `review_convergence_state.json` (default `{}` if missing or first iteration).
+
+4. For each file `F` in `modified_files ∩ scope_files`:
+   - If `F` ∈ iter (N-1)'s counts → `count[F] = prev_count[F] + 1` (streak extended).
+   - Else → `count[F] = 1` (new streak).
+
+5. Files NOT in `modified_files` are dropped from this iteration's counts (their streak is broken). The map only contains files with an active streak ending at the current iteration.
+
+`F<n>` (in `findings`) is a 1-indexed local ID assigned in stable order (e.g., by signature lex order so iter-N's F1 is reproducible). Persist the **kept** post-filter findings only; discards live in `review_discards.json` instead.
 
 If the oscillation circuit-breaker (Convergence Protocol) fires this iteration, also write the top-level `oscillation` block alongside `iterations`.
 
 The file is committed to the integration branch:
-- In Cases 1.2 / 1.3 (CONTINUE): in Stage 4.7 alongside the new fixup tasks.
-- In Cases 1.1 / 2.1 / 2.2 / oscillation (CONVERGED): in Stage 5.2 alongside the report.
+- In Cases 1.2 / 1.3 / M1 (CONTINUE): in Stage 4.7 alongside the new fixup tasks.
+- In Cases 1.1 / 2.1 / 2.2 / oscillation / M1-3rd-firing / M2 (CONVERGED): in Stage 5.2 alongside the report.
 
 Append-only — never rewrite existing iteration entries (idempotent retry replaces only the entry for the current iteration, mirroring the CLI's `findings_history` semantics).
+
+**Backwards compatibility**: epics whose ledger pre-dates this stage have entries without `file_iteration_counts`. Treat the missing field as an empty map (no active streaks) — the predicate in Stage 4.1 degrades to "no escalations" rather than erroring.
 
 ---
 
@@ -533,16 +569,36 @@ The post-sweep cases (2.1 / 2.2) **never** spawn another fixup round. The pipeli
 The behavior of Stage 4 depends on the case selected in Stage 3:
 
 - **Case 1.3 (normal iterating)**: run Stage 4.1–4.7 over **P1 + P2 findings only**. Record P3s in `residual_p3`.
-- **Case M1 (monotonicity violation, firings 1–2)**: run Stage 4.1–4.7 over **P1 + P2 findings only** (same selection as Case 1.3). Stage 4.3 attaches `monotonicity-violation` and `blocker-real-dep` labels to every R-task created. Stage 4.5 increments `monotonicity.m1_firings` in `swarm-manifest.json`.
+- **Case M1 (monotonicity violation, firings 1–2)**: run Stage 4.1–4.7 over **P1 + P2 findings only** (same selection as Case 1.3). Stage 4.3 attaches the `monotonicity-violation` label and a Monotonicity Violation body section to every R-task created. Stage 4.5 increments `monotonicity.m1_firings` in `swarm-manifest.json`.
 - **Case 1.2 (sweep entry)**: run Stage 4.1–4.7 over **P3 findings only**. The new wave has `"type": "p3-sweep"`. Persist `p3_sweep` block in the manifest (Stage 4.5).
 - **Case 2.2 (sweep regression)**: skip Stage 4.1–4.5; run **Stage 4.6 (auto-revert)** then proceed to Stage 5. No new tasks are created.
 
 ### 4.1 Derive File Ownership
 
-The "selected findings" set depends on the Stage 3 case (P1+P2 in Case 1.3; P3 only in Case 1.2; nothing in Case 2.2). For each selected finding:
+The "selected findings" set depends on the Stage 3 case (P1+P2 in Case 1.3 / Case M1; P3 only in Case 1.2; nothing in Case 2.2). For each selected finding:
 - Look up which manifest task owns the finding's file → `original_task_id`
 - Determine `files_owned` and `test_files_owned` for the fix
 - If file is in `shared_files` → integration finding (final wave)
+
+#### 4.1.a Architectural-escalation predicate
+
+Read the `file_iteration_counts` map just computed in Stage 2.4. Build the **escalation set**:
+
+```
+escalation_files = { F : file_iteration_counts[F] >= 2 }
+```
+
+Rationale: `count[F] >= 2` means F was modified in at least two consecutive iterations ending at the current one. The R-tasks created in this Stage will dispatch in the next worker phase — extending the streak to 3+ consecutive iterations on F is the whack-a-mole signal we need to break (root cause E in `docs/p2e3-convergence-oscillation-deep-analysis.md`).
+
+For each R-task being created in Stage 4.3:
+- If `task.files_owned ∩ escalation_files ≠ ∅` → set `task.architectural_escalation = true`. The task carries the `architectural-escalation` label (Stage 4.3) and an "Architectural Escalation Required" body section that forces the worker to raise `[QUESTION] type: design_decision` before authoring production-code changes.
+- Record the offending files in the task body so the worker knows which file(s) triggered escalation.
+
+The escalation predicate is **independent** of M1 — a task may carry both `monotonicity-violation` (M1 fired this iteration) AND `architectural-escalation` (this file has been hit ≥ 2 iters), in which case both body sections are emitted and the worker reads the union of constraints.
+
+**Skipped in Cases 2.1 / 2.2** (post-sweep terminal cases — no R-tasks created) and **Case 1.2 sweep entry** (P3 sweep is bounded by construction; escalation makes no sense for a one-shot sweep). Active in Cases 1.3 and M1.
+
+**Backwards compatibility**: if iter `N-1`'s ledger entry has no `file_iteration_counts` field (epic started before this Stage shipped), the current iteration's counts are computed from scratch with all streaks at length 1. Escalation cannot fire on the first iteration after this stage lands; it activates from the iteration after that (the streak takes one full cycle to grow).
 
 ### 4.2 Build Dependency Graph and Assign Waves
 
@@ -562,7 +618,7 @@ id: "P<N>.E<M>.R<K>"
 title: "[REVIEW] <Finding Title>"
 type: task
 state: open
-labels: ["review-finding", "severity-<p1|p2|p3>"<if Case M1>, "monotonicity-violation"<endif>]
+labels: ["review-finding", "severity-<p1|p2|p3>"<if Case M1>, "monotonicity-violation"<endif><if architectural_escalation>, "architectural-escalation"<endif>]
 phase: <N>
 epic_id: "P<N>.E<M>"
 priority: <P1/P2/P3>
@@ -620,6 +676,24 @@ The leader's autonomous-mode `design_decision` policy will respond with a `[DECI
 This is M1 firing #<m1_firings_after_increment> for this epic. The third firing converges with `P1_REGRESSION_PERSISTENT`.
 <endif>
 
+<if architectural_escalation — include this section verbatim:>
+### Architectural Escalation Required (file ≥ 2 consecutive iterations)
+
+The following file(s) in your `files_owned` have been modified by fixup commits in **two or more consecutive prior iterations**. Surface-level patches are no longer trusted on these files — the loop is on track to whack-a-mole.
+
+**Escalated file(s)**: `<list from escalation_files ∩ task.files_owned>`
+**Streak length per file (current iteration)**: `<{F: count[F] for F in escalation_files ∩ task.files_owned}>`
+
+**Before authoring any production-code change**, you MUST raise `[QUESTION] type: design_decision` to the leader. Include:
+1. The threat class or bug class this finding addresses (one sentence).
+2. **At least two architectural alternatives** to another surface patch (examples: replace a regex-based parser with a real parser like `libpg_query`; introduce an abstraction layer that constrains the dangerous surface; replace the dependency; restructure the module so the constraint is enforced by the type system rather than runtime checks).
+3. Your recommendation, with rationale (what's reversible, what minimizes coupling, what doesn't close doors).
+
+The leader's autonomous-mode `design_decision` handler will respond with a `[DECISION-AUTONOMOUS]` task. **Validation-test changes are permitted before the response** (they document the threat class for posterity) but tests alone do not satisfy this gate. If you skip this question and write a surface patch, the next review iteration will continue the streak and the loop is statistically likely to converge with `CAPPED_BY_OSCILLATION` — your fix won't ship.
+
+If your recommended alternative requires modifying files **outside `files_owned`**, declare it explicitly in the question; the leader will either grant temporary scope expansion via `[DECISION-AUTONOMOUS]` or convert the task into a scope-expansion request for the next iteration.
+<endif>
+
 ## Comments
 
 ```
@@ -631,7 +705,7 @@ Update the epic's `task_ids` array to include the new review task IDs.
 ### 4.5 Update Manifest
 
 1. Mark original tasks (from previous waves) as `"status": "completed"`.
-2. Append new review tasks with `"status": "pending"` and `"model": "<worker_model>"`. **In Case M1**: also include `"monotonicity_violation": true` on each new task entry so downstream consumers (e.g. orchestrate_swarm leader) can identify these tasks without parsing the labels array.
+2. Append new review tasks with `"status": "pending"` and `"model": "<worker_model>"`. **In Case M1**: also include `"monotonicity_violation": true` on each new task entry so downstream consumers (e.g. orchestrate_swarm leader) can identify these tasks without parsing the labels array. **For tasks flagged in Stage 4.1.a**: also include `"architectural_escalation": true` and `"architectural_escalation_files": [<files from escalation_files ∩ task.files_owned>]` so the orchestrate_swarm worker spawn can render the escalation preamble without re-deriving the predicate.
 3. Append new execution waves. Use `"type": "review-fixup"` for normal iterations (Case 1.3 and Case M1) and `"type": "p3-sweep"` for the single sweep wave (Case 1.2).
 4. Update `e2e_config.e2e_scenarios` for P1 findings.
 5. **In Case 1.3 and Case M1**: refresh `swarm-manifest.json.residual_p3` with the current P3 findings (replace, don't append) so downstream consumers see the live residual list.
@@ -747,6 +821,8 @@ The review body must include:
 - **Convergence status** — CONVERGED / CONTINUE — with the case identifier (e.g., "Case 1.2 — sweep entry", "CAPPED_BY_OSCILLATION", "Case M1 — monotonicity violation #<count>", "DIVERGING_LOOP").
 - **Oscillation line** (only if the circuit-breaker fired):
   - `Oscillation: CAPPED_BY_OSCILLATION — pair(s) repeated across 3+ iterations: (<file>, <category>) [iters: 0,1,2], ... See review_convergence_state.json.oscillation.`
+- **Architectural escalation line** (only if Stage 4.1.a's escalation list is non-empty):
+  - `Architectural escalation: <count> file(s) modified in ≥ 2 consecutive iterations — <count_tasks> R-task(s) tagged architectural-escalation: <file1> (streak <n1>), <file2> (streak <n2>), ... See review_report.md "Architectural Escalations" section.`
 - **Monotonicity line** (only if M1 or M2 fired):
   - Case M1 (firings 1–2): `Monotonicity: M1 firing #<count> — P1 grew (<prev_p1> → <current_p1>); fixup tasks tagged monotonicity-violation, workers required to raise [QUESTION] type: design_decision. Cap at 3 firings (then converge with P1_REGRESSION_PERSISTENT).`
   - Case M1 (firing 3, converged): `Monotonicity: P1_REGRESSION_PERSISTENT — M1 fired 3 times; architectural escalation could not stabilize the fix. Logged for compound_improve.`
@@ -782,7 +858,16 @@ The `agents_used` list MUST be the exact set of agents spawned in Stage 1. On it
 - Cross-iteration comparison (if iteration 2+)
 - Convergence status
 - Manifest update summary
-- **Monotonicity section** (only if M1 or M2 fired): iteration trajectory `(p1, p2, p3)` for the last three iterations, the rule that fired, and the action taken. For M1, list the R-task IDs that received `monotonicity-violation` + `blocker-real-dep` labels and the new value of `swarm-manifest.json.monotonicity.m1_firings`. For M2, quote the trajectory verbatim from `review_convergence_state.json.monotonicity`.
+- **Monotonicity section** (only if M1 or M2 fired): iteration trajectory `(p1, p2, p3)` for the last three iterations, the rule that fired, and the action taken. For M1, list the R-task IDs that received the `monotonicity-violation` label and the new value of `swarm-manifest.json.monotonicity.m1_firings`. For M2, quote the trajectory verbatim from `review_convergence_state.json.monotonicity`.
+- **Architectural Escalations section** (only if Stage 4.1.a's `escalation_files` is non-empty and Stage 4 created tasks): one row per escalated file:
+  ```markdown
+  ## Architectural Escalations
+  The following files have been modified by fixup commits in 2+ consecutive iterations and require design-decision review before further patching:
+  | File | Streak (iters) | R-tasks tagged | Suggested alternative class |
+  |---|---|---|---|
+  | server/backend/supabase-schema-service.ts | 3 | P2.E3.R005 | switch to libpg_query (or equivalent real SQL parser) |
+  ```
+  The "Suggested alternative class" is a free-text hint sourced from the most recent finding's threat class (where available) — leave blank if no threat-class metadata is present. Workers operating on these tasks will raise `[QUESTION] type: design_decision` and the leader's response will populate the actual decision in `[DECISION-AUTONOMOUS]` tasks.
 
 If `review_discards.json` or `review_convergence_state.json` was modified this iteration and has not yet been committed (Cases 1.1 / 2.1 / 2.2 / oscillation / M2 / M1-3rd-firing — converged-clean, where Stage 4.7 is skipped), include them in the same `git add` as the report so the ledgers never lag behind the report.
 
@@ -887,13 +972,13 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONV
 
 **Case M1 — monotonicity violation, firings 1–2 (CONTINUE):**
 
-The pipeline stays `iterating`. The watchdog will run `orchestrate_swarm` next; the leader sees the new R-tasks tagged `monotonicity-violation` + `blocker-real-dep` and applies the existing `[BLOCKER-REAL-DEP]` autonomous-mode policy.
+The pipeline stays `iterating`. The watchdog will run `orchestrate_swarm` next; the leader sees the new R-tasks tagged `monotonicity-violation` with a body section requiring `[QUESTION] type: design_decision`, and the leader's existing autonomous `design_decision` handler responds.
 
 ```bash
 # <x>, <y>, <z> are this iteration's counts. The 'monotonicity_m1_firings' value comes from the just-incremented manifest counter.
 eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
-eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE (M1 firing #<count>: P1 grew <prev_p1> → <x>, fixup tasks tagged blocker-real-dep)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
+eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE (M1 firing #<count>: P1 grew <prev_p1> → <x>, fixup tasks tagged monotonicity-violation)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 **Case M1 — monotonicity violation, third firing (CONVERGED):**
@@ -1009,9 +1094,11 @@ Findings:
   <if oscillation cap fired:>
   Oscillation: <pair_count> (file, category) pair(s) repeated in 3+ iterations — see review_convergence_state.json.oscillation.
   <if M1 fired:>
-  Monotonicity M1: P1 grew <prev_p1> → <x>; firing #<count>/3. <if continued: tagged R-tasks with blocker-real-dep | if 3rd: CONVERGED with P1_REGRESSION_PERSISTENT.>
+  Monotonicity M1: P1 grew <prev_p1> → <x>; firing #<count>/3. <if continued: tagged R-tasks with monotonicity-violation | if 3rd: CONVERGED with P1_REGRESSION_PERSISTENT.>
   <if M2 fired:>
   Monotonicity M2: DIVERGING_LOOP — see review_convergence_state.json.monotonicity.
+  <if any architectural escalations:>
+  Architectural escalation: <n_files> file(s) hit in ≥ 2 consecutive iters; <n_tasks> R-task(s) tagged architectural-escalation. See "Architectural Escalations" in the report.
 
 Sweep state: <not entered | entering — z P3 fixup task(s) queued | post-sweep clean | post-sweep ABORTED>
 
@@ -1050,6 +1137,7 @@ Next steps:
   1. **Oscillation circuit-breaker** — `(file, category)` pair in ≥ 3 distinct iterations → CONVERGED with `CAPPED_BY_OSCILLATION`.
   2. **Monotonicity rule M1** — P1 grew between iterations → tag fixup tasks with `monotonicity-violation` and require the worker to raise `[QUESTION] type: design_decision` before patching (leader's existing autonomous `design_decision` policy responds). Cap at 3 firings; the third converges with `P1_REGRESSION_PERSISTENT`. Counter persisted in `swarm-manifest.json.monotonicity.m1_firings`.
   3. **Monotonicity rule M2** — `p3` rises while `p1+p2` does not improve across ≥ 2 iterations → CONVERGED with `DIVERGING_LOOP`. Trajectory recorded in `review_convergence_state.json.monotonicity`.
+- **Architectural-escalation rule (per-file)**: orthogonal to the convergence safety net above. Tracked in `review_convergence_state.json.iterations[].file_iteration_counts` (a streak counter per file). When a file's streak reaches ≥ 2 consecutive iterations, every R-task created for that file in the current Stage 4 receives the `architectural-escalation` label and a body section forcing the worker to raise `[QUESTION] type: design_decision` before patching. The leader's existing autonomous `design_decision` handler responds. This is the per-file analog of M1's iteration-level escalation and directly targets root cause E (the SQL whack-a-mole pattern from `docs/p2e3-convergence-oscillation-deep-analysis.md`).
 - **P3 fixup policy**: P3 findings do **not** trigger per-iteration fixup tasks. They are addressed in **one bounded P3-sweep round** that runs after all P1/P2 are resolved (Case 1.2). The post-sweep review (Case 2.1 / 2.2) **always** terminates: either it converges cleanly, or — if the sweep introduced new P1/P2 — the sweep commits are auto-reverted (Stage 4.6) and the epic converges with the original residual P3 list and `sweep_aborted: true`. The pipeline never re-enters fixup mode after a sweep, even if the sweep regressed. Sweep regressions are recorded for `compound_improve` learning, not for human escalation — the loop is fully autonomous and bounded by construction.
 - **Push after every commit**: the PR updates automatically when the branch is pushed.
 - **Merge is automatic on convergence**: when converged, the command merges the PR via `gh pr merge --squash --delete-branch`, checks out `$EIGEN_BRANCH`, pulls, and deletes the local branch. No manual step needed.
