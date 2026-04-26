@@ -63,9 +63,11 @@ For the completed phase N, read:
 - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_manifest.json` — all epics, execution order
 - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/phase_e2e_config.json` — validation scenarios, E2E scenarios, infrastructure requirements
 - For each epic M in the phase:
-  - `state.phases[N].plans[M].swarm_execution` — PR url, PR number, review iterations
+  - `state.phases[N].plans[M].swarm_execution` — PR url, PR number, review iterations, **`convergence.reason`** (free-text; the prefix classifies the case — see `pipeline-state-schema/SKILL.md` "Convergence reason taxonomy")
+  - `state.phases[N].plans[M].swarm_execution.findings_history` — per-iteration `(p1, p2, p3)` trajectory, used when surfacing degraded convergence
   - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md` — epic name, features
   - Latest review report (if exists): `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/review_report_iteration_*.md`
+  - `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/review_convergence_state.json` (if exists) — for degraded epics, contains `oscillation` / `monotonicity` blocks with the structured detail referenced by the convergence reason
 
 ### 1.2 Fetch PR Status
 
@@ -74,20 +76,39 @@ For each epic with a `swarm_execution.pr_url`, fetch current PR status:
 gh pr view <pr_number> --json state,title,additions,deletions,changedFiles,mergedAt
 ```
 
-### 1.3 Present Phase Summary
+### 1.3 Classify Convergence Outcomes
+
+Before presenting the summary, classify each epic's `convergence.reason` into **clean** or **degraded**:
+
+| Reason prefix | Class | Why it's degraded |
+|---|---|---|
+| `All findings resolved` | clean | Case 1.1 — zero P1/P2/P3. |
+| `P3 sweep completed` | clean | Case 2.1 — bounded sweep ran, residual P3 list disclosed. |
+| `Maximum review iterations` | clean | Cap reached; treat as Case 1.1 by policy. |
+| `P3 sweep introduced` (SWEEP_ABORTED) | **degraded** | Sweep introduced new P1/P2; commits auto-reverted. Epic ships at the pre-sweep state with the original residual P3 list. |
+| `CAPPED_BY_OSCILLATION` | **degraded** | Same `(file, category)` pair appeared in ≥ 3 iterations; loop accepted to break the cycle. Findings remain in code. |
+| `P1_REGRESSION_PERSISTENT` | **degraded** | M1 fired three times; architectural escalation could not stabilize the fix. P1 finding(s) remain in code. |
+| `DIVERGING_LOOP` | **degraded** | M2 fired; `p3` rose while `p1+p2` did not improve. Findings remain in code. |
+
+For each **degraded** epic, also pull:
+- The full `convergence.reason` text (it carries human-readable detail after the prefix).
+- The last 3 entries of `findings_history` for the trajectory.
+- The relevant block from `review_convergence_state.json` (`oscillation` for `CAPPED_BY_OSCILLATION`, `monotonicity` for the M-rule reasons; `swarm-manifest.json.p3_sweep` for `SWEEP_ABORTED`).
+
+### 1.3.1 Present Phase Summary
 
 ```
 === Phase <N> Complete — Summary ===
 
 Phase: <N> — <phase_e2e_summary from manifest>
-Status: All epics converged (including E2E Testing)
+Status: All epics converged (including E2E Testing)<if any degraded: " — see Degraded Epics section below">
 
 Epics Completed:
-  | Epic | Name | Features | PR | Review Iterations | Status |
-  |------|------|----------|----|-------------------|--------|
-  | P<N>.E1 | <name> | <count> | #<pr> | <iterations> | converged |
-  | P<N>.E2 | <name> | <count> | #<pr> | <iterations> | converged |
-  | P<N>.E<last> | E2E Testing | 0 | #<pr> | <iterations> | converged |
+  | Epic | Name | Features | PR | Review Iterations | Convergence |
+  |------|------|----------|----|-------------------|-------------|
+  | P<N>.E1 | <name> | <count> | #<pr> | <iterations> | clean |
+  | P<N>.E2 | <name> | <count> | #<pr> | <iterations> | DEGRADED — <reason_prefix> |
+  | P<N>.E<last> | E2E Testing | 0 | #<pr> | <iterations> | clean |
 
 PRs to Review and Merge (in order):
   1. gh pr merge <pr_1> --squash   # P<N>.E1 — <name>
@@ -96,6 +117,35 @@ PRs to Review and Merge (in order):
   <last>. gh pr merge <pr_last> --squash   # P<N>.E<last> — E2E Testing
 
   Merge in epic order (E1 first, E2E Testing last).
+```
+
+### 1.3.2 Degraded Epics (only if any exist)
+
+If any epic was classified **degraded** above, append this section to the summary; otherwise skip it entirely. The user MUST see this before deciding whether to test/approve — degraded epics shipped with known unresolved findings.
+
+```
+=== Degraded Epics — Manual Verification Required ===
+
+The autonomous loop converged the following epics with known unresolved findings.
+Each epic's PR has already been merged to $EIGEN_BRANCH (Stage 7.2 of review_swarm_pr).
+Do NOT approve this phase until you have manually verified each degraded epic.
+
+<for each degraded epic:>
+- P<N>.E<M> — <epic name>
+    Reason: <full convergence.reason text>
+    Trajectory (last 3 iters): p1=<p1_{N-2}>→<p1_{N-1}>→<p1_N>, p2=<p2_*>→..., p3=<p3_*>→...
+    Structured detail: <path to review_convergence_state.json>
+    Review reports: eigen_initiative/phases/phase_<N>/epic_<M>/review_report_iteration_*.md
+    Recommended check:
+      <if CAPPED_BY_OSCILLATION:>      Inspect the oscillating (file, category) pairs and decide whether the architectural alternative is worth a follow-up epic.
+      <if P1_REGRESSION_PERSISTENT:>   Read the M1 firings in review_convergence_state.json.monotonicity; assess whether the residual P1 should block phase approval.
+      <if DIVERGING_LOOP:>             Read the trajectory; the loop did not converge — confirm the residual findings are acceptable for production.
+      <if SWEEP_ABORTED:>              Inspect swarm-manifest.json.p3_sweep.regression_signatures to understand which P3 fix attempts introduced regressions.
+</for>
+
+If any degraded epic looks unsafe to ship, refuse this phase's approval (Mode 2 → "No") and either:
+  (a) revert the offending PR(s) and re-run /orchestrate_swarm with adjusted scope, or
+  (b) accept the residual findings explicitly and re-run /eigen_continue to approve.
 ```
 
 ### 1.4 Generate Testing Recipe
@@ -133,6 +183,14 @@ Read `phase_e2e_config.json` to build the recipe:
    <for each phase_e2e_scenario:>
    - <scenario.name>: <scenario.description>
      Acceptance: <scenario.acceptance_criteria>
+
+   <if any epic was classified DEGRADED in 1.3:>
+   DEGRADED EPICS — additional checks required (do this before running E2E tests):
+   <for each degraded epic:>
+   - P<N>.E<M> (<reason_prefix>): <one-line check from the recommended-check table in 1.3.2>
+   </for>
+   If any degraded check reveals an unacceptable residual, refuse approval in Mode 2.
+   <endif>
 
 7. CAPTURE LEARNINGS:
    Review the E2E Testing epic's PR for integration patterns and infrastructure
@@ -309,3 +367,4 @@ Do NOT update pipeline state. Exit.
 - **Merge order matters** — PRs should be merged in epic order (E1 first, E2E Testing last).
 - **Testing recipe is generated, not hardcoded** — it reads from `phase_e2e_config.json` and the `language-profiles` skill.
 - **Pipeline continuation** — after updating pipeline state, the watchdog detects the change and schedules the next command automatically.
+- **Degraded convergence is surfaced, not blocked** — the autonomous loop ships epics that converged with `CAPPED_BY_OSCILLATION`, `P1_REGRESSION_PERSISTENT`, `DIVERGING_LOOP`, or `SWEEP_ABORTED` rather than escalating mid-phase. This command is the human gate: classify each epic in Stage 1.3 and surface the degraded ones in Stage 1.3.2 + the testing recipe so the user can refuse approval if any residual finding is unsafe to ship. Never silently treat a degraded reason as clean.
