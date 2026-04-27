@@ -960,7 +960,9 @@ Check the cases in this order; the first matching rule wins:
 
 - **If E2E Testing epic** (read `epic_manifest.json` — the E2E epic has `name == "E2E Testing"` and `features == []`): create lessons for **ALL findings (P1, P2, and P3)**. The E2E Testing epic is the most critical learning opportunity in each phase — every finding here (infrastructure failures, cross-component bugs, integration patterns) is a systemic insight that improves future phases. Do not skip any severity.
 
-- **If regular feature epic**: create lessons for **P1 findings only**.
+- **If regular feature epic**: create lessons for **P1 and P2 findings**. P3s are excluded by default (volume — feature epics typically generate many low-severity stylistic findings that drown out the architectural signal). P3s still become lessons via the oscillation-promotion rule above when their signature is part of an oscillating `(file, category)` pair, so the high-value P3s aren't lost.
+
+  **Why include P2 (changed in Tier 2 Step 4):** P2 findings on feature epics are usually architectural — JSON.parse without try/catch, missing transaction boundaries, contract drift between services, ad-hoc retry logic without backoff. Excluding them was a Tier 1 carry-over from before signature dedup landed (`a8f2b98`), when there was a real risk of lesson-file sprawl from the same P2 surfacing in multiple iterations. With Tier 1's signature scheme, same-(file, category, normalized_title) P2s across iterations collapse to one lesson automatically (Stage 6.3 Deduplicate and Write enforces this), so the volume risk is gone and `compound_improve`'s next-project loop gets a richer architectural signal.
 
 ### 6.2 Generate Lessons
 
