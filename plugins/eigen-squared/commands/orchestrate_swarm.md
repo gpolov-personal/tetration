@@ -1059,9 +1059,16 @@ INSTRUCTIONS:
 
 Continue reacting to messages while the integrator works. When it signals completion:
 
-1. Run the full test suite to double-check
-2. If tests pass → proceed to Stage 4.6
-3. If tests fail → proceed to Stage 4.6 (post-integration failure attribution)
+1. **Integrator ownership audit** — apply the same `git diff --name-only` audit as the per-worker ownership audit (Stage 6 step 1), but with `shared_files` as the authoritative scope (the integrator's only legitimate scope per its spawn prompt). Compute:
+   - `integrator_modified = git diff --name-only <integrator_first_commit>~1..HEAD`
+   - `integrator_created = git diff --name-only --diff-filter=A <integrator_first_commit>~1..HEAD`
+   - `out_of_scope_modified = integrator_modified - shared_files`
+   - `out_of_scope_created = integrator_created - shared_files`
+
+   On non-empty out-of-scope sets, `revert_modified` (or `delete_created`) per the same decision tree as worker audits. Record outcome in `swarm-manifest.json.integrator.ownership_audit` (mirroring the per-task field). The integrator was given `shared_files` as its scope; deviations are not pre-approved.
+2. Run the full test suite to double-check
+3. If tests pass → proceed to Stage 4.6
+4. If tests fail → proceed to Stage 4.7 (post-integration failure attribution)
 
 ### 4.6 Shut Down Integrator
 
