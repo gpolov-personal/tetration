@@ -495,13 +495,15 @@ For each finding, in order:
 
    **Signature versioning.** `pipeline_state.json.swarm_execution.signature_version` (default `2`) records the algorithm in use. Loaders that encounter `signature_version < 2` (legacy state from before this step landed) re-compute every entry's signature under v2 rules on the next read and write back. The pre-v2 signature is preserved in a `legacy_signatures: ["<old_sig>", ...]` array on each finding entry so retroactive comparisons against old reports still match. Migration is idempotent — safe to re-run.
 
-2. **Prior-discard match (iteration ≥ 1)**: if the finding's match_key matches any entry in `review_discards.json` from a prior iteration, **drop** the finding with reason `previously discarded in iter <K> (<original_reason>)`. Do NOT re-evaluate against the current `scope_files` — prior discards are sticky. Promoting a previously-discarded finding requires an explicit promotion step that does not exist in Tier 1.
+2. **Regression-gate skip-list (iteration ≥ 1)**: load the union of (a) `swarm-manifest.json.tasks[].full_suite_regressions` (per-worker gate, Step 5) and (b) `swarm-manifest.json.iterations[<prev>].integration_regressions` (Stage 4.0 pre-final-push gate). Mark each signature in this union as `skipped_by_regression_gate` for THIS finding pass: such signatures are **excluded** from the M1 / M2 monotonicity counts (Stage 2.4) and excluded from the `(file, category)` pair set fed to the oscillation rule (Stage 2.5). The findings themselves are still reported in the per-iteration report (Stage 5.1) as informational, with a `[gated-by: full-suite]` prefix, so reviewers can audit; they just do not contribute to convergence-loop math because the regression gate already handled them in-iteration. Surface a `regression_gate_skipped: <count>` line in the Stage 5.1 review comment for observability.
 
-3. **Scope membership**: file in `scope_files`? If not → drop with reason `file not in scope_files (T-task ownership)`.
+3. **Prior-discard match (iteration ≥ 1)**: if the finding's match_key matches any entry in `review_discards.json` from a prior iteration, **drop** the finding with reason `previously discarded in iter <K> (<original_reason>)`. Do NOT re-evaluate against the current `scope_files` — prior discards are sticky. Promoting a previously-discarded finding requires an explicit promotion step that does not exist in Tier 1.
 
-4. **Justification quality**: in-scope justification references a real acceptance criterion? If vague → downgrade to P3 (do not drop).
+4. **Scope membership**: file in `scope_files`? If not → drop with reason `file not in scope_files (T-task ownership)`.
 
-5. **Deduplicate** across agents — **by signature**, not by free-text title. Findings sharing a signature are merged (keep the highest severity; concatenate the agent list).
+5. **Justification quality**: in-scope justification references a real acceptance criterion? If vague → downgrade to P3 (do not drop).
+
+6. **Deduplicate** across agents — **by signature**, not by free-text title. Findings sharing a signature are merged (keep the highest severity; concatenate the agent list).
 
 Every finding dropped by rules 1 or 2 is appended (with its match key, severity, category, agent, title, reason, and current `iteration`) to a sidecar:
 
@@ -1161,6 +1163,28 @@ fi
 ```
 
 **Failure mode is best-effort.** If `gh` is unavailable (network, auth, rate limit), record a `pr_body_update_failed` entry in `swarm-manifest.json` and continue. The convergence loop must not block on PR cosmetics.
+
+### 7.1.6 Capture last-green baseline (CONVERGED clean only — Cases 1.1 and 2.1)
+
+**Skip this section unless** the iteration converged with a genuinely clean state — Case 1.1 (`p1=p2=p3=0`) or Case 2.1 (post-sweep clean). Degraded convergence (`CAPPED_BY_OSCILLATION`, `P1_REGRESSION_PERSISTENT`, `DIVERGING_LOOP`, `Maximum review iterations` with residual) MUST NOT update the baseline — using a known-bad iteration as baseline would taint the next epic's gate.
+
+Write `swarm-manifest.json.last_green_baseline`:
+
+```json
+"last_green_baseline": {
+  "commit_sha": "<git rev-parse HEAD on the integration branch>",
+  "suite_result_hash": "<sha256 of the per-test pass/fail manifest from the gate run>",
+  "captured_at": "<ISO 8601>",
+  "captured_at_iteration": <N>,
+  "convergence_reason": "<reason that triggered capture, e.g. 'All findings resolved'>"
+}
+```
+
+`commit_sha` is the SHA on the integration branch immediately after Stage 7.1's commit-state lands (so future epics' Stage 4.0 gate can `git diff` against this baseline). `suite_result_hash` is the deterministic hash of the most-recent green run's per-test manifest; consumers compare against it before each new gate run to short-circuit identical re-runs.
+
+If the field already exists from a prior CONVERGED-clean iteration of this same epic, **overwrite** it (the more recent green is the better baseline). The field is not append-only — only one baseline per epic.
+
+This baseline is consumed by `orchestrate_swarm` Stage 4.0 and per-worker full-suite gates: any test signature that fails in `last_green_baseline.suite_result_hash`'s manifest is treated as "already failing pre-iteration" and excluded from the regression count, so workers are never blamed for breakage they inherited.
 
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
 
