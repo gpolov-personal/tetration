@@ -27,6 +27,13 @@ class PhaseReview:
     summary_presented_at: Optional[str] = None
     approved_at: Optional[str] = None
     testing_recipe: Optional[str] = None
+    # Set to True only when the user typed APPROVE-DEGRADED on the
+    # eigen_continue Mode 2 prompt for a phase containing degraded epics
+    # (CAPPED_BY_OSCILLATION, P1_REGRESSION_PERSISTENT, DIVERGING_LOOP,
+    # SWEEP_ABORTED, CAP_REACHED_WITH_RESIDUAL). The watchdog refuses to
+    # auto-launch Phase N+1 when any epic is degraded and this flag is
+    # not also True.
+    degraded_acknowledged: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -34,6 +41,7 @@ class PhaseReview:
             "summary_presented_at": self.summary_presented_at,
             "approved_at": self.approved_at,
             "testing_recipe": self.testing_recipe,
+            "degraded_acknowledged": self.degraded_acknowledged,
         }
 
     @classmethod
@@ -45,6 +53,7 @@ class PhaseReview:
             summary_presented_at=d.get("summary_presented_at"),
             approved_at=d.get("approved_at"),
             testing_recipe=d.get("testing_recipe"),
+            degraded_acknowledged=bool(d.get("degraded_acknowledged", False)),
         )
 
 

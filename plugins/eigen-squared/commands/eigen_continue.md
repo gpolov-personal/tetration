@@ -224,6 +224,10 @@ eigen-squared commit-state --message "pipeline: phase <N> review — testing"
 
 ### 2.1 Show Current State
 
+**First, classify the phase**: scan every epic in `state.phases[N].plans` and re-evaluate `convergence.reason` per the 1.3 classification table (including the cap-with-residual reclassification). If ANY epic is degraded, the prompt MUST follow the **degraded path** below; otherwise the **clean path**.
+
+#### Clean path (no degraded epics)
+
 ```
 Phase <N> is in TESTING status.
 Summary was presented at: <summary_presented_at>
@@ -234,18 +238,41 @@ Did manual testing pass for Phase <N>?
   3. Show summary again — re-display the Phase <N> summary and testing recipe
 ```
 
+Default action on plain "Yes": proceed to step 2.2.
+
+#### Degraded path (any epic in this phase is degraded)
+
+Re-render the Degraded Epics block from 1.3.2 at the TOP of the prompt — the user must see the unresolved findings every time they consider approving:
+
+```
+=== Phase <N> Degraded Epics — VERIFICATION REQUIRED ===
+<Re-render the per-epic degraded block from 1.3.2 here, including
+ reason, trajectory, structured detail path, recommended check.>
+
+These epics shipped to $EIGEN_BRANCH with KNOWN UNRESOLVED FINDINGS.
+Approving this phase tells the autonomous loop to start Phase <N+1>
+with these findings still in the codebase.
+
+To approve: type the literal string  APPROVE-DEGRADED  exactly.
+To decline: type anything else (or "No", "Cancel", etc.).
+```
+
+The degraded path requires **typed confirmation** — a plain "Yes" / option-1 reflex is rejected. The autonomous watchdog (which auto-launches the next phase as soon as `phase_review.status == approved`) MUST refuse advancement when the phase has degraded epics unless `phase_review.degraded_acknowledged: true` is also set on the pipeline-state record.
+
 ### 2.2 Handle User Response
 
 **If "Show summary again"** → read `phase_review.testing_recipe` from pipeline state and re-display it. Re-ask the question.
 
-**If "No"** → Print:
+**If "No"** (or, on degraded path, anything other than literal `APPROVE-DEGRADED`) → Print:
 ```
 Phase <N> remains in 'testing' status.
 Run /eigen_continue again when testing is complete.
 ```
 Do NOT update pipeline state. Exit.
 
-**If "Yes"** →
+**If "Yes"** (clean path) OR `APPROVE-DEGRADED` (degraded path) →
+
+On the degraded path, before continuing, write `phase_review.degraded_acknowledged: true` to the pipeline-state record (alongside the existing `phase_review.status = "approved"` flip). The watchdog uses this to verify acknowledgement; without it, the watchdog will refuse to launch Phase N+1 even if `status == "approved"`.
 
 1. **Capture testing notes** — Ask the user:
    ```
