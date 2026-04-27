@@ -84,7 +84,8 @@ Before presenting the summary, classify each epic's `convergence.reason` into **
 |---|---|---|
 | `All findings resolved` | clean | Case 1.1 — zero P1/P2/P3. |
 | `P3 sweep completed` | clean | Case 2.1 — bounded sweep ran, residual P3 list disclosed. |
-| `Maximum review iterations` | clean | Cap reached; treat as Case 1.1 by policy. |
+| `Maximum review iterations` (residual = 0) | clean | Cap reached AND `findings_history[-1].p1 + p2 + p3 == 0`. Final iteration was genuinely empty. |
+| `Maximum review iterations` (residual > 0) → `CAP_REACHED_WITH_RESIDUAL` | **degraded** | Cap reached BEFORE any rule converged AND `findings_history[-1].p1 + p2 + p3 > 0`. Findings remain in code. **Reclassify the reason internally to `CAP_REACHED_WITH_RESIDUAL`** and treat exactly like the other degraded reasons (re-show in the Degraded Epics section, require typed APPROVE-DEGRADED in Mode 2 confirmation, always promote findings to lessons via Stage 6.1). The PR Stage 7.2 auto-merge SHOULD NOT have fired here in the first place; if it did (legacy state from before this rule), surface a `cap_with_residual_post_merge: true` warning so the user knows to manually inspect the merged PR. |
 | `P3 sweep introduced` (SWEEP_ABORTED) | **degraded** | Sweep introduced new P1/P2; commits auto-reverted. Epic ships at the pre-sweep state with the original residual P3 list. |
 | `CAPPED_BY_OSCILLATION` | **degraded** | Same `(file, category)` pair appeared in ≥ 3 iterations; loop accepted to break the cycle. Findings remain in code. |
 | `P1_REGRESSION_PERSISTENT` | **degraded** | M1 fired three times; architectural escalation could not stabilize the fix. P1 finding(s) remain in code. |
