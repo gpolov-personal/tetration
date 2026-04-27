@@ -235,6 +235,16 @@ For each bucket across all three kinds: keep only entries where `len(unique supp
 
 ### 1.6.4 Write Artifact
 
+**Carry forward promotion state from the prior artifact.** Before writing, read the existing `cross_epic_patterns.json` (if any). For each newly-aggregated pattern, look up a matching entry in the prior file by **composite key**:
+
+```
+(kind, category, threat_class, path_basename, escape_pattern)
+```
+
+If a match exists AND it has `promoted_to_prompt: true` (or `pending_promotion: true` from the H14 transactional ladder), copy `promoted_to_prompt`, `promoted_at`, `promoted_in_version`, `pending_promotion`, `pending_at` onto the newly-aggregated entry verbatim. Without this carry-forward, Stage 1.6.4 would clobber the promotion flag on every run, and Stage 1.7.1's `promoted_to_prompt != true` filter would re-promote every pattern every run — re-applying the same prompt edits and re-prompting the user.
+
+Composite-key matching tolerates updates to `supporting_epics`, `occurrences`, `first_seen`, `last_seen`, `recommendation` (those fields legitimately change as new epics complete). It does NOT match across changes to `kind`, `category`, `threat_class`, `path_basename`, or `escape_pattern` — those identify the pattern semantically.
+
 Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (create the directory if needed):
 
 ```json
