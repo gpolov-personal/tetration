@@ -881,23 +881,12 @@ Collected for Stage 4. No response needed to the teammate.
 5. Verify the `[WORK]` task is marked completed
 6. **Check wave completion**: if ALL tasks in current wave are done:
    - If more non-integration waves remain → increment wave, spawn next wave
-   - If only integration wave remains → proceed to Stage 4 (which now includes Stage 4.0 — pre-final-push integration gate, see below)
+   - If only integration wave remains → proceed to **Stage 4.0** (pre-final-push integration gate) before Stage 4.1.
 7. Request shutdown for the completed teammate
 
-**Pre-final-push integration gate (Stage 4.0).** After all workers in the iteration have passed their per-worker gates and the wave-final integration phase is complete, run the suite ONE more time on the merged state. This catches integration regressions where workers A and B each pass their per-worker gate independently but their merged changes break a previously-passing test. Use the same flake mitigation. On non-empty newly-failing: identify the regressing commit via `git bisect`-style range scan over the iteration's commits, escalate to that commit's owning worker via the same scope_expansion → REASSIGN → REVERT decision tree above. Record outcomes in `iterations[].integration_regressions` and `iterations[].integration_resolution`.
-
-**Baseline capture (Stage 7 of `review_swarm_pr`, on CONVERGED clean only).** When `review_swarm_pr` reports Case 1.1 (P1=P2=P3=0) OR Case 2.1 (post-sweep clean) — i.e., the iteration converged genuinely clean, not via a degraded reason — write `last_green_baseline` to `swarm-manifest.json`:
-```json
-"last_green_baseline": {
-  "commit_sha": "<merged commit on $EIGEN_BRANCH>",
-  "suite_result_hash": "<sha1 of sorted (test_name, status) pairs>",
-  "failing_tests": ["<test_path>::<test_name>", ...],
-  "captured_at": "<ISO 8601>"
-}
-```
-Degraded convergence (CAPPED_BY_OSCILLATION, P1_REGRESSION_PERSISTENT, DIVERGING_LOOP, sweep aborted) does NOT update the baseline — those iterations may have known-failing tests; using them as baseline would taint the next iteration's gate.
-
-**Reviewer skip-list (`review_swarm_pr` Stage 2.1).** When loading `findings_history`, also load `tasks[].full_suite_regressions` and `iterations[].integration_regressions`. Findings whose underlying test path appears in either list are NOT counted as "new findings" in M1 — they were caught and handled at worker time, not introduced.
+**Cross-references for the iteration tail**, all now hosted on the `review_swarm_pr` side:
+- Baseline capture lives in `review_swarm_pr` **Stage 7.1.6** (CONVERGED-clean only). See that file for the exact `last_green_baseline` schema and the explicit guard that degraded convergence MUST NOT update the baseline.
+- Reviewer skip-list lives in `review_swarm_pr` **Stage 2.1 step 2**: loads `tasks[].full_suite_regressions` ∪ `iterations[].integration_regressions` and excludes those signatures from M1/M2 monotonicity counts and the oscillation pair set.
 
 ### Handling: Teammate Idle Notification
 
@@ -937,9 +926,58 @@ SendMessage({
 
 ---
 
+## Stage 4.0: Pre-Final-Push Integration Gate
+
+**Trigger**: All non-integration tasks complete AND every per-worker full-suite gate (Step 5) has passed. Run BEFORE entering Stage 4.1 (Prepare Integration Context).
+
+**Purpose**: catch integration regressions where workers A and B each pass their per-worker gate independently but their *merged* changes break a previously-passing test. The per-worker gate runs against `last_green_baseline` immediately after each worker's commits land; this stage runs against `last_green_baseline` after the full iteration's commits are merged on the integration branch.
+
+### 4.0.1 Skip Conditions
+
+- `iteration == 0` AND `swarm-manifest.json.last_green_baseline` is absent → skip (no baseline to compare). Document a `stage_4_0_skipped: { iteration: 0, reason: "no_baseline" }` entry in `swarm-manifest.json` for observability.
+- All workers in this iteration are no-ops (no commits) → skip (nothing to gate).
+
+### 4.0.2 Run Sequence
+
+1. Checkout the integration branch HEAD (i.e., the merge of all worker commits this iteration).
+2. Run the project's full test suite: `bun test` / `pytest -q` / `go test ./...` per the project's tech stack.
+3. Compute the per-test pass/fail manifest. Diff against `last_green_baseline.suite_result_hash` (the prior CONVERGED-clean baseline) to identify newly-failing tests.
+4. If newly-failing is empty → gate passes, proceed to Stage 4.1.
+5. Apply flake mitigation: re-run each newly-failing test 3 times; only tests that fail in ≥ 2 of 3 retries are confirmed regressions.
+
+### 4.0.3 On Confirmed Regressions
+
+Identify the regressing commit via `git bisect`-style range scan over the iteration's commits. The first commit whose pre-state passes and post-state fails owns the regression.
+
+Escalate to that commit's owning worker via the same scope_expansion → REASSIGN → REVERT decision tree as the per-worker gate (`Stage 6`'s "Implementation Complete Message" handler). Three terminal states:
+
+- **APPROVE EXPANSION** — owning worker re-spawned in current iteration with a fixup task; on success, integration regressions resolved, gate re-runs.
+- **REASSIGN** — failing test belongs to a different worker; that worker re-spawned in current iteration; on success, gate re-runs.
+- **REVERT WORKER** — owning worker's commits are reverted; the iteration ships without their change; gate re-runs and must pass before Stage 4.1.
+
+Circuit breaker: if the regression-resolution loop fails to clear after N=2 attempts, raise `[QUESTION] type: scope_expansion` with subtype `integration_regression_unresolved` to the user (or autonomous-mode policy). Do NOT proceed to Stage 4.1 with confirmed regressions.
+
+### 4.0.4 Manifest Records
+
+Append to `swarm-manifest.json.iterations[<N>].integration_regressions` (one entry per confirmed regression):
+
+```json
+{
+  "test_signature": "<sha256 of test_path::test_name>",
+  "owning_commit": "<git sha>",
+  "owning_worker": "<worker_id>",
+  "resolution": "approve_expansion | reassign | revert_worker",
+  "resolved_at": "<ISO 8601>"
+}
+```
+
+These signatures are consumed by `review_swarm_pr` Stage 2.1's regression-gate skip-list so M1/M2 don't double-count them.
+
+---
+
 ## Stage 4: Integration
 
-**Trigger**: All non-integration tasks are completed.
+**Trigger**: Stage 4.0 passed (or skipped on iter 0 with no baseline).
 
 ### 4.1 Prepare Integration Context
 
