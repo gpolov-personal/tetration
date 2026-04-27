@@ -288,12 +288,16 @@ Validate:
 
 1. Read the manifest from the integration branch.
 2. Extract: `tasks`, `shared_files`, `e2e_config`, `epic_id`.
-3. Build `scope_files` — union of:
+3. Build `scope_files` as an **immutable iter-0 snapshot** — union of:
    - `files_owned` and `test_files_owned` of the **original T-tasks only** (tasks whose `id` matches `P<N>.E<M>.T<K>` — exclude R-tasks and the integration task),
    - `shared_files`,
    - `e2e_config.e2e_test_dir` files.
 
-   `scope_files` is **invariant across iterations of the same epic**. R-task ownership is a subset of T-task ownership by construction, so review-fixup waves never expand scope. On iteration ≥ 1, recompute `scope_files` the same way (from the same T-tasks) and assert it equals the iter-0 set; if it differs, **STOP** with `ERROR: scope_files drift detected at iteration <N> — original T-task ownership has been mutated.`
+   On iteration 0, write `scope_files` to `swarm-manifest.json.scope_files_snapshot` (a frozen array). On iteration ≥ 1, recompute `scope_files` the same way (from the same T-tasks) and check it against the snapshot UNIONED with `swarm-manifest.json.scope_expansion_log[].file` (entries written by leader-approved expansions — see Tier-3 ownership audit and Stage 4.0 regression gate). The check semantics:
+   - If `recomputed ⊆ snapshot ∪ logged_expansions` → OK. Use `recomputed` as `scope_files` for this iteration's filtering.
+   - If `recomputed` includes a file in NEITHER `snapshot` NOR `logged_expansions` → **STOP** with `ERROR: scope_files drift detected at iteration <N> — file <X> appeared in T-task ownership but has no expansion ledger entry.` This catches T-task ownership mutations that bypassed the leader's approval ladder; legitimate Tier-3 expansions are recorded in `scope_expansion_log[]` and flow through cleanly.
+
+   `scope_expansion_log[]` is append-only. Each entry: `{iteration: <int>, file: "<POSIX-relative>", reason: "ownership_audit_inline|regression_gate_expansion|m1_design_decision|...", decided_by: "leader_autonomous|user", decided_at: "<ISO 8601>"}`. Written by `orchestrate_swarm`'s APPROVE INLINE / APPROVE EXPANSION / mvf_scope_expansion handlers in the same atomic save as the corresponding `task.files_owned` mutation. Decoupling the expansion ledger from the snapshot is what lets Tier-1's iter-0 lock and Tier-2/3's mid-iteration expansion paths coexist without deadlock.
 
 4. **Load prior out-of-scope discards** (iteration ≥ 1 only). Read `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_discards.json` if it exists. The file lists every finding previously dropped as out-of-scope, with the iteration that dropped it. These are re-applied deterministically in Stage 2.1.
 

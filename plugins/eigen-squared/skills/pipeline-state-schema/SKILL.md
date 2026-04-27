@@ -474,6 +474,29 @@ Records the outcome of the post-worker ownership audit run by `orchestrate_swarm
 
 Backwards-compat: missing field on legacy tasks is interpreted as `clean` (audit was not yet implemented when the task ran).
 
+### swarm-manifest.json.scope_files_snapshot + scope_expansion_log (per-epic)
+
+Decouples Tier-1's iter-0 ownership lock from Tier-2/3's mid-iteration expansion paths. Without this split, Stage 0.2's drift check would deadlock against any APPROVE INLINE / APPROVE EXPANSION / mvf_scope_expansion grant.
+
+```json
+"scope_files_snapshot": ["src/api/users.ts", "src/api/users.test.ts", "..."],
+"scope_expansion_log": [
+  {
+    "iteration": 1,
+    "file": "src/api/users_helper.ts",
+    "reason": "ownership_audit_inline" | "regression_gate_expansion" | "m1_design_decision" | "mvf_scope_expansion_override",
+    "decided_by": "leader_autonomous" | "user",
+    "decided_at": "<ISO 8601>"
+  }
+]
+```
+
+`scope_files_snapshot` is the **frozen** iter-0 union of T-task ownership ∪ shared_files ∪ e2e_test_dir. Written once on iteration 0 and never modified. `scope_expansion_log[]` is append-only — every leader-approved expansion gets one entry in the same atomic save as the corresponding `task.files_owned` mutation.
+
+Stage 0.2 drift check semantics: `recomputed scope_files ⊆ scope_files_snapshot ∪ {entry.file for entry in scope_expansion_log}` → OK. Anything else → STOP with drift error (signals an unauthorized ownership mutation that bypassed the leader's approval ladder).
+
+Backwards-compat: missing fields on legacy epics fall back to the pre-Tier-4 behavior (recompute and assert byte-equal to iter-0); legacy epics never had mid-iteration expansion so this is a strict superset.
+
 ### eigen_lessons/compound_improve/cross_epic_patterns.json (initiative-wide)
 
 Cross-epic aggregation artifact written by `compound_improve` Stage 1.6. Lives at `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (sibling to the per-command lesson directories). Records patterns that recurred in **3 or more epics** across the initiative.
