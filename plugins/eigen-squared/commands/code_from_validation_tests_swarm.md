@@ -73,13 +73,14 @@ SendMessage({
 })
 ```
 
-**Ownership violation request** -- send when implementation requires a file outside ownership:
+**Scope expansion request** -- send when implementation requires a file outside ownership. The question type **MUST** be `mvf_scope_expansion` (matching the leader's autonomous-decision policy key in `orchestrate_swarm.md`); previous versions of this template used `ownership_violation` which did not route through the leader's autonomous handler.
+
 ```javascript
-// 1. Create a blocker task for the leader
+// 1. Create a question task for the leader
 TaskCreate({
-  subject: "[BLOCKER] Ownership request: <file path>",
-  description: "Task: <task_id>\nBlocker type: ownership_violation\n\nFile needed: <path to file outside ownership>\nReason: <why this file needs to be modified>\n\nI am STOPPED and waiting for your decision.",
-  activeForm: "Blocked: waiting for ownership decision"
+  subject: "[QUESTION] Scope expansion: <file path>",
+  description: "Task: <task_id>\nQuestion type: mvf_scope_expansion\n\nFile needed: <path to file outside ownership>\nMinimum-fix summary: <why your owned files cannot satisfy the test>\nProposed expansion: inline (extend files_owned) | scope_expansion (queue fixup task)\n\nI am STOPPED and waiting for your decision.",
+  activeForm: "Blocked: waiting for scope-expansion decision"
 })
 TaskUpdate({ taskId: "<new_task_id>", owner: "team-lead" })
 
@@ -87,15 +88,29 @@ TaskUpdate({ taskId: "<new_task_id>", owner: "team-lead" })
 SendMessage({
   to: "team-lead",
   type: "message",
-  content: "I need to modify <file> which is outside my ownership. See task <new_task_id>. I'm stopped and waiting.",
-  summary: "BLOCKED: ownership request for <file>"
+  content: "I need to modify <file> which is outside my ownership to make a failing test pass. See task <new_task_id>. I'm stopped and waiting.",
+  summary: "BLOCKED: mvf_scope_expansion for <file>"
 })
 ```
 
 After sending this, STOP and WAIT. The leader's response will arrive automatically as a `@team-lead>` message. Handle the response:
-- **granted**: proceed to modify the file
-- **denied**: do NOT touch the file, follow the leader's suggested alternative
-- **alternative**: the leader suggests a different approach (e.g., "create a local helper in your owned files instead")
+- **APPROVE INLINE / granted**: proceed to modify the file. The leader has already extended `files_owned` and written `scope_expansion_log[]` in the manifest.
+- **CONVERT TO SCOPE EXPANSION / queued**: do NOT touch the file. Your task is marked `deferred_for_architectural_change`; the broader fix lands in a separate fixup task next iteration.
+- **DENIED / alternative**: follow the leader's suggested alternative (e.g., "create a local helper in your owned files instead").
+
+### Cross-worker regression handling
+
+When a per-worker full-suite gate fails on a test you do not own, you may receive a `[QUESTION] type: scope_expansion` ticket via SendMessage from the leader (REASSIGN flow — see `orchestrate_swarm.md` Stage 6 step 2). The ticket has three terminal states:
+
+- **`inline_fix`** — the leader expanded your `files_owned` to cover the regressing test's source file. Patch inline; the gate re-runs after your commit.
+- **`reassigned`** — leader determined the regression is owned by a different worker. Your current task is failed (status: `cross_worker_regression`); spin down. The owning worker has been re-spawned IN THE CURRENT ITERATION (per Tier-4 Step H2) to fix it.
+- **`full_suite_regression_unresolved`** — circuit breaker tripped after N=2 attempts. The regression is recorded in `iterations[].integration_regressions` and surfaced to `review_swarm_pr` Stage 2.1's skip-list; M1/M2 will not double-count it.
+
+**Post-audit recovery.** If the leader's ownership audit (Stage 6 step 1) results in `revert_modified` or `deleted_created`, your local working copy is now divergent from `git HEAD`. On the next message after the audit:
+1. Re-run `git status` to confirm what was rolled back.
+2. Read the `[DECISION-AUTONOMOUS]` task the leader created — it explains what was reverted and why.
+3. Re-run failing tests with the rolled-back state to confirm they still fail (the audit may have removed scope; the test failure may now require `mvf_scope_expansion` rather than direct edits).
+4. Resume from your `working-notes-<task.id>.md` checkpoint, NOT from in-memory state — the in-memory state is now stale.
 
 **Integration request** -- send when a shared file needs changes:
 ```javascript
