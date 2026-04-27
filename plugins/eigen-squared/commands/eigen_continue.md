@@ -139,7 +139,7 @@ Do NOT approve this phase until you have manually verified each degraded epic.
     Review reports: eigen_initiative/phases/phase_<N>/epic_<M>/review_report_iteration_*.md
     Recommended check:
       <if CAPPED_BY_OSCILLATION:>      Inspect the oscillating (file, category) pairs and decide whether the architectural alternative is worth a follow-up epic.
-      <if P1_REGRESSION_PERSISTENT:>   Read the M1 firings in review_convergence_state.json.monotonicity; assess whether the residual P1 should block phase approval.
+      <if P1_REGRESSION_PERSISTENT:>   Read the M1 trajectory in review_convergence_state.json.monotonicity (per-iteration prev_p1/current_p1) AND the m1_firings counter in swarm-manifest.json.monotonicity (the firing count that triggered the cap); assess whether the residual P1 should block phase approval.
       <if DIVERGING_LOOP:>             Read the trajectory; the loop did not converge — confirm the residual findings are acceptable for production.
       <if SWEEP_ABORTED:>              Inspect swarm-manifest.json.p3_sweep.regression_signatures to understand which P3 fix attempts introduced regressions.
 </for>
