@@ -477,12 +477,23 @@ Append the synthesized findings to the agent results pool **before** Stage 2.1 b
 
 For each finding, in order:
 
-1. **Compute the signature.** The signature is `sha1("<normalized_file_path>|<category>|<normalized_title>")` (hex digest), where:
+1. **Compute the signature (algorithm v2).** The signature is `sha1("<normalized_file_path>|<category>|<normalized_title>")` (hex digest), where:
    - `normalized_file_path` is the POSIX-style relative path with case preserved,
    - `category` is the lowercase short category (`security`, `data-integrity`, `test-quality`, ...),
-   - `normalized_title` is the title lowercased, whitespace-collapsed, and stripped of trailing punctuation.
+   - `normalized_title` is the title under v2 normalization (rules below).
 
    The pre-signature triple `(normalized_file_path, category, normalized_title)` is also the **match_key** used by the prior-discard rule below. The same scheme is used by Stage 4.6 (auto-revert regression signatures) and by `swarm_execution.findings_history` — all three artifacts agree iteration-for-iteration.
+
+   **v2 title normalization** (apply in order):
+   1. Casefold (Unicode-safe lowercase via `str.casefold()`, not `str.lower()`).
+   2. Strip leading/trailing whitespace and trailing punctuation (`.,;:!?`).
+   3. Collapse internal whitespace runs to a single space.
+   4. Tokenize on whitespace, drop tokens in the stopword set: `{is, are, was, were, be, the, a, an, of, for, in, on, at, to, with, without, missing, present}` — chosen because they appear in title paraphrases without changing the finding's meaning.
+   5. Re-join survivors with a single space.
+
+   **Token order is preserved.** Sorting tokens alphabetically would collapse semantically distinct titles (e.g., "deletion auth required" vs. "auth deletion required"); the dedup-quality gain is modest, the false-merge risk is real.
+
+   **Signature versioning.** `pipeline_state.json.swarm_execution.signature_version` (default `2`) records the algorithm in use. Loaders that encounter `signature_version < 2` (legacy state from before this step landed) re-compute every entry's signature under v2 rules on the next read and write back. The pre-v2 signature is preserved in a `legacy_signatures: ["<old_sig>", ...]` array on each finding entry so retroactive comparisons against old reports still match. Migration is idempotent — safe to re-run.
 
 2. **Prior-discard match (iteration ≥ 1)**: if the finding's match_key matches any entry in `review_discards.json` from a prior iteration, **drop** the finding with reason `previously discarded in iter <K> (<original_reason>)`. Do NOT re-evaluate against the current `scope_files` — prior discards are sticky. Promoting a previously-discarded finding requires an explicit promotion step that does not exist in Tier 1.
 

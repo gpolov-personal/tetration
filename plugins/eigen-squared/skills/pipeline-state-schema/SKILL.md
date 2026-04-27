@@ -299,6 +299,29 @@ Boolean flag on R-task entries (sibling to `monotonicity_violation`). Set by `re
 
 Consumer: `orchestrate_swarm` worker spawn — when this flag is `true`, the spawn prompt prepends an ARCHITECTURAL ESCALATION REQUIRED constraint block (sibling to the P3-SWEEP CONSTRAINT block) requiring the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's autonomous `design_decision` handler (orchestrate_swarm autonomous-mode rules) responds with one of: APPROVE INLINE (alternative bounded to files_owned), CONVERT TO SCOPE EXPANSION (alternative requires other files), or REQUEST REVISION (worker's alternatives weren't architectural). After two failed revisions the task is marked `failed` with reason `architectural_escalation_unresolved`.
 
+### Finding signature algorithm (v2)
+
+Used by `review_swarm_pr` Stage 2.1 step 1, `findings_history`, `review_convergence_state.json`, `review_discards.json`, and Stage 4.6 regression signatures. All artifacts agree iteration-for-iteration.
+
+```
+signature = sha1(f"{normalized_file_path}|{category}|{normalized_title}")
+```
+
+`normalized_file_path` — POSIX-style relative path, case preserved.
+
+`category` — lowercase short category (`security`, `data-integrity`, `test-quality`, `performance`, `type-safety`, ...).
+
+`normalized_title` (v2 algorithm, applied in order):
+1. `str.casefold()` (Unicode-safe lowercase).
+2. Strip leading/trailing whitespace; strip trailing `.,;:!?`.
+3. Collapse internal whitespace runs to a single space.
+4. Drop stopword tokens: `{is, are, was, were, be, the, a, an, of, for, in, on, at, to, with, without, missing, present}`.
+5. Re-join survivors with a single space. **Token order preserved** (no sort).
+
+`pipeline_state.json.swarm_execution.signature_version` records the algorithm version (defaults to `2`). Legacy state with `signature_version < 2` is migrated on next read: every entry's signature is re-computed under v2, the pre-v2 signature is preserved in a per-entry `legacy_signatures` array, and `signature_version` is bumped to `2`. Migration is idempotent.
+
+Why stopword strip but not token sort: paraphrases like "missing input validation" / "input validation missing" / "input validation is missing" all dedupe correctly under v2 (the stopwords disappear, token order is identical for the surviving content tokens "input validation"). Token-order changes that DO alter meaning (e.g., "auth deletion required" vs. "deletion auth required") remain distinct signatures, which is the safer default.
+
 ### `finalize-iteration` CLI verb (atomic complete + status update)
 
 Combines `complete review_swarm_pr` + `mark-converged swarm_execution` (or `set-swarm-status iterating`) into a single CLI call that performs both mutations under one state lock and one `save_state` call. POSIX atomicity (tmp + fsync + rename in `save_state`) then guarantees that a SIGKILL between the legacy paired calls cannot leave half-written state on disk.
