@@ -7,6 +7,20 @@ description: "Pipeline state schema reference for eigen-squared. Use when any co
 
 This is the **single source of truth** for iteration tracking across all eigen-squared pipeline commands. Every command reads this file on entry and updates it on exit via the `eigen-squared` CLI.
 
+## Schema authority
+
+The eigen-squared codebase has three classes of persistent JSON files. They are governed differently and intentionally so — this section is the authoritative declaration of which file is which.
+
+| File pattern | Authority | Mutation contract | Reader contract |
+|---|---|---|---|
+| `eigen_initiative/phases/pipeline_state.json` | **Typed** — `cli/models.py` (`PipelineState` and friends). The dataclass is the single source of truth for the schema; missing keys fill from typed defaults via `from_dict`. | CLI verbs only (`eigen-squared <verb>`). Direct `jq` / `cat >>` writes are forbidden — they bypass `to_dict`/`from_dict` and risk drift. | Any command. Read via `eigen-squared get-context` (preferred) or by parsing the JSON if the field is loose-text. |
+| `swarm-manifest.json` (per-epic, on integration branch) | **Loose-JSON sidecar governed by prose** — schemas defined in this SKILL but not mirrored in any Python dataclass. Fields: `monotonicity`, `m1_firings`, `last_green_baseline`, `architectural_escalation`, `ownership_audit`, `full_suite_*`, `integration_regressions`, `pr_body_update_failed`, `mvf_scope_expansion`, `scope_files_snapshot`, `scope_expansion_log`, `tasks[].*`. | Direct `jq -r` / `cat > <tmp>` / `mv` writes by command prompts. Atomic-rename pattern when `tmp + fsync + mv` is feasible from bash; otherwise best-effort. | Direct JSON parse with field-presence guards (legacy entries lack newer fields). |
+| `cross_epic_patterns.json`, `review_convergence_state.json`, `review_discards.json`, `bootstrap_baseline.json` | **Loose-JSON sidecars governed by prose** — schemas defined in this SKILL, no dataclass. Per-artifact `schema_version` field where introduced. | Direct writes by command prompts; atomic-rename pattern documented per file. State lock via `flock` where concurrency matters (e.g. `compound_improve` reads-modify-writes). | Direct JSON parse. Unknown `schema_version` → skip the artifact rather than crash. |
+
+**Rationale for the split.** `pipeline_state.json` carries the cross-command iteration handshake (which command runs next, which has converged); type-checking it via dataclasses prevents schema drift when commands are added or fields renamed. The sidecars carry per-artifact, per-epic, or per-iteration data that's intrinsically loose: new fields land in prose without breaking existing readers, and the convergence loop is robust to legacy entries with missing fields. Adding dataclasses for the sidecars would force every prompt that touches them to round-trip through the CLI, which is more friction than the safety is worth — but the prose schemas are still load-bearing and any command modifying a sidecar MUST update this SKILL in the same commit.
+
+**When in doubt**: if the file is read by Python code (the CLI), it needs a dataclass — drift is not detectable any other way. If the file is read only by prompts, prose-only is fine, but prose drift IS still drift, so keep this SKILL up-to-date.
+
 ## Commands
 
 **Pipeline commands (tracked in state):**
