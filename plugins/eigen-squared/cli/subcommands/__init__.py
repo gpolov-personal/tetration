@@ -1352,6 +1352,19 @@ def cmd_finalize_iteration(args: Namespace) -> int:
     else:  # "iterating"
         sw.status = "iterating"
 
+    # Parity with set-swarm-status: callers that need to attach PR
+    # metadata atomically with the status flip pass these flags. Empty
+    # values are skipped so the verb stays compatible with callers that
+    # don't need them (typical Case 1.1 path).
+    if getattr(args, "pr_url", None):
+        sw.pr_url = args.pr_url
+    if getattr(args, "pr_number", None):
+        sw.pr_number = args.pr_number
+    if getattr(args, "manifest_path", None):
+        sw.manifest_path = args.manifest_path
+    if getattr(args, "integration_branch", None):
+        sw.integration_branch = args.integration_branch
+
     save_state(state, sf)
     print(json.dumps({
         "status": "finalized",

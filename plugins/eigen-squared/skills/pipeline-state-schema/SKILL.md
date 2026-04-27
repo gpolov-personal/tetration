@@ -385,8 +385,12 @@ eigen-squared finalize-iteration \
   [--reason <reason>]                # required when --status converged
   [--report-path <path>] \
   [--findings-summary '{"p1":x,"p2":y,"p3":z}'] \
-  [--findings-detail /tmp/eigen_findings_iter_<N>.json]
+  [--findings-detail /tmp/eigen_findings_iter_<N>.json] \
+  [--pr-url <url>] [--pr-number <int>] \
+  [--manifest-path <path>] [--integration-branch <branch>]
 ```
+
+`--pr-url`, `--pr-number`, `--manifest-path`, `--integration-branch` are parity flags with `set-swarm-status`; the atomic verb propagates them in the same `save_state` so callers needing to attach PR metadata at the iteration boundary (e.g. first iteration where the PR was just created) don't need a second non-atomic CLI call.
 
 On-disk effect is byte-equivalent to:
 - `--status converged` → `complete review_swarm_pr ...` + `mark-converged swarm_execution --reason ...`

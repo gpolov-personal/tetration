@@ -129,6 +129,14 @@ def main(argv: list[str] | None = None) -> int:
         "--findings-detail",
         help="Path to per-iteration findings detail file (same schema as `complete`)",
     )
+    # Parity flags with `set-swarm-status`. Without these, callers needing
+    # to set status=iterating AND attach pr_url/pr_number/etc. (e.g. the
+    # first iteration where the PR was just created) cannot use the
+    # atomic verb and would silently lose those fields.
+    p.add_argument("--pr-url", help="Pull request URL (parity with set-swarm-status)")
+    p.add_argument("--pr-number", type=int, help="Pull request number (parity with set-swarm-status)")
+    p.add_argument("--manifest-path", help="Manifest path (parity with set-swarm-status)")
+    p.add_argument("--integration-branch", help="Integration branch (parity with set-swarm-status)")
 
     # ── add-review-report ──
     p = sub.add_parser("add-review-report", help="Append review report path")
