@@ -1077,6 +1077,76 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONV
 
 In Cases 2.1, 2.2, the oscillation cap, M1 (any firing), and M2, also write a lesson to `eigen_initiative/eigen_lessons/review_swarm_pr/` capturing whichever signal applies (clean sweep success, regression vectors, oscillating-pair vectors, or monotonicity trajectory). For M1 the lesson includes the firing count and the offending P1 signatures; for M2 the lesson includes the three-iteration trajectory. This is consumed by `compound_improve` on its next pass and is the only persistent record of the sweep / oscillation / monotonicity outcome outside of `swarm-manifest.json` and `review_convergence_state.json`.
 
+### 7.1.5 Refresh PR Body (every iteration, including pre-convergence)
+
+After Stage 7.1's `commit-state` succeeds, refresh the PR body so a human reviewer can read the cumulative trajectory without parsing each `review_report_iteration_<N>.md` separately.
+
+**Preserve user-edited content.** Do NOT overwrite the entire PR body. Manage a fenced section bounded by `<!-- eigen-managed:start -->` and `<!-- eigen-managed:end -->`. On first run (no fence present), append the fenced block to the existing body. On subsequent runs, replace only the content between the fences. Hand-edits above or below the fence survive untouched.
+
+```bash
+# 1. Fetch current PR body.
+current_body=$(gh pr view <pr_number> --json body -q .body 2>/dev/null) || {
+    echo "WARNING: gh pr view failed for PR #<pr_number>; skipping PR-body refresh."
+    # Best-effort — record the failure and proceed. Do NOT block convergence.
+    # Append to swarm-manifest.json:
+    #   pr_body_update_failed: { iteration: <N>, error: "<gh exit code or message>" }
+    skip_pr_body_update=1
+}
+
+if [ -z "$skip_pr_body_update" ]; then
+    # 2. Build new managed-section content from findings_history + convergence reason.
+    new_section=$(cat <<EOF
+<!-- eigen-managed:start -->
+## Convergence summary
+
+**Status:** <converged-with-reason | iterating, M1-firings: <count>>
+**Iteration:** <N>
+**Convergence reason:** <reason or "—">
+
+### Iteration history
+
+| Iter | P1 | P2 | P3 | M1? | M2? | Report |
+|------|----|----|----|----|----|--------|
+<one row per iterations[] entry, with link to review_report_iteration_<i>.md>
+
+### Convergence trajectory
+
+- Resolved this iteration: <count>
+- Newly introduced this iteration: <count>
+- Persistent across iterations: <count>
+- Oscillating (file, category) pairs: <list or "none">
+
+_Last updated: <ISO 8601>_
+<!-- eigen-managed:end -->
+EOF
+)
+
+    # 3. Splice into existing body (replace fenced section, or append if no fence).
+    if echo "$current_body" | grep -q "<!-- eigen-managed:start -->"; then
+        # Replace existing fenced block.
+        new_body=$(echo "$current_body" | awk -v new="$new_section" '
+            BEGIN { skip=0 }
+            /<!-- eigen-managed:start -->/ { print new; skip=1; next }
+            /<!-- eigen-managed:end -->/   { skip=0; next }
+            !skip { print }
+        ')
+    else
+        # Append fenced block to whatever body exists.
+        new_body="${current_body}
+
+${new_section}"
+    fi
+
+    # 4. Push back. Best-effort — record failure but do not block.
+    gh pr edit <pr_number> --body "$new_body" || {
+        echo "WARNING: gh pr edit failed; PR body not refreshed for iteration <N>."
+        # Record pr_body_update_failed in swarm-manifest.json as above.
+    }
+fi
+```
+
+**Failure mode is best-effort.** If `gh` is unavailable (network, auth, rate limit), record a `pr_body_update_failed` entry in `swarm-manifest.json` and continue. The convergence loop must not block on PR cosmetics.
+
 ### 7.2 Merge PR and Return to $EIGEN_BRANCH (CONVERGED only)
 
 **Skip this section entirely if not converged.**

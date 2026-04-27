@@ -299,6 +299,18 @@ Boolean flag on R-task entries (sibling to `monotonicity_violation`). Set by `re
 
 Consumer: `orchestrate_swarm` worker spawn — when this flag is `true`, the spawn prompt prepends an ARCHITECTURAL ESCALATION REQUIRED constraint block (sibling to the P3-SWEEP CONSTRAINT block) requiring the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's autonomous `design_decision` handler (orchestrate_swarm autonomous-mode rules) responds with one of: APPROVE INLINE (alternative bounded to files_owned), CONVERT TO SCOPE EXPANSION (alternative requires other files), or REQUEST REVISION (worker's alternatives weren't architectural). After two failed revisions the task is marked `failed` with reason `architectural_escalation_unresolved`.
 
+### swarm-manifest.json.pr_body_update_failed (per-iteration, best-effort failure log)
+
+Optional field set by `review_swarm_pr` Stage 7.1.5 when `gh pr view` or `gh pr edit` fails (network, auth, rate limit). Records the failure so the convergence loop can continue without blocking on PR cosmetics, and so observability tooling can detect persistent failures.
+
+```json
+"pr_body_update_failed": [
+  { "iteration": 2, "error": "gh: rate limit exceeded", "at": "<ISO 8601>" }
+]
+```
+
+Append-only. Absence means all PR-body refreshes succeeded (or the field has never been written for this epic). Consumers (e.g., a future observability dashboard) treat a non-empty array as a soft warning, not a failure of the epic itself.
+
 ### Finding signature algorithm (v2)
 
 Used by `review_swarm_pr` Stage 2.1 step 1, `findings_history`, `review_convergence_state.json`, `review_discards.json`, and Stage 4.6 regression signatures. All artifacts agree iteration-for-iteration.
