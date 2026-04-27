@@ -788,13 +788,46 @@ Collected for Stage 4. No response needed to the teammate.
 
 ### Handling: Implementation Complete Message
 
-1. Add task_id to `completed_tasks`, remove from `active_teammates`
-2. Update `[WAVE-STATUS]`
-3. Verify the `[WORK]` task is marked completed
-4. **Check wave completion**: if ALL tasks in current wave are done:
+1. **Ownership audit (pre-completion gate).** Before recording the task as completed, run a boundary check on the worker's commits. This is a hard gate — workers that quietly exceeded `files_owned` are not silently accepted.
+
+   ```bash
+   # <n> = worker's commit count on the integration branch this iteration.
+   modified=$(git diff --name-only HEAD~<n>..HEAD)
+   created=$(git diff --name-only --diff-filter=A HEAD~<n>..HEAD)
+   ```
+
+   Compute set differences against `task.files_owned ∪ task.test_files_owned`:
+   - `out_of_scope_modified = modified - owned`
+   - `out_of_scope_created = created - owned`
+
+   **Both empty → proceed to step 2.** Audit is ~1s; near-zero overhead in the common case.
+
+   **Non-empty → handle each file via the existing `mvf_scope_expansion` policy** (see "Handling: `[QUESTION]` Task" Route A above). The leader's autonomous decision per file is one of:
+   - **APPROVE INLINE** — extend `task.files_owned` in `swarm-manifest.json` to cover the file. Worker keeps the change. Use when the file is clearly within the worker's logical slice (adjacent helper, sibling util) and the extension does not collide with another task's `files_owned`.
+   - **REVERT MODIFIED** — `git checkout HEAD~<n> -- <file>` restores the file to its pre-worker state. Safe for tracked files; the original content is recovered byte-for-byte.
+   - **DELETE CREATED** — `git rm <file> && git commit --amend --no-edit` removes the unauthorized new file. **Destructive**; use only when the leader explicitly chose DELETE. Never default to this.
+   - **REVERT WORKER** (last resort) — `git revert --no-commit <worker_commits> && git commit -m "revert: <task_id> exceeded ownership boundaries"`. Fail the task with reason `out_of_scope_unrecoverable`; the next review iteration's M1 / oscillation logic handles re-attempt.
+
+   Record the outcome in `swarm-manifest.json`:
+   ```json
+   "tasks[]": {
+     "ownership_audit": {
+       "out_of_scope_modified": ["<file>", ...],
+       "out_of_scope_created": ["<file>", ...],
+       "resolution": "clean" | "scope_expanded" | "reverted_modified" | "deleted_created" | "reverted_worker" | "failed"
+     }
+   }
+   ```
+
+   If `resolution == "failed"` → the task is failed; do NOT proceed to step 2. Mark `task.status = "failed"`, skip dependents per the existing failure cascade rules.
+
+2. Add task_id to `completed_tasks`, remove from `active_teammates`
+3. Update `[WAVE-STATUS]`
+4. Verify the `[WORK]` task is marked completed
+5. **Check wave completion**: if ALL tasks in current wave are done:
    - If more non-integration waves remain → increment wave, spawn next wave
    - If only integration wave remains → proceed to Stage 4
-5. Request shutdown for the completed teammate
+6. Request shutdown for the completed teammate
 
 ### Handling: Teammate Idle Notification
 

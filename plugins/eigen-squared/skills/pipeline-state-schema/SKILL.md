@@ -299,6 +299,28 @@ Boolean flag on R-task entries (sibling to `monotonicity_violation`). Set by `re
 
 Consumer: `orchestrate_swarm` worker spawn — when this flag is `true`, the spawn prompt prepends an ARCHITECTURAL ESCALATION REQUIRED constraint block (sibling to the P3-SWEEP CONSTRAINT block) requiring the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's autonomous `design_decision` handler (orchestrate_swarm autonomous-mode rules) responds with one of: APPROVE INLINE (alternative bounded to files_owned), CONVERT TO SCOPE EXPANSION (alternative requires other files), or REQUEST REVISION (worker's alternatives weren't architectural). After two failed revisions the task is marked `failed` with reason `architectural_escalation_unresolved`.
 
+### swarm-manifest.json.tasks[].ownership_audit (per-task)
+
+Records the outcome of the post-worker ownership audit run by `orchestrate_swarm` "Implementation Complete Message" step 1. Computed from `git diff --name-only` against the worker's commit range, with `task.files_owned ∪ task.test_files_owned` as the authoritative scope.
+
+```json
+"ownership_audit": {
+  "out_of_scope_modified": ["<file>", ...],
+  "out_of_scope_created": ["<file>", ...],
+  "resolution": "clean" | "scope_expanded" | "reverted_modified" | "deleted_created" | "reverted_worker" | "failed"
+}
+```
+
+`resolution` values:
+- `clean` — no out-of-scope edits; audit passed without intervention.
+- `scope_expanded` — leader approved INLINE via `mvf_scope_expansion`; `files_owned` was extended in the manifest.
+- `reverted_modified` — leader chose REVERT for one or more modified files; `git checkout HEAD~<n> -- <file>` restored them.
+- `deleted_created` — leader chose DELETE for newly-created out-of-scope files; `git rm` removed them.
+- `reverted_worker` — entire worker commit range was reverted via `git revert`; task continues but with no committed work.
+- `failed` — task is marked failed with reason `out_of_scope_unrecoverable`; review-iteration M1/oscillation logic handles re-attempt.
+
+Backwards-compat: missing field on legacy tasks is interpreted as `clean` (audit was not yet implemented when the task ran).
+
 ### eigen_lessons/compound_improve/cross_epic_patterns.json (initiative-wide)
 
 Cross-epic aggregation artifact written by `compound_improve` Stage 1.6. Lives at `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (sibling to the per-command lesson directories). Records patterns that recurred in **3 or more epics** across the initiative.
