@@ -223,6 +223,95 @@ class TestFullPipelineWalk:
         assert sw["findings_history"][1]["iteration"] == 1
         assert sw["findings_history"][1]["p3"] == 19
 
+    def test_findings_detail_with_entries_writes_payload(self, pipeline_env):
+        """`--findings-detail` with `entries[]` writes self-describing per-finding payloads."""
+        run(["init", "--initiative", "Test", "--phase-count", "1"])
+        run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
+        run(["init-plan", "--phase", "1", "--epic", "1"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--plan-file", "plan.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
+             "--pr-url", "u", "--pr-number", "1"])
+
+        detail = pipeline_env / "detail_entries.json"
+        detail.write_text(json.dumps({
+            "iteration": 0, "p1": 1, "p2": 0, "p3": 0,
+            "signatures": ["sha-aaa"],
+            "entries": [{
+                "signature": "sha-aaa",
+                "severity": "P1",
+                "file": "src/api/users.ts",
+                "category": "security",
+                "threat_class": "auth-bypass",
+                "title_normalized": "input validation",
+            }],
+        }))
+        rc = run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+                  "--report-path", "r0.md",
+                  "--findings-summary", '{"p1":1,"p2":0,"p3":0}',
+                  "--findings-detail", str(detail)])
+        assert rc == 0
+        sf = pipeline_env / "eigen_initiative" / "phases" / "pipeline_state.json"
+        sw = json.loads(sf.read_text())["state"]["phases"]["1"]["plans"]["1"]["swarm_execution"]
+        entry = sw["findings_history"][0]
+        assert entry["signature_version"] == 2
+        assert entry["entries"][0]["threat_class"] == "auth-bypass"
+        assert entry["entries"][0]["category"] == "security"
+
+    def test_findings_detail_invalid_threat_class_rejected(self, pipeline_env):
+        """Unknown threat_class is rejected with non-zero exit before mutation."""
+        run(["init", "--initiative", "Test", "--phase-count", "1"])
+        run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
+        run(["init-plan", "--phase", "1", "--epic", "1"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--plan-file", "plan.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
+             "--pr-url", "u", "--pr-number", "1"])
+
+        bad = pipeline_env / "bad_threat.json"
+        bad.write_text(json.dumps({
+            "iteration": 0, "p1": 1, "p2": 0, "p3": 0,
+            "signatures": ["sha-aaa"],
+            "entries": [{
+                "signature": "sha-aaa",
+                "severity": "P1",
+                "file": "src/api/users.ts",
+                "category": "security",
+                "threat_class": "totally-bogus-class",
+            }],
+        }))
+        rc = run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+                  "--report-path", "r.md",
+                  "--findings-summary", '{"p1":1,"p2":0,"p3":0}',
+                  "--findings-detail", str(bad)])
+        assert rc != 0
+
     def test_findings_detail_iteration_mismatch_rejected(self, pipeline_env):
         """A detail file whose iteration does not match the just-bumped one is rejected."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])

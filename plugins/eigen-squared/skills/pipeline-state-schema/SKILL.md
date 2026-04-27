@@ -216,18 +216,58 @@ Note: `swarm_execution.findings_summary` uses **`p1/p2/p3`** (not `high/medium/l
 
 ### swarm_execution.findings_history
 
-Per-iteration ledger appended by `review_swarm_pr` via `eigen-squared complete review_swarm_pr --findings-detail <path-to-json>`. Each entry:
+Per-iteration ledger appended by `review_swarm_pr` via `eigen-squared complete review_swarm_pr --findings-detail <path-to-json>` (or `finalize-iteration --findings-detail`). Each entry:
 
 ```json
-{ "iteration": <int>, "p1": <int>, "p2": <int>, "p3": <int>, "signatures": ["<sha1>", "..."] }
+{
+  "iteration": <int>,
+  "p1": <int>, "p2": <int>, "p3": <int>,
+  "signatures": ["<sha1>", "..."],
+  "signature_version": 2,
+  "entries": [
+    {
+      "signature": "<sha1>",
+      "severity": "P1",
+      "file": "src/api/users.ts",
+      "category": "security",
+      "threat_class": "auth-bypass",
+      "title_normalized": "input validation"
+    }
+  ]
+}
 ```
 
-A finding's signature is `sha1("<normalized_file_path>|<category>|<normalized_title>")` where:
-- `normalized_file_path` is the POSIX-style relative path with case preserved,
-- `category` is the lowercase short category (`security`, `data-integrity`, `test-quality`, ...),
-- `normalized_title` is the title lowercased, whitespace-collapsed, and stripped of trailing punctuation.
+A finding's signature is `sha1("<normalized_file_path>|<category>|<normalized_title>")` per the v2 algorithm above.
+
+`entries[]` is the self-describing per-finding payload that downstream consumers (`compound_improve` Stage 1.6 cross-epic aggregator, observability tooling) need but the legacy entry shape did not store. Required fields per entry: `signature`, `severity` (`P1|P2|P3`), `file` (POSIX-relative), `category` (lowercase short), `threat_class` (must be one of the closed enum below). Optional: `title_normalized`.
 
 `findings_history` and `findings_summary` are coupled: `findings_summary` mirrors the latest `findings_history[-1]` counts. The CLI accepts a JSON file via `--findings-detail` whose `iteration` field MUST match the iteration just completed (i.e. `swarm_execution.review_iteration - 1` after the bump). A mismatch is rejected with a non-zero exit. Re-completing the same iteration replaces the existing entry rather than appending a duplicate.
+
+**Backwards compatibility:** legacy entries written before this schema extension lack `entries[]` and `signature_version`. Loaders treat absent `entries[]` as an empty list (consumers skip them rather than crash); absent `signature_version` triggers the v1→v2 migration documented above.
+
+#### threat_class — closed enum
+
+Used as a bucket key for `compound_improve` Kind-2 cross-epic patterns (`(category, threat_class)`) and as a structured field on `findings_history.entries[].threat_class`. CLI rejects unknown values with non-zero exit.
+
+| value                  | description                                                          |
+|------------------------|----------------------------------------------------------------------|
+| `auth-bypass`          | Authentication / authorization can be bypassed                       |
+| `injection`            | SQL / shell / template / XPath / NoSQL injection                     |
+| `data-loss`            | Persistent state corruption, dropped writes, lost migrations         |
+| `race-condition`       | Time-of-check-time-of-use, concurrent-write, ordering bugs           |
+| `type-escape`          | `as any`, `# type: ignore`, `cast(Any, ...)`, runtime monkey-patches |
+| `permissions`          | Excessive privileges, missing RBAC checks, IAM drift                 |
+| `concurrency`          | Deadlocks, leaks, unbounded goroutines, missing locks                |
+| `secrets-exposure`     | Hardcoded credentials, leaked tokens, logged secrets                 |
+| `path-traversal`       | `../` traversal, symlink follow, zip-slip                            |
+| `denial-of-service`    | Unbounded memory/CPU, missing timeouts, regex catastrophic backtrack |
+| `crypto-misuse`        | Weak ciphers, ECB, missing MAC, IV reuse, deterministic RNG          |
+| `input-validation`     | Missing/insufficient input validation (non-injection)                |
+| `error-handling`       | Swallowed errors, missing rollback, log-and-continue                 |
+| `resource-leak`        | File handles, sockets, transactions never released                   |
+| `other`                | Catch-all for findings that do not fit a specific class              |
+
+The `other` bucket exists so workers can always populate the field, but it is excluded from cross-epic Kind-2 promotion (`compound_improve` skips `threat_class == "other"` when computing supporting epics).
 
 Consumers:
 - `review_swarm_pr` Convergence Protocol — the **oscillation rule** converges immediately with `CAPPED_BY_OSCILLATION` if any `(file, category)` pair (derived from a signature) appears in ≥ 3 distinct iterations within the same epic.

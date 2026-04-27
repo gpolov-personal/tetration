@@ -16,6 +16,7 @@ from ..models import (
     Recommendation,
     RECOMMENDATION_MATRIX,
     MAX_RECOMMENDATIONS_PER_PAIR,
+    THREAT_CLASS_ENUM,
     VALID_SWARM_STATUSES,
 )
 from ..state import (
@@ -1043,66 +1044,14 @@ def cmd_complete(args: Namespace) -> int:
             sw.review_reports.append(args.report_path)
         if args.findings_summary:
             sw.findings_summary = json.loads(args.findings_summary)
-        # S-T1-4: append per-iteration detail (counts + signatures) to
+        # S-T1-4: append per-iteration detail (counts + signatures + entries) to
         # findings_history. Consumed by review_swarm_pr's oscillation rule
         # (same (file, category) appearing in >=3 distinct iterations
-        # triggers CAPPED_BY_OSCILLATION) and by Step 5's prior-context
-        # threading. Validated against the just-bumped review_iteration so
-        # a stale or skewed detail file never silently corrupts the ledger.
-        if args.findings_detail:
-            try:
-                detail_path = Path(args.findings_detail)
-                detail = json.loads(detail_path.read_text())
-            except (json.JSONDecodeError, OSError) as exc:
-                print(
-                    f"ERROR: --findings-detail {args.findings_detail}: {exc}",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-            try:
-                detail_iter = int(detail.get("iteration"))
-            except (TypeError, ValueError):
-                print(
-                    "ERROR: --findings-detail JSON missing/invalid 'iteration'",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-            if detail_iter != sw.review_iteration - 1:
-                print(
-                    f"ERROR: --findings-detail iteration {detail_iter} does "
-                    f"not match the iteration just completed "
-                    f"({sw.review_iteration - 1}). Refusing to corrupt "
-                    "findings_history.",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-            sigs = detail.get("signatures") or []
-            if not isinstance(sigs, list) or not all(
-                isinstance(s, str) for s in sigs
-            ):
-                print(
-                    "ERROR: --findings-detail 'signatures' must be a list of strings",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-            entry = {
-                "iteration": detail_iter,
-                "p1": int(detail.get("p1", 0)),
-                "p2": int(detail.get("p2", 0)),
-                "p3": int(detail.get("p3", 0)),
-                "signatures": sigs,
-            }
-            # Idempotent append: if the same iteration already has an entry
-            # (replay / retry), replace it rather than duplicate.
-            existing = next(
-                (i for i, e in enumerate(sw.findings_history)
-                 if isinstance(e, dict) and e.get("iteration") == detail_iter),
-                None,
-            )
-            if existing is not None:
-                sw.findings_history[existing] = entry
-            else:
-                sw.findings_history.append(entry)
+        # triggers CAPPED_BY_OSCILLATION), Step 5's prior-context threading,
+        # and compound_improve's cross-epic aggregator.
+        detail_err = _ingest_findings_detail(args.findings_detail, sw)
+        if detail_err is not None:
+            return detail_err
 
     else:
         print(f"ERROR: Unknown command or missing --phase: {cmd}", file=sys.stderr)
@@ -1289,12 +1238,51 @@ def _ingest_findings_detail(detail_arg: str | None, sw) -> int | None:
     if not isinstance(sigs, list) or not all(isinstance(s, str) for s in sigs):
         print("ERROR: --findings-detail 'signatures' must be a list of strings", file=sys.stderr)
         return EXIT_ERROR
+    entries_raw = detail.get("entries") or []
+    if not isinstance(entries_raw, list):
+        print("ERROR: --findings-detail 'entries' must be a list", file=sys.stderr)
+        return EXIT_ERROR
+    entries_validated: list = []
+    for idx, e in enumerate(entries_raw):
+        if not isinstance(e, dict):
+            print(f"ERROR: --findings-detail 'entries[{idx}]' must be an object", file=sys.stderr)
+            return EXIT_ERROR
+        for required_key in ("signature", "severity", "file", "category", "threat_class"):
+            if required_key not in e:
+                print(
+                    f"ERROR: --findings-detail 'entries[{idx}]' missing required '{required_key}'",
+                    file=sys.stderr,
+                )
+                return EXIT_ERROR
+        if e["severity"] not in ("P1", "P2", "P3"):
+            print(
+                f"ERROR: --findings-detail 'entries[{idx}].severity' must be P1|P2|P3",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        if e["threat_class"] not in THREAT_CLASS_ENUM:
+            print(
+                f"ERROR: --findings-detail 'entries[{idx}].threat_class'={e['threat_class']!r} "
+                f"not in closed enum. Allowed: {sorted(THREAT_CLASS_ENUM)}",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        entries_validated.append({
+            "signature": e["signature"],
+            "severity": e["severity"],
+            "file": e["file"],
+            "category": e["category"],
+            "threat_class": e["threat_class"],
+            "title_normalized": e.get("title_normalized", ""),
+        })
     entry = {
         "iteration": detail_iter,
         "p1": int(detail.get("p1", 0)),
         "p2": int(detail.get("p2", 0)),
         "p3": int(detail.get("p3", 0)),
         "signatures": sigs,
+        "signature_version": 2,
+        "entries": entries_validated,
     }
     existing = next(
         (i for i, e in enumerate(sw.findings_history)

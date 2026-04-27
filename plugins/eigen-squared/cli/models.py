@@ -366,6 +366,28 @@ VALID_DEEPEN_STATUSES = {"not_started", "completed"}
 VALID_SWARM_STATUSES = {"not_started", "pr_created", "iterating", "converged"}
 VALID_PHASE_REVIEW_STATUSES = {"not_started", "testing", "approved"}
 
+# Closed enum used as bucket key for compound_improve cross-epic Kind-2
+# patterns (`(category, threat_class)`) and as a structured field on
+# `findings_history.entries[].threat_class`. See
+# `pipeline-state-schema/SKILL.md#threat_class--closed-enum` for taxonomy.
+THREAT_CLASS_ENUM = frozenset({
+    "auth-bypass",
+    "injection",
+    "data-loss",
+    "race-condition",
+    "type-escape",
+    "permissions",
+    "concurrency",
+    "secrets-exposure",
+    "path-traversal",
+    "denial-of-service",
+    "crypto-misuse",
+    "input-validation",
+    "error-handling",
+    "resource-leak",
+    "other",
+})
+
 RECOMMENDATION_MATRIX: dict[str, set[str]] = {
     "deepen_time_split": {"bootstrap_converge", "space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},
     "bootstrap_converge": {"space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},

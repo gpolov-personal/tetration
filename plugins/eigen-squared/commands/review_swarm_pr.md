@@ -748,7 +748,7 @@ updated_at: "<ISO 8601>"
 P1 grew between iter <prev_iter> and iter <current_iteration>. The prior fixup is suspected of introducing or unmasking this finding, so surface patching is no longer trusted.
 
 **Before authoring any production-code change**, you MUST raise `[QUESTION] type: design_decision` to the leader. Include:
-1. The threat class this finding belongs to (one sentence).
+1. The `threat_class` this finding belongs to. **Required: one of the closed enum** (`auth-bypass`, `injection`, `data-loss`, `race-condition`, `type-escape`, `permissions`, `concurrency`, `secrets-exposure`, `path-traversal`, `denial-of-service`, `crypto-misuse`, `input-validation`, `error-handling`, `resource-leak`, `other`). Use `other` only if no specific class fits — `other` is excluded from cross-epic Kind-2 promotion.
 2. At least two architectural alternatives to surface patching (e.g., switch from regex to a real parser; introduce an abstraction layer; replace the dependency).
 3. Your recommendation, with rationale.
 
@@ -766,7 +766,7 @@ The following file(s) in your `files_owned` have been modified by fixup commits 
 **Streak length per file (current iteration)**: `<{F: count[F] for F in escalation_files ∩ task.files_owned}>`
 
 **Before authoring any production-code change**, you MUST raise `[QUESTION] type: design_decision` to the leader. Include:
-1. The threat class or bug class this finding addresses (one sentence).
+1. The `threat_class` this finding addresses. **Required: one of the closed enum** (`auth-bypass`, `injection`, `data-loss`, `race-condition`, `type-escape`, `permissions`, `concurrency`, `secrets-exposure`, `path-traversal`, `denial-of-service`, `crypto-misuse`, `input-validation`, `error-handling`, `resource-leak`, `other`).
 2. **At least two architectural alternatives** to another surface patch (examples: replace a regex-based parser with a real parser like `libpg_query`; introduce an abstraction layer that constrains the dangerous surface; replace the dependency; restructure the module so the constraint is enforced by the type system rather than runtime checks).
 3. Your recommendation, with rationale (what's reversible, what minimizes coupling, what doesn't close doors).
 
@@ -993,15 +993,30 @@ Use the CLI to update pipeline state. The exact calls depend on the Stage 3 case
 
 The `--reason` string MUST mention residual P3 count when `p3 > 0`, sweep abort when applicable, and the `CAPPED_BY_OSCILLATION` tag on oscillation, so downstream commands and the PR-comment renderer can parse/display it.
 
-**`--findings-detail` is required on every case.** Before running the CLI, write a small per-iteration detail file:
+**`--findings-detail` is required on every case.** Before running the CLI, write a per-iteration detail file. The file MUST include `entries[]` with one self-describing payload per kept finding so downstream consumers (`compound_improve` cross-epic aggregator) do not have to round-trip through the sidecar:
 
 ```bash
 cat > /tmp/eigen_findings_iter_<N>.json <<EOF
-{"iteration": <N>, "p1": <x>, "p2": <y>, "p3": <z>, "signatures": [<sigs from Stage 2.4>]}
+{
+  "iteration": <N>,
+  "p1": <x>, "p2": <y>, "p3": <z>,
+  "signatures": [<sigs from Stage 2.4>],
+  "entries": [
+    {
+      "signature": "<sha1 from Stage 2.1>",
+      "severity": "P1",
+      "file": "<POSIX-relative file>",
+      "category": "<lowercase short category>",
+      "threat_class": "<one of the closed enum>",
+      "title_normalized": "<v2-normalized title>"
+    }
+    /* one entry per kept finding */
+  ]
+}
 EOF
 ```
 
-`<N>` is the iteration just completed (the same number used in `review_report_iteration_<N>.md`); `signatures` is the array of every kept finding's signature from Stage 2.4. The CLI validates `iteration` matches `swarm_execution.review_iteration - 1` after the bump and refuses on mismatch — this catches stale or skewed detail files.
+`<N>` is the iteration just completed (the same number used in `review_report_iteration_<N>.md`); `signatures` is the array of every kept finding's signature from Stage 2.4. `entries[]` MUST contain one object per signature with required fields `signature`, `severity` (`P1|P2|P3`), `file`, `category`, `threat_class`. The `threat_class` MUST be one of the closed enum (`auth-bypass`, `injection`, `data-loss`, `race-condition`, `type-escape`, `permissions`, `concurrency`, `secrets-exposure`, `path-traversal`, `denial-of-service`, `crypto-misuse`, `input-validation`, `error-handling`, `resource-leak`, `other`). The CLI rejects unknown threat_class values with a non-zero exit. The CLI also validates `iteration` matches `swarm_execution.review_iteration - 1` after the bump and refuses on mismatch — this catches stale or skewed detail files.
 
 All cases below use the **`finalize-iteration` atomic verb**: a single CLI call performs both the iteration-completion mutation and the convergence/status update under one state lock + one `save_state`. A SIGKILL between the legacy paired `complete` + `mark-converged` / `set-swarm-status` calls used to leave partial state on disk; `finalize-iteration` eliminates that window. The legacy verbs remain available for non-hot-path callers but should not be used in the convergence loop.
 
