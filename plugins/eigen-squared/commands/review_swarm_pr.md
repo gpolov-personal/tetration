@@ -350,7 +350,21 @@ Assemble for all review agents:
 - Files in scope, shared files
 - PR metadata
 - **CRITICAL: What is OUT OF SCOPE** — files not listed, missing functionality not in acceptance criteria
-- **Previously-raised findings — DO NOT re-raise unless the fix is demonstrably wrong** (iteration ≥ 1 only). Populate from `review_convergence_state.json` (loaded in the Convergence Protocol's Detect Iteration Context step). For every finding raised in any prior iteration, include:
+- **Previously-raised findings — DO NOT re-raise unless the fix is demonstrably wrong** (iteration ≥ 1 only). Populate from `review_convergence_state.json`. **Bounded inline list** — without a cap, this section grew linearly with iteration count (~20 findings/iter × 5 iterations = 100+ bullets in every reviewer prompt by iter 5). Apply two caps in order:
+
+  1. **Per-signature cap of K=2 entries**: for each unique signature, include only the most-recent 2 occurrences. Older occurrences are still in `review_convergence_state.json` and reachable via the read-the-ledger fallback below.
+  2. **Total inline cap of 50 lines**: after the per-signature cap, if the bullet list still exceeds 50 lines, truncate to the most-recent 50 (sorted descending by `last_seen_iteration`, then by severity).
+
+  **Priority ordering — high-priority context emitted FIRST**: before the bounded prior-finding list, emit:
+  - The current iteration's M1 status (`m1_firings`, `prev_p1`, `current_p1`).
+  - Files flagged by Stage 4.1.a's architectural-escalation predicate (file_iteration_counts ≥ 2).
+  - Oscillating `(file, category)` pairs (count ≥ 2 across the epic so far).
+
+  This guarantees the load-bearing context is at the top of the prompt where it cannot be truncated by downstream prompt-size limits.
+
+  Findings dropped by the inline caps are recorded in `review_convergence_state.json.prior_findings_overflow` (per-iteration count) for observability — `<count> additional prior findings filtered out — see review_convergence_state.json`.
+
+  For every finding INCLUDED in the inline list:
   ```
   - id: <last-seen iteration>.<F-id>   signature: <sha1>
     severity: <P1|P2|P3>   file: <path>   category: <category>
