@@ -130,11 +130,16 @@ If a previous review report exists (`review_report_iteration_<review_iteration -
 The pipeline runs as a small state machine over `(p1, p2, p3, p3_sweep.active)` plus the cross-iteration history in `findings_history`. Evaluate the rules below **in order**, stopping at the first match:
 
 1. **Oscillation circuit-breaker** — strongest historical signal (3+ iterations with same `(file, category)` pair). CONVERGED with `CAPPED_BY_OSCILLATION`.
-2. **Monotonicity rule M1** — P1 must not grow between iterations. Tags the next iteration's fixup tasks with `monotonicity-violation` and a body section forcing `[QUESTION] type: design_decision` before patching. Caps at 2 consecutive firings; the third firing CONVERGES with `P1_REGRESSION_PERSISTENT`.
-3. **Monotonicity rule M2** — diverging-loop detector. CONVERGES with `DIVERGING_LOOP` when `p3` grows while `p1+p2` is flat or worse across iterations.
-4. **Cases 1 / 2** — dispatch to Case 1 (normal iteration) or Case 2 (post-sweep iteration) depending on `p3_sweep.active`. Cases 1 and 2 are mutually exclusive.
+2. **Monotonicity rule M1** — P1 must not grow between iterations. Tags the next iteration's fixup tasks with `monotonicity-violation` and a body section forcing `[QUESTION] type: design_decision` before patching. Caps at 2 consecutive firings; the third firing (P1 grew again) CONVERGES with `P1_REGRESSION_PERSISTENT`.
+3. **Monotonicity rule M1-stale** — P1 stuck non-zero after M1 has fired twice. CONVERGES with `P1_REGRESSION_PERSISTENT` even when P1 did not grow this iteration. Catches the gap where M1 needs growth to fire but the loop is just not making progress.
+4. **Monotonicity rule M2** — diverging-loop detector. CONVERGES with `DIVERGING_LOOP` when `p3` grows while `p1+p2` is flat or worse across iterations.
+5. **Cases 1 / 2** — dispatch to Case 1 (normal iteration) or Case 2 (post-sweep iteration) depending on `p3_sweep.active`. Cases 1 and 2 are mutually exclusive.
 
-M1 and M2 read `pipeline_state.json.swarm_execution.findings_history` (Tier 1 Step 4 ledger) to compare prior iterations against the just-collected counts. Both are no-ops on iteration 0 (no prior history) and skipped during post-sweep iterations (Case 2.x has its own auto-revert plumbing in Stage 4.6).
+**Rule ordering rationale.** Oscillation precedes M1 because a 3-iteration `(file, category)` repeat is the strongest "stop iterating" signal we have — even if P1 grew this iteration, the oscillation tag is more informative for `compound_improve` than a generic "P1 grew" tag. M1 precedes M1-stale because M1 catches the *first two* growth events with no convergence (it's a CONTINUE rule for those firings); M1-stale only fires when M1's growth predicate would NOT fire but the loop is still stuck (P1 > 0 and we already fired M1 twice without converging). M2 is last because it's the weakest signal — `p3` rising while `p1+p2` flat is unusual; the prior rules cover the common pathological paths.
+
+`m1_firings` is monotonic across the lifetime of the epic (no resets). The third growth event after two prior firings is what M1 itself catches; M1-stale is the safety net for the case where the third growth never comes but P1 simply will not go to zero.
+
+M1, M1-stale, and M2 read `pipeline_state.json.swarm_execution.findings_history` (Tier 1 Step 4 ledger) to compare prior iterations against the just-collected counts. All three are no-ops on iteration 0 (no prior history) and skipped during post-sweep iterations (Case 2.x has its own auto-revert plumbing in Stage 4.6).
 
 #### Oscillation circuit-breaker (always evaluated first)
 
@@ -195,7 +200,27 @@ The `monotonicity-violation` label is also persisted in the iteration's `review_
 }
 ```
 
-#### Monotonicity rule M2 — Diverging-loop detector (evaluated after M1)
+#### Monotonicity rule M1-stale — P1 stuck non-zero after two firings (evaluated after M1)
+
+Skip this rule if any prior rule fired this iteration (oscillation, M1), if `review_iteration < 2`, or if `p3_sweep.active == true`.
+
+Read `swarm-manifest.json.monotonicity.m1_firings` (default 0). If **all** of:
+
+- `m1_firings >= 2` — M1 has already fired twice without convergence,
+- `current_p1 > 0` — there is still a P1 finding outstanding,
+- `current_p1 <= prev_p1` — P1 did NOT grow this iteration (so M1 itself does not fire),
+
+then the loop is stuck: M1's escalation ladder ran twice, P1 is still non-zero, and the loop is not making progress in either direction. Without this rule, the epic would oscillate indefinitely between flat-but-stuck iterations, never tripping M1 (no growth) and never tripping oscillation (each iteration's findings might have different `(file, category)` pairs).
+
+- **Decision is CONVERGED** with `convergence.reason`:
+  ```
+  P1_REGRESSION_PERSISTENT: P1 stuck at <current_p1> after <m1_firings> M1 firings; loop not converging despite architectural escalation. Logged to compound_improve.
+  ```
+- Skip Cases 1 / 2 and Stage 4.
+- Persist to `review_convergence_state.json` under the `monotonicity` key with `m1_stale_fired_at_iteration: <current_iteration>` so observability tooling can distinguish a stale-cap from a growth-cap.
+- Per Stage 6.1, all findings in this iteration become lessons (the degraded-reason promotion list).
+
+#### Monotonicity rule M2 — Diverging-loop detector (evaluated after M1-stale)
 
 Skip this rule if any prior rule already fired, if `review_iteration < 2` (need ≥ 2 prior iterations for trajectory), or if `p3_sweep.active == true`.
 
