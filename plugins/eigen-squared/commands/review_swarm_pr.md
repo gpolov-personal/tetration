@@ -629,31 +629,32 @@ After Stage 2.2 has computed buckets, compute `file_iteration_counts` for the cu
 
 The counter tracks the length of the current streak of consecutive iterations in which a file was modified by worker commits. Compute it deterministically:
 
-1. Identify the **iteration boundary** for the current iteration N — the SHA of the commit that introduced the prior iteration's review report:
+**Iteration 0 special case — initialize all counts to 0.** On iter 0 there is no prior review-fixup cycle; T-task commits are the *initial implementation*, not a streak of fix attempts. Treating `git merge-base $EIGEN_BRANCH HEAD` as the boundary covered all T-task commits and assigned `count = 1` to every modified file; iter 1 then trivially incremented those to 2, immediately tripping the architectural-escalation predicate at Stage 4.1.a (which fires at `count >= 2`) on epics where no review-fixup cycle had even occurred. That's a false positive — escalation should only fire after the loop demonstrates whack-a-mole, not on the first cycle.
+
+The streak counter measures **review-fixup cycles**, not initial T-task commits. Iter 0's `file_iteration_counts` is therefore the empty map `{}`.
+
+1. **If `current_iteration == 0`**: skip the boundary computation, set `file_iteration_counts = {}`, and exit. The map is recorded as empty in the ledger entry; iter 1 will start fresh streaks at length 1.
+
+2. **If `current_iteration >= 1`**: identify the **iteration boundary** as the SHA of the commit that introduced the prior iteration's review report:
    ```bash
    prior_report="eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_<N-1>.md"
-   if [ -f "$prior_report" ]; then
-       boundary=$(git log -1 --diff-filter=A --format=%H -- "$prior_report")
-   else
-       # Iter 0 has no prior report — boundary is the merge-base with $EIGEN_BRANCH (covers T-task commits).
-       boundary=$(git merge-base "$EIGEN_BRANCH" HEAD)
-   fi
+   boundary=$(git log -1 --diff-filter=A --format=%H -- "$prior_report")
    ```
    The report is created exactly once per iteration in Stage 5.2 and never modified afterwards, so `git log -1 --diff-filter=A` reliably returns its addition commit.
 
-2. List the files modified in this iteration's window:
+3. List the files modified in this iteration's window:
    ```bash
    modified_files=$(git diff --name-only "${boundary}..HEAD")
    ```
    Filter to source files (drop `eigen_initiative/**` artifacts, manifest, reports, tasks). Use the same scope-membership rule as Stage 0.5 — the streak counter only cares about files within the epic's `scope_files`.
 
-3. Read iter `N-1`'s `file_iteration_counts` from `review_convergence_state.json` (default `{}` if missing or first iteration).
+4. Read iter `N-1`'s `file_iteration_counts` from `review_convergence_state.json` (default `{}` if missing or first iteration after migration).
 
-4. For each file `F` in `modified_files ∩ scope_files`:
+5. For each file `F` in `modified_files ∩ scope_files`:
    - If `F` ∈ iter (N-1)'s counts → `count[F] = prev_count[F] + 1` (streak extended).
-   - Else → `count[F] = 1` (new streak).
+   - Else → `count[F] = 1` (new streak — first review-fixup commit on this file).
 
-5. Files NOT in `modified_files` are dropped from this iteration's counts (their streak is broken). The map only contains files with an active streak ending at the current iteration.
+6. Files NOT in `modified_files` are dropped from this iteration's counts (their streak is broken). The map only contains files with an active streak ending at the current iteration.
 
 `F<n>` (in `findings`) is a 1-indexed local ID assigned in stable order (e.g., by signature lex order so iter-N's F1 is reproducible). Persist the **kept** post-filter findings only; discards live in `review_discards.json` instead.
 
