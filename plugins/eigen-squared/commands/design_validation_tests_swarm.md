@@ -872,6 +872,23 @@ REVIEW_FINDING tasks must defeat the **threat class** the finding represents, no
 - Cover ≥ 3 adversarial variants per acceptance criterion (boundary, encoding, syntax-twist)
 - Use REAL dependencies for security/validation/authorization/data-integrity categories — mocks defeat the test
 
+**Type-escape ban (test code, FORBIDDEN — same hard rule as Step B)**: do NOT use any of the following to make adversarial tests compile/pass — they defeat the type system the implementation will rely on, and a test passing because of a type-escape ships a fix that was never genuinely exercised. Needing one of these is a `[QUESTION] type: type_escape_needed` to team-lead, not a silent escape hatch.
+  - TypeScript: `as any`, `as unknown as <T>` (chained casts), `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, declaring a parameter as `any`
+  - Python: `typing.cast(Any, ...)` to satisfy a checker, `# type: ignore` (without an issue link / specific error code), `Any` parameter types when a real Protocol exists, reflective access via `getattr(obj, "_<dunder>")` to bypass encapsulation
+  - Go: `interface{}` parameter types when a typed alternative exists; `unsafe.Pointer` outside narrow approved low-level packages
+  - Any language: monkey-patching of typed interfaces in tests; mutating frozen / dataclass / record structures via `__dict__`; reflection into `_`/`__`-prefixed members of code you do not own
+
+**`[QUESTION] type: type_escape_needed` template** (use when an adversarial test legitimately requires touching internals of a typed structure):
+
+```javascript
+TaskCreate({
+  subject: "[QUESTION] type_escape_needed: <test name>",
+  description: "Task: <task_id>\nQuestion type: type_escape_needed\n\nTest: <test path>::<test name>\nThreat class: <one of THREAT_CLASS_ENUM>\nFinding signature: <sha1>\nWhy a type-escape is required: <one paragraph explaining what cannot be tested through the public type-checked interface>\nProposed escape: <specific construct, e.g. `cast(Any, frozen_record)._private_field` to inject a malformed value the regular API would reject>\nIs the production fix known? <yes/no — if yes, link the proposed implementation>\n\nI am STOPPED and waiting for your decision."
+})
+```
+
+The leader's autonomous-mode `type_escape_needed` policy will respond either "approve with comment marker `# type: ignore[<code>] -- <issue_id> -- <reason>`" or "rewrite the test to exercise via the public interface". Do not silently introduce the escape.
+
 #### REVIEW_FINDING Test Marker
 
 Use a specific marker so review_swarm_pr can identify these tests in subsequent iterations:
