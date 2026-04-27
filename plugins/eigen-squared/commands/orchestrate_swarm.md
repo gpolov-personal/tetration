@@ -453,6 +453,12 @@ Prior convergence ledger: eigen_initiative/phases/phase_<phase>/epic_<epic>/revi
   (machine-readable signatures + per-iteration finding metadata; consult this for any
   signature whose location intersects your files_owned)
 
+**Context partition by worker stage**:
+- **Step A workers** (`design_validation_tests_swarm` — adversarial test design) consume the **HEADERS** block only: `(category, severity, file, title)` for prior findings. Step A's job is to enumerate threat classes from acceptance criteria and write tests; reading prior fix attempts (`signature`, prior-fix recommendations, DO-NOT-REGRESS clauses) biases the threat-class enumeration toward exactly the vectors the prior worker covered, defeating the generalization the test-design pass is supposed to provide. The `signature` and DO-NOT-REGRESS detail are NOT injected into the Step A prompt.
+- **Step B workers** (`code_from_validation_tests_swarm` — implementation against the tests) consume both HEADERS and DETAIL — they need the full prior context to avoid re-introducing fixed issues.
+
+The block below is rendered for Step B. Step A's spawn prompt renders the same block but truncated at the [HEADERS-ONLY-FOR-STEP-A] marker, dropping the DETAIL fields and the DO-NOT-REGRESS clause.
+
 Findings raised in prior iteration(s) that touch YOUR owned files — INLINE LIST is filtered for
 prompt-size discipline. The full ledger is at the path above; consult it on demand.
 
@@ -460,13 +466,19 @@ INLINE filter (kept compact on purpose):
   - severity ∈ {P1, P2} (P3 ledger entries are NOT inlined — they live in the ledger file)
   - last_seen_iteration == <review_iteration - 1> (just-prior pass only — older history is in the ledger)
 
+[HEADERS — emitted to BOTH Step A and Step B]
 <for each prior finding F where F.file ∈ task.files_owned ∪ task.test_files_owned
                             AND F.severity ∈ {P1, P2}
                             AND F.last_seen_iteration == review_iteration - 1:>
 - [<F.severity>] <F.file>: <F.title>
+  category: <F.category>
+</for>
+[HEADERS-ONLY-FOR-STEP-A]
+[DETAIL — emitted to Step B only; Step A spawn truncates here]
+<for each prior finding F as above:>
   signature: <F.sig>
   last seen iter: <F.last_seen_iteration>
-  category: <F.category>
+  prior_fix_summary: <one-line excerpt from the prior R-task's commit message, if available>
 </for>
 
 <if there are >0 prior findings touching files_owned that did NOT make the inline cut
@@ -488,7 +500,7 @@ most-recent — older lessons available in eigen_lessons/review_swarm_pr/):
   Summary: <L.summary>
 </for>
 
-DO-NOT-REGRESS clause:
+DO-NOT-REGRESS clause (Step B only — emitted alongside [DETAIL] block above):
 - If your fix would re-introduce ANY signature listed in the ledger above (same
   normalized_file_path | category | normalized_title combination), STOP and create a
   [QUESTION] task to team-lead explaining the trade-off. Do NOT silently re-introduce
