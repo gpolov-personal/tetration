@@ -1169,9 +1169,23 @@ _Last updated: <ISO 8601>_
 EOF
 )
 
-    # 3. Splice into existing body (replace fenced section, or append if no fence).
-    if echo "$current_body" | grep -q "<!-- eigen-managed:start -->"; then
-        # Replace existing fenced block.
+    # 3. Validate fence pairing BEFORE splicing.
+    start_count=$(echo "$current_body" | grep -c "<!-- eigen-managed:start -->" || true)
+    end_count=$(echo "$current_body"   | grep -c "<!-- eigen-managed:end -->" || true)
+    if [ "$start_count" -gt 1 ] || [ "$end_count" -gt 1 ] || [ "$start_count" != "$end_count" ]; then
+        # Malformed fence (duplicate markers from a pasted-in old PR body, or a
+        # half-edited fence where the user removed only one marker, or a fence
+        # accidentally embedded inside a code block). Fail-soft: log and append
+        # a fresh fenced section at the bottom rather than risk corrupting the
+        # body.
+        # Record in swarm-manifest.json:
+        #   pr_body_fence_malformed: [{iteration: <N>, start_count: $start_count, end_count: $end_count, at: "<ISO 8601>"}]
+        echo "WARNING: malformed eigen-managed fence in PR body (start=$start_count, end=$end_count); appending fresh section."
+        new_body="${current_body}
+
+${new_section}"
+    elif [ "$start_count" = "1" ] && [ "$end_count" = "1" ]; then
+        # Exactly one well-formed fence. Replace it.
         new_body=$(echo "$current_body" | awk -v new="$new_section" '
             BEGIN { skip=0 }
             /<!-- eigen-managed:start -->/ { print new; skip=1; next }
@@ -1179,7 +1193,7 @@ EOF
             !skip { print }
         ')
     else
-        # Append fenced block to whatever body exists.
+        # No fence yet (start_count=0, end_count=0). Append.
         new_body="${current_body}
 
 ${new_section}"
