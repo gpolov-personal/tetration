@@ -10,32 +10,33 @@ The cross-cutting pattern across the findings is **inter-tier integration drift*
 
 | ID  | Severity | Subject                                                                          | Status | Commit |
 |-----|----------|----------------------------------------------------------------------------------|--------|--------|
-| B1  | BLOCKER  | Implement signature v2 migration in SwarmExecution model                         | ⬜     |        |
-| B5+M1 | BLOCKER+MEDIUM | Define threat_class enum; extend findings_history entries                  | ⬜     |        |
-| H10 | HIGH     | Add finalize-iteration parity flags                                              | ⬜     |        |
-| H9  | HIGH     | Tests for finalize-iteration verb                                                | ⬜     |        |
-| B2  | BLOCKER  | Add Stage 7.1.6 baseline-capture and Stage 2.1 skip-list to review_swarm_pr.md   | ⬜     |        |
-| H3  | HIGH     | Promote Stage 4.0 to a real section heading                                      | ⬜     |        |
-| H4  | HIGH     | M1 R-tasks set architectural_escalation flag                                     | ⬜     |        |
-| H1  | HIGH     | Decouple scope_files snapshot from scope_expansion_log                           | ⬜     |        |
-| H2  | HIGH     | REASSIGN re-spawns owner in current iteration                                    | ⬜     |        |
-| H5  | HIGH     | Reorder discard rules and surface count                                          | ⬜     |        |
-| H6  | HIGH     | Reclassify Maximum review iterations as degraded when residual                   | ⬜     |        |
-| H7  | HIGH     | Mode 2 typed confirmation for degraded phases                                    | ⬜     |        |
-| H8  | HIGH     | Split eigen_continue M1 reference between manifest and convergence-state        | ⬜     |        |
-| H11 | HIGH     | Add M1-stale rule and document convergence ordering                              | ⬜     |        |
-| H12 | HIGH     | Partition prior-iteration context for Step A vs Step B                           | ⬜     |        |
-| H13 | HIGH     | Add cross-worker regression handling subsection in Step B                        | ⬜     |        |
-| H14 | HIGH     | Atomic write and schema_version for cross_epic_patterns.json                     | ⬜     |        |
-| B3  | BLOCKER  | Carry forward promoted_to_prompt fields in Stage 1.6.4                           | ⬜     |        |
-| B4  | BLOCKER  | Tighten cross-epic bucket key and threshold                                      | ⬜     |        |
-| M3  | MEDIUM   | PR body fence pairing validation                                                 | ⬜     |        |
-| M4  | MEDIUM   | Cap Stage 0.6 prior-iteration bullets                                            | ⬜     |        |
-| M5  | MEDIUM   | Iter-0 file_iteration_counts initialized to 0                                    | ⬜     |        |
-| M6  | MEDIUM   | Mirror type-escape ban into Step A Stage 3                                       | ⬜     |        |
-| M7  | MEDIUM   | Apply ownership audit to integrator commits                                      | ⬜     |        |
-| M8  | MEDIUM   | Capture project-bootstrap baseline                                               | ⬜     |        |
-| M2  | MEDIUM   | Document schema authority canonicalization                                       | ⬜     |        |
+| B1  | BLOCKER  | Implement signature v2 migration in SwarmExecution model                         | ✅     | `58c63c1` |
+| B5+M1 | BLOCKER+MEDIUM | Define threat_class enum; extend findings_history entries                  | ✅     | `1525e3a` |
+| H10 | HIGH     | Add finalize-iteration parity flags                                              | ✅     | `ddb3705` |
+| H9  | HIGH     | Tests for finalize-iteration verb                                                | ✅     | `1151c18` |
+| B2  | BLOCKER  | Add Stage 7.1.6 baseline-capture and Stage 2.1 skip-list to review_swarm_pr.md   | ✅     | `a5ea8ad` |
+| H3  | HIGH     | Promote Stage 4.0 to a real section heading                                      | ✅     | `b616a60` |
+| H4  | HIGH     | M1 R-tasks set architectural_escalation flag                                     | ✅     | `728c486` |
+| H1  | HIGH     | Decouple scope_files snapshot from scope_expansion_log                           | ✅     | `4fb7031` |
+| H2  | HIGH     | REASSIGN re-spawns owner in current iteration                                    | ✅     | `321c8b4` |
+| H5  | HIGH     | Reorder discard rules and surface count                                          | ✅     | `5c9d10d` |
+| H6  | HIGH     | Reclassify Maximum review iterations as degraded when residual                   | ✅     | `50a8341` |
+| H7  | HIGH     | Mode 2 typed confirmation for degraded phases                                    | ✅     | `944afa9` |
+| H8  | HIGH     | Split eigen_continue M1 reference between manifest and convergence-state        | ✅     | `f9c8885` |
+| H11 | HIGH     | Add M1-stale rule and document convergence ordering                              | ✅     | `19936b1` |
+| H12 | HIGH     | Partition prior-iteration context for Step A vs Step B                           | ✅     | `b2fdd3c` |
+| H13 | HIGH     | Add cross-worker regression handling subsection in Step B                        | ✅     | `b6aebb7` |
+| H14 | HIGH     | Atomic write and schema_version for cross_epic_patterns.json                     | ✅     | `da171a5` |
+| B3  | BLOCKER  | Carry forward promoted_to_prompt fields in Stage 1.6.4                           | ✅     | `3baa71f` |
+| B4  | BLOCKER  | Tighten cross-epic bucket key and threshold                                      | ✅     | `ba4fc6e` |
+| M3  | MEDIUM   | PR body fence pairing validation                                                 | ✅     | `b182b31` |
+| M4  | MEDIUM   | Cap Stage 0.6 prior-iteration bullets                                            | ✅     | `439d40c` |
+| M5  | MEDIUM   | Iter-0 file_iteration_counts initialized to 0                                    | ✅     | `c5e7ee1` |
+| M6  | MEDIUM   | Mirror type-escape ban into Step A Stage 3                                       | ✅     | `f02b8c8` |
+| M7  | MEDIUM   | Apply ownership audit to integrator commits                                      | ✅     | `3ca4fd2` |
+| M8  | MEDIUM   | Capture project-bootstrap baseline                                               | ✅     | `0f02fce` |
+| M2  | MEDIUM   | Document schema authority canonicalization                                       | ✅     | `cfc602c` |
+| —   | release  | Bump plugin + CLI to 3.7.0                                                       | 🟦     | (this commit) |
 
 Legend: ⬜ pending — 🟦 in_progress — ✅ committed — ⏸ deferred
 
