@@ -239,6 +239,7 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic
 
 ```json
 {
+  "schema_version": 1,
   "generated_at": "<ISO 8601>",
   "eigen_root": "<absolute path>",
   "threshold": 3,
@@ -258,6 +259,21 @@ Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic
   ]
 }
 ```
+
+**Atomic write contract.** This stage rewrites the file wholesale (the deterministic detector recomputes the patterns every run). Use the same POSIX-atomic pattern the CLI uses for `pipeline_state.json`: write to `<target>.tmp`, `fsync`, then `rename(<target>.tmp, <target>)`. A SIGKILL between the temp-write and rename leaves the prior `cross_epic_patterns.json` intact. Bash equivalent:
+
+```bash
+TMP="$ARTIFACT.tmp.$$"
+cat > "$TMP" <<EOF
+<JSON content>
+EOF
+sync "$TMP" 2>/dev/null || true
+mv -f "$TMP" "$ARTIFACT"
+```
+
+**Acquire a state lock around the read-modify-write.** Other concurrent `compound_improve` runs (rare but possible if the user manually invokes the command while a watchdog also has it scheduled) MUST serialize. Reuse the CLI's flock pattern: `flock $EIGEN_ROOT/eigen_initiative/.compound_improve.lock <write sequence>`. If the lock is held, abort with a clear error rather than racing.
+
+**`schema_version` field** identifies the artifact version. Future migrations (e.g. switching from `path_basename` to `parent_dir/basename` per Tier-4 Step B4) bump this and trigger a one-time recompute on the next `compound_improve` run. Consumers (`bootstrap_converge`, `plan_epic_converge`) MUST read `schema_version` first and skip the artifact entirely if version > current-known.
 
 The `recommendation` is generated deterministically from the kind:
 - `oscillation` → `"Files matching <basename> in category <category> oscillated in <N> prior epics — plan defensively (split task, pre-validate threat class, or scope-expand)."`
@@ -360,13 +376,22 @@ When the user approves a cross-epic promotion, Stage 2.2 applies the edit using 
 <!-- Compound improvement: cross-epic <kind> — promoted from cross_epic_patterns.json (<N> supporting epics) -->
 ```
 
-After applying, **write back** to `cross_epic_patterns.json`:
+**Transactional apply-edit + write-back.** The promotion path (apply git edits, then write `promoted_to_prompt: true` back to `cross_epic_patterns.json`) needs SIGKILL safety: if the process dies between applying the git edits and the writeback, the next run would re-apply the edits and double-write the prompt content. Solve with a write-pending-first, three-step ladder:
+
+1. **Mark pending** (atomic write-1): set `promoted_to_prompt: false, pending_promotion: true, pending_at: <ISO 8601>` on the pattern entry. Use the same atomic write contract from 1.6.4 (tempfile + fsync + rename, under the state lock).
+2. **Apply edits** (idempotent git operations): the per-pattern Edit-tool calls. Edit calls are idempotent because they include the unique comment marker `<!-- Compound improvement: cross-epic ... -->`; re-running them either no-ops (marker present) or applies the same edit again (marker absent).
+3. **Mark complete** (atomic write-2): set `promoted_to_prompt: true, promoted_at: <ISO 8601>, promoted_in_version: <plugin version>, pending_promotion: false` on the pattern entry. Same atomic write.
+
+If the process dies between step 1 and step 2, the next run sees `pending_promotion: true` and re-applies step 2 (which is idempotent) before step 3. If the process dies between step 2 and step 3, same recovery. The window where state can be inconsistent is the brief moment between a successful `rename()` and the same caller's next state read — well under a millisecond.
+
+After applying, the pattern entry looks like:
 ```json
 {
   "kind": "oscillation",
   "category": "data-integrity",
   ...,
   "promoted_to_prompt": true,
+  "pending_promotion": false,
   "promoted_at": "<ISO 8601>",
   "promoted_in_version": "<plugin version after bump>"
 }
