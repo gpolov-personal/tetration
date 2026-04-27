@@ -514,7 +514,30 @@ FILE OWNERSHIP AND ISOLATION:
 - NEVER modify shared files — send an integration request instead
 - NEVER use git add . or git add -A — only add your owned files by path
 - NEVER create branches, switch branches, or checkout other branches
-- NEVER cd to any directory outside $EIGEN_ROOT"
+- NEVER cd to any directory outside $EIGEN_ROOT
+
+TYPE-SAFETY HARD RULES (apply to ALL task types — production AND test code):
+- FORBIDDEN to satisfy a type checker: `as any`, `as unknown as <T>` (chained casts),
+  `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `: any` parameter declarations
+  (TypeScript); `typing.cast(Any, ...)`, bare `# type: ignore` (without an error code),
+  `# pyright: ignore` (broad form), reflective bypass via `getattr(obj, '_<...>')` or
+  attribute access through `__`-prefixed names you do not own (Python); `unsafe.Pointer`
+  outside the narrow set of approved low-level packages (Go); monkey-patching of typed
+  interfaces in tests; mutation of frozen / dataclass / record structures via `__dict__`
+  (any language).
+- Needing one of these is a `[QUESTION] type: type_escape_needed` to team-lead — never a
+  silent escape. The leader's autonomous-mode handler approves the escape ONLY when ALL
+  of: (a) test-only code, (b) genuinely unable to ship within fix budget, (c) types
+  documented as insufficient. Approved escapes carry an inline comment immediately above
+  the line: `// REVIEWER: type-escape approved by leader, see [DECISION-<id>]` (or the
+  language-equivalent comment).
+- review_swarm_pr Stage 1.3 runs a deterministic detector over the iteration's added diff
+  lines. Unauthorized escapes are synthesized as P1 findings (`category: type-safety`,
+  `agent: type-escape-detector`) and participate in the oscillation cap. Pre-existing
+  escapes in unmodified code are NOT flagged (only added lines).
+- The complete set of forbidden patterns and rationale is in
+  `code_from_validation_tests_swarm.md` Stage 3 step 3 (Code Quality Standards).
+"
 ```
 
 ### Sub-step 2A: Spawn Interface Providers First

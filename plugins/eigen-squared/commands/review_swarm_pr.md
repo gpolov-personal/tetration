@@ -399,6 +399,76 @@ In addition to scope-aware code review, each agent type has specific checks:
 
 Wait for ALL agents.
 
+### 1.3 Deterministic Type-Escape Detector
+
+Run alongside the agents (synchronously in main thread — it's a regex scan, not an agent). The detector synthesizes findings that join the agent pool before Stage 2.1 dedup, so they participate in scope filtering, signature dedup, the oscillation circuit-breaker, and the ledger like any other finding.
+
+#### Why deterministic
+
+Type escapes (`as any`, `@ts-ignore`, bare `# type: ignore`) are the single most common source of cross-iteration P1/P2 oscillation in real codebases (per the leader's `type_escape_needed` rationale at `orchestrate_swarm.md`). A regex catches them with zero false negatives on the unambiguous patterns and runs in milliseconds — strictly better than waiting for an agent to maybe spot them.
+
+#### Scan window
+
+Only scan **added** lines in the iteration's diff (lines starting with a single `+`, ignoring `+++` headers). Pre-existing escapes in unmodified code are NOT flagged — this avoids flooding day-1 reviews with backlog work.
+
+```bash
+# Iteration boundary (same scheme as Stage 2.4's file_iteration_counts).
+prior_report="eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_<N-1>.md"
+if [ -f "$prior_report" ]; then
+    iter_base=$(git log -1 --diff-filter=A --format=%H -- "$prior_report")
+else
+    iter_base=$(git merge-base "$EIGEN_BRANCH" HEAD)
+fi
+
+# Scan added lines only, with file + line context. Restrict to scope_files.
+git diff -U0 "${iter_base}..HEAD" -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.py' '*.pyi' '*.go'
+```
+
+Parse the unified diff: track the current file and post-image line number from each `@@ ... +<n>,<count> @@` hunk header; for each `+` line (non-header), test against the pattern set below.
+
+#### Pattern set (high-signal, low false-positive)
+
+| Language | Pattern (regex, applied to the line content with leading `+` stripped) | Title |
+|---|---|---|
+| TS / JS | `\bas\s+any\b` | Unauthorized type escape: `as any` |
+| TS / JS | `\bas\s+unknown\s+as\s+\w` | Unauthorized type escape: `as unknown as <T>` chained cast |
+| TS / JS | `(?://\|/\*)\s*@ts-ignore\b` | Unauthorized type escape: `@ts-ignore` |
+| TS / JS | `(?://\|/\*)\s*@ts-expect-error\b` | Unauthorized type escape: `@ts-expect-error` |
+| TS / JS | `(?://\|/\*)\s*@ts-nocheck\b` | Unauthorized type escape: `@ts-nocheck` |
+| Python | `\btyping\.cast\(\s*Any\b` | Unauthorized type escape: `typing.cast(Any, ...)` |
+| Python | `#\s*type:\s*ignore\s*$` (no `[error_code]` suffix) | Unauthorized type escape: bare `# type: ignore` (no error-code suffix) |
+| Python | `#\s*pyright:\s*ignore\s*(?:$\|#)` (no `[rule]` suffix) | Unauthorized type escape: bare `# pyright: ignore` (no rule suffix) |
+
+Patterns deliberately **excluded** (high false-positive rate without AST analysis): broad Python `Any` parameter types, Go `interface{}` parameters, `getattr` private access, monkey-patching detection. Those remain enforceable via worker discipline (the rules in `orchestrate_swarm` worker spawn) and review-agent judgment.
+
+#### Allowlist — leader-approved escapes
+
+Skip a match when the line **immediately above** (within 3 lines, after stripping diff metadata) contains the literal `REVIEWER: type-escape approved` substring. This is the convention the leader's `type_escape_needed` autonomous handler instructs the worker to write. Format: `// REVIEWER: type-escape approved by leader, see [DECISION-<id>]` (or `# REVIEWER: ...` for Python).
+
+For each unauthorized match, synthesize a finding with the existing scope-context structure:
+
+```json
+{
+  "file": "<path>",
+  "line": <post-image line number>,
+  "category": "type-safety",
+  "severity": "P1",
+  "agent": "type-escape-detector",
+  "title": "<title from pattern table>",
+  "in_scope_justification": "Type-safety hard rule (orchestrate_swarm spawn prompt); unauthorized escape introduced in this iteration's diff.",
+  "proposed_fix": "Refactor the surrounding code so the type checker is satisfied legitimately, or raise [QUESTION] type: type_escape_needed to team-lead and obtain a [DECISION-AUTONOMOUS] referenced by an inline `// REVIEWER: type-escape approved` comment.",
+  "effort": "minutes-to-hours"
+}
+```
+
+Append the synthesized findings to the agent results pool **before** Stage 2.1 begins. Stage 2.1's scope filter, signature computation, prior-discard match, and dedup apply unchanged — the detector's findings are just one more "agent's" input. The signature scheme produces deterministic IDs across iterations, so a re-introduced same-line escape is a Persistent finding (and contributes to the oscillation cap on its third iteration).
+
+#### What the detector does NOT do
+
+- It does not reject the diff or block the loop — it only adds findings. Convergence still depends on Stage 3's case dispatch.
+- It does not heuristically classify "good" vs "bad" uses of an escape. The regex is the policy. To allow an escape, the leader must say so via the inline comment.
+- It does not run on synthetic or generated code (file globs above are deliberately conservative). Build outputs, vendored dependencies, and lockfiles are out of scope by `scope_files` enforcement in Stage 2.1.
+
 ---
 
 ## Stage 2: Collect, Filter, and Triage
@@ -1138,6 +1208,7 @@ Next steps:
   2. **Monotonicity rule M1** — P1 grew between iterations → tag fixup tasks with `monotonicity-violation` and require the worker to raise `[QUESTION] type: design_decision` before patching (leader's existing autonomous `design_decision` policy responds). Cap at 3 firings; the third converges with `P1_REGRESSION_PERSISTENT`. Counter persisted in `swarm-manifest.json.monotonicity.m1_firings`.
   3. **Monotonicity rule M2** — `p3` rises while `p1+p2` does not improve across ≥ 2 iterations → CONVERGED with `DIVERGING_LOOP`. Trajectory recorded in `review_convergence_state.json.monotonicity`.
 - **Architectural-escalation rule (per-file)**: orthogonal to the convergence safety net above. Tracked in `review_convergence_state.json.iterations[].file_iteration_counts` (a streak counter per file). When a file's streak reaches ≥ 2 consecutive iterations, every R-task created for that file in the current Stage 4 receives the `architectural-escalation` label and a body section forcing the worker to raise `[QUESTION] type: design_decision` before patching. The leader's existing autonomous `design_decision` handler responds. This is the per-file analog of M1's iteration-level escalation and directly targets root cause E (the SQL whack-a-mole pattern from `docs/p2e3-convergence-oscillation-deep-analysis.md`).
+- **Deterministic type-escape detector (Stage 1.3)**: project-wide, runs alongside review agents, regex-scans the iteration's added diff lines for unambiguous escape patterns (`as any`, `as unknown as <T>`, `@ts-ignore`/`@ts-expect-error`/`@ts-nocheck`, `typing.cast(Any, ...)`, bare `# type: ignore` / `# pyright: ignore`). Synthesizes P1 findings with `category: type-safety` and `agent: type-escape-detector`. Allowlist via inline `// REVIEWER: type-escape approved by leader, see [DECISION-<id>]` comment within 3 lines above the escape — the same convention the leader's `type_escape_needed` autonomous handler in `orchestrate_swarm.md` instructs workers to write. Pre-existing escapes in unmodified code are NOT flagged (only added lines). Findings flow through normal Stage 2 triage (scope filter, signature dedup, oscillation cap, ledger).
 - **P3 fixup policy**: P3 findings do **not** trigger per-iteration fixup tasks. They are addressed in **one bounded P3-sweep round** that runs after all P1/P2 are resolved (Case 1.2). The post-sweep review (Case 2.1 / 2.2) **always** terminates: either it converges cleanly, or — if the sweep introduced new P1/P2 — the sweep commits are auto-reverted (Stage 4.6) and the epic converges with the original residual P3 list and `sweep_aborted: true`. The pipeline never re-enters fixup mode after a sweep, even if the sweep regressed. Sweep regressions are recorded for `compound_improve` learning, not for human escalation — the loop is fully autonomous and bounded by construction.
 - **Push after every commit**: the PR updates automatically when the branch is pushed.
 - **Merge is automatic on convergence**: when converged, the command merges the PR via `gh pr merge --squash --delete-branch`, checks out `$EIGEN_BRANCH`, pulls, and deletes the local branch. No manual step needed.
