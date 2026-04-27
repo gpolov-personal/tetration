@@ -201,6 +201,87 @@ Store the user's selection and approved patterns.
 
 ---
 
+## Stage 1.6: Cross-Epic Pattern Aggregation
+
+This stage runs **independently of the per-command lesson edits above** and produces a separate artifact at `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json`. The artifact is consumed at planning time by `bootstrap_converge` and `plan_epic_converge` to surface oscillation-prone patterns from prior epics into the next planning context.
+
+The per-command lesson aggregation in Stages 0–1 looks at lessons (qualitative). This stage looks at the **convergence ledgers** (quantitative) — `review_convergence_state.json`, `swarm-manifest.json`, `pipeline_state.json.swarm_execution.findings_history` — and detects patterns that recurred across **3 or more epics**.
+
+### 1.6.1 Walk Epics
+
+Glob `$EIGEN_ROOT/eigen_initiative/phases/phase_*/epic_*/`. For each epic directory, attempt to read:
+
+- `review_convergence_state.json` — if missing, skip this epic (legacy / pre-Tier-1)
+- `swarm-manifest.json` — for `monotonicity.m1_firings`, `tasks[].architectural_escalation`, `tasks[].architectural_escalation_files`, `p3_sweep`
+- `pipeline_state.json` — for `swarm_execution.findings_history` and `swarm_execution.convergence.reason`
+
+Missing files are non-fatal: epics without ledgers are silently skipped. This keeps the aggregator forward-compatible with old initiatives.
+
+### 1.6.2 Detect Three Pattern Kinds
+
+Build three buckets keyed by a stable signature; each bucket records `supporting_epics: [<phase/epic id>]` and `occurrences: <int>`.
+
+**Kind 1 — Cross-epic oscillation.** For each epic, walk `review_convergence_state.json.iterations[].file_iteration_counts` and pick files where the streak ≥ 2 (i.e., the file oscillated within the epic). Bucket key: `(category, normalized_path_basename)`. `category` comes from the matching finding entry in `findings_history` (look up by file). `normalized_path_basename` is the file's basename lowercased (`src/api/users.ts` → `users.ts`) — full paths differ across projects/epics, but basenames provide a useful cross-epic equivalence.
+
+**Kind 2 — Cross-epic architectural escalation.** For each epic, scan `swarm-manifest.json.tasks[]` for `architectural_escalation == true`. Bucket key: `(category, threat_class)` where both come from the originating finding. If an epic recorded an `m1_firings` count ≥ 1 OR a `convergence.reason` of `P1_REGRESSION_PERSISTENT` / `DIVERGING_LOOP`, also include the dominant `(category, threat_class)` pair from the epic's last review iteration's findings.
+
+**Kind 3 — Cross-epic type escapes.** For each epic, scan `findings_history` entries whose `category == "type-safety"` AND whose title matches one of the type-escape patterns (`as any`, `as unknown as`, `@ts-ignore`, `typing.cast(Any, ...)`, `# type: ignore`, `# pyright: ignore`). Bucket key: `(escape_pattern, normalized_path_basename)`.
+
+### 1.6.3 Apply 3+ Epic Threshold
+
+For each bucket across all three kinds: keep only entries where `len(unique supporting_epics) >= 3`. This matches the existing "3+ supporting lessons" gate used by Stage 1.2 above (strong-pattern threshold) and keeps the artifact terse.
+
+### 1.6.4 Write Artifact
+
+Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (create the directory if needed):
+
+```json
+{
+  "generated_at": "<ISO 8601>",
+  "eigen_root": "<absolute path>",
+  "threshold": 3,
+  "patterns": [
+    {
+      "kind": "oscillation" | "architectural_escalation" | "type_escape",
+      "category": "<category>",
+      "threat_class": "<threat_class or null>",
+      "path_basename": "<basename or null>",
+      "escape_pattern": "<pattern literal or null>",
+      "supporting_epics": ["phase_1/epic_3", "phase_2/epic_1", "phase_3/epic_2"],
+      "occurrences": 7,
+      "first_seen": "<ISO 8601 of earliest supporting epic's convergence_state>",
+      "last_seen": "<ISO 8601 of latest>",
+      "recommendation": "<one-sentence guidance — e.g., 'Plan auth-middleware changes with explicit threat-class review; this category oscillated in 4 prior epics'>"
+    }
+  ]
+}
+```
+
+The `recommendation` is generated deterministically from the kind:
+- `oscillation` → `"Files matching <basename> in category <category> oscillated in <N> prior epics — plan defensively (split task, pre-validate threat class, or scope-expand)."`
+- `architectural_escalation` → `"Category <category> with threat class <threat_class> required architectural escalation in <N> prior epics — pre-flight a design_decision question in the plan."`
+- `type_escape` → `"Pattern <escape_pattern> in <basename> was banned across <N> prior epics — plan native typing from the start."`
+
+### 1.6.5 Print Summary
+
+Print:
+
+```
+=== Cross-Epic Patterns ===
+
+Walked: <N> epics (<M> with full ledgers)
+Patterns detected (≥ 3 supporting epics): <K>
+  Oscillation:               <a>
+  Architectural escalation:  <b>
+  Type escape:               <c>
+
+Artifact: $EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json
+```
+
+If `K == 0`, write an empty `"patterns": []` array (still create the artifact so consumers see "no known patterns" rather than missing-file).
+
+---
+
 ## Stage 2: Rewrite Commands
 
 ### 2.1 Improvement Strategy

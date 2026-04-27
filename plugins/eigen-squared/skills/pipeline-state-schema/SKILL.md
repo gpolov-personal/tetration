@@ -299,6 +299,47 @@ Boolean flag on R-task entries (sibling to `monotonicity_violation`). Set by `re
 
 Consumer: `orchestrate_swarm` worker spawn — when this flag is `true`, the spawn prompt prepends an ARCHITECTURAL ESCALATION REQUIRED constraint block (sibling to the P3-SWEEP CONSTRAINT block) requiring the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's autonomous `design_decision` handler (orchestrate_swarm autonomous-mode rules) responds with one of: APPROVE INLINE (alternative bounded to files_owned), CONVERT TO SCOPE EXPANSION (alternative requires other files), or REQUEST REVISION (worker's alternatives weren't architectural). After two failed revisions the task is marked `failed` with reason `architectural_escalation_unresolved`.
 
+### eigen_lessons/compound_improve/cross_epic_patterns.json (initiative-wide)
+
+Cross-epic aggregation artifact written by `compound_improve` Stage 1.6. Lives at `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (sibling to the per-command lesson directories). Records patterns that recurred in **3 or more epics** across the initiative.
+
+Schema:
+
+```json
+{
+  "generated_at": "<ISO 8601>",
+  "eigen_root": "<absolute path>",
+  "threshold": 3,
+  "patterns": [
+    {
+      "kind": "oscillation" | "architectural_escalation" | "type_escape",
+      "category": "<category>",
+      "threat_class": "<threat_class or null>",
+      "path_basename": "<basename or null>",
+      "escape_pattern": "<pattern literal or null>",
+      "supporting_epics": ["phase_1/epic_3", "phase_2/epic_1", "phase_3/epic_2"],
+      "occurrences": 7,
+      "first_seen": "<ISO 8601>",
+      "last_seen": "<ISO 8601>",
+      "recommendation": "<one-sentence deterministic guidance>"
+    }
+  ]
+}
+```
+
+Sources walked by the aggregator (per epic):
+- `review_convergence_state.json.iterations[].file_iteration_counts` — for kind `oscillation` (streak ≥ 2)
+- `swarm-manifest.json.tasks[].architectural_escalation` + `monotonicity.m1_firings` + `pipeline_state.json.swarm_execution.convergence.reason` — for kind `architectural_escalation`
+- `pipeline_state.json.swarm_execution.findings_history` (filtered to `category == "type-safety"` with type-escape title patterns) — for kind `type_escape`
+
+Cross-epic equivalence is by `path_basename` (lowercased file basename) — full paths differ across initiatives but basenames carry semantic identity.
+
+Consumers:
+- `bootstrap_converge` Stage 2.1 — prepends a "Known oscillation-prone patterns from prior projects" advisory section to the bootstrapper prompt context, filtered to patterns whose category/path-basename plausibly applies to phase scaffolding.
+- `plan_epic_converge` Stage 2.1 — same, filtered to patterns relevant to the current epic's features.
+
+Missing artifact is non-fatal everywhere: consumers treat "file does not exist" as "no known patterns" and proceed normally.
+
 ---
 
 ## Recommendations
