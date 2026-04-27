@@ -946,8 +946,12 @@ SendMessage({
 
 ### 4.0.1 Skip Conditions
 
-- `iteration == 0` AND `swarm-manifest.json.last_green_baseline` is absent → skip (no baseline to compare). Document a `stage_4_0_skipped: { iteration: 0, reason: "no_baseline" }` entry in `swarm-manifest.json` for observability.
 - All workers in this iteration are no-ops (no commits) → skip (nothing to gate).
+- No baseline available anywhere — the gate runs against the first available baseline using the inheritance contract:
+  1. `swarm-manifest.json.last_green_baseline` for the current epic (most recent CONVERGED-clean of THIS epic).
+  2. Otherwise the most recent `last_green_baseline` from any prior epic in the initiative (walk backward through `eigen_initiative/phases/phase_*/epic_*/swarm-manifest.json`).
+  3. Otherwise `eigen_initiative/phases/phase_<current_phase>/bootstrap_baseline.json` written by `bootstrap_converge` Stage 7.2.5.
+  4. If NONE of (1)–(3) exist → skip with `stage_4_0_skipped: { iteration: <N>, reason: "no_baseline_anywhere", at: "<ISO 8601>" }`. This should never happen on a properly-bootstrapped initiative; if it does, surface a hard warning so the user can re-run `bootstrap_converge` to create the baseline.
 
 ### 4.0.2 Run Sequence
 

@@ -856,6 +856,34 @@ Write to `phases/phase_<N>/feedback/bootstrap_converge_feedback.json`:
 
 The `findings` array includes ALL findings from all rounds — both resolved and remaining. The `resolution` field tracks how each was handled.
 
+### 7.2.5 Capture Project-Bootstrap Baseline
+
+When the bootstrap converges cleanly (convergence decision `converged`, no critical or high-severity unresolved findings), capture a **project-bootstrap baseline** for downstream epic gates. This is the green-state suite snapshot that every epic's iter-0 inherits when no prior epic-level baseline exists; without it, the per-worker and Stage 4.0 regression gates skip on every epic's first iteration (per `orchestrate_swarm.md` Stage 4.0.1 skip conditions), and a regression introduced at iter 0 of any epic could land in `$EIGEN_BRANCH` undetected.
+
+Write to `$EIGEN_ROOT/eigen_initiative/phases/phase_<N>/bootstrap_baseline.json`:
+
+```json
+{
+  "schema_version": 1,
+  "captured_at": "<ISO 8601>",
+  "captured_at_phase": <N>,
+  "commit_sha": "<git rev-parse HEAD on $EIGEN_BRANCH>",
+  "suite_result_hash": "<sha256 of the per-test pass/fail manifest from a fresh suite run>",
+  "failing_tests": ["<test_path>::<test_name>", ...],
+  "tech_stack": ["<languages from Stage 1.1>"]
+}
+```
+
+Run the project's full test suite once to populate `suite_result_hash` and `failing_tests`. Tests that fail at this baseline are treated as "already failing pre-iteration" by every downstream regression gate — workers are never blamed for breakage they inherited.
+
+**Inheritance contract** (consumed by `orchestrate_swarm.md` Stage 4.0 and per-worker gates):
+1. If the epic's `swarm-manifest.json.last_green_baseline` exists → use it (most recent CONVERGED-clean state for THIS epic).
+2. Otherwise, walk backward through prior epics in the initiative; if any prior epic has `last_green_baseline`, use the most recent one.
+3. Otherwise, fall back to `bootstrap_baseline.json` for this phase.
+4. If none of (1)–(3) exist, the gate skips with `stage_4_0_skipped: { reason: "no_baseline_anywhere" }`.
+
+Atomic write: tempfile + fsync + rename, same pattern as `pipeline_state.json`. The file is committed to `$EIGEN_BRANCH` alongside `bootstrap-report.json` so all future epics on the same branch see it.
+
 ### 7.3 Lesson Extraction
 
 For each non-false-positive finding, create a lesson JSON in `eigen_lessons/bootstrap_converge/`:
