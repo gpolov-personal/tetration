@@ -525,6 +525,7 @@ This is the crash recovery checkpoint — if the coordinator crashes after this 
 1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_<N>_manifest.md`.
 2. Read recommendations from CLI context (filter by current phase).
 3. If `is_first_run: false` and `convergence_state.json` shows `round_1_status: in_progress`, run `git log --oneline -20` in `$EIGEN_ROOT` to detect commits already made by a prior bootstrapper attempt.
+4. **Cross-epic patterns (advisory).** Attempt to read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (written by `/compound_improve` Stage 1.6). If the file does not exist or `patterns` is empty, skip silently. Otherwise extract patterns whose `kind` is `oscillation` or `architectural_escalation` AND whose `category` is in {`infrastructure`, `tooling`, `architecture`, `dependency`, `type-safety`} (the categories that affect phase scaffolding). These will be prepended as a "Known oscillation-prone patterns from prior projects" advisory block in the Stage 2.2 bootstrapper prompt — see Stage 2.2.
 
 ### 2.2 Send to Bootstrapper
 
@@ -538,6 +539,14 @@ PHASE MANIFEST:
 
 UPSTREAM RECOMMENDATIONS:
 <recommendations content, or 'None'>
+
+KNOWN OSCILLATION-PRONE PATTERNS FROM PRIOR PROJECTS:
+[Render only if Stage 2.1 step 4 found applicable patterns; otherwise omit this block entirely.]
+The following patterns triggered oscillation or architectural escalation in 3+ epics across this initiative. Plan defensively when scaffolding decisions touch these areas:
+<for each applicable pattern>
+  - [<kind>] <category> / <path_basename or threat_class>: <recommendation>
+    (supporting epics: <count>, last seen: <last_seen>)
+</for>
 
 EIGEN_ROOT: <absolute path>
 EIGEN_BRANCH: <branch>

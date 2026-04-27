@@ -342,6 +342,10 @@ COMMUNICATION:
 5. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/bootstrap-report.json` — bootstrap context (entity paths, tooling decisions, languages).
 6. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_manifest.json` — the epic manifest for inter-epic dependency awareness.
 7. Read `recommendations` from the CLI context. Filter by current phase and epic number (include entries where `epic` is null — phase-wide observations). Use as advisory context during plan generation.
+8. **Cross-epic patterns (advisory).** Attempt to read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (written by `/compound_improve` Stage 1.6). If the file does not exist or `patterns` is empty, skip silently. Otherwise filter patterns to those plausibly relevant to this epic's features:
+   - For `kind == "oscillation"` or `kind == "type_escape"`: keep if the pattern's `path_basename` matches (case-insensitive) the basename of any file referenced in the epic's features, blackbox specs, or whitebox guidance.
+   - For `kind == "architectural_escalation"`: keep if the pattern's `category` overlaps with categories implied by the epic's features (e.g., features touching auth/session → `security`, features touching schemas → `data-integrity`). When in doubt, include — false positives are cheap, missed warnings are not.
+   These will be prepended as a "Known oscillation-prone patterns from prior epics" advisory block in the Stage 2.3 planner prompt — see Stage 2.3.
 
 ### 2.2 External Dependency Verification Gate
 
@@ -378,6 +382,14 @@ Epic manifest: <epic manifest content>
 
 RECOMMENDATIONS FROM UPSTREAM:
 <recommendations content, or 'None'>
+
+KNOWN OSCILLATION-PRONE PATTERNS FROM PRIOR EPICS:
+[Render only if Stage 2.1 step 8 found applicable patterns; otherwise omit this block entirely.]
+The following patterns triggered oscillation, architectural escalation, or banned type-escapes in 3+ prior epics across this initiative. Plan defensively when this epic touches the same areas — split tasks early, pre-flight design_decision questions, choose native typing from the start:
+<for each applicable pattern>
+  - [<kind>] <category> / <path_basename or threat_class>: <recommendation>
+    (supporting epics: <count>, last seen: <last_seen>)
+</for>
 
 EXTERNAL DEPENDENCY VERIFICATION RESULTS:
 <If Stage 2.2 produced verification results, include them here. Format:
