@@ -468,8 +468,20 @@ Cross-epic equivalence is by `path_basename` (lowercased file basename) — full
 Consumers:
 - `bootstrap_converge` Stage 2.1 — prepends a "Known oscillation-prone patterns from prior projects" advisory section to the bootstrapper prompt context, filtered to patterns whose category/path-basename plausibly applies to phase scaffolding.
 - `plan_epic_converge` Stage 2.1 — same, filtered to patterns relevant to the current epic's features.
+- `compound_improve` Stage 1.7 — promotes patterns with `occurrences >= 5 AND promoted_to_prompt != true` to **permanent prompt edits** in the plugin source repo. After approval and edit application, sets `promoted_to_prompt: true`, `promoted_at: <ISO 8601>`, `promoted_in_version: <bumped plugin version>` to prevent re-promotion.
 
 Missing artifact is non-fatal everywhere: consumers treat "file does not exist" as "no known patterns" and proceed normally.
+
+Per-pattern lifecycle fields added by Stage 1.7 promotion:
+```json
+{
+  "kind": "oscillation" | "architectural_escalation" | "type_escape",
+  ...,
+  "promoted_to_prompt": true,
+  "promoted_at": "<ISO 8601>",
+  "promoted_in_version": "<plugin semver>"
+}
+```
 
 ---
 

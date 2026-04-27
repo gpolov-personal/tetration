@@ -282,6 +282,112 @@ If `K == 0`, write an empty `"patterns": []` array (still create the artifact so
 
 ---
 
+## Stage 1.7: Cross-Epic Pattern Promotion to Prompt Edits
+
+Stage 1.6 produces `cross_epic_patterns.json` for **runtime advisory** consumption — `bootstrap_converge` and `plan_epic_converge` read it on every invocation to inject prior-epic warnings into planning context. But the patterns never make it into the prompt files themselves; every new initiative re-discovers the same threat classes, and the artifact dies when `EIGEN_ROOT` resets.
+
+This stage promotes high-confidence cross-epic patterns from runtime advisory to **permanent prompt edits** in the plugin source repo. Promotion is a higher bar than runtime injection — a bad promotion affects every future initiative.
+
+### 1.7.1 Promotion Threshold
+
+Read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json`. Filter to entries where:
+- `occurrences >= 5` (vs. the runtime-advisory threshold of 3 — promotion to permanent prompt content needs more evidence), AND
+- `promoted_to_prompt != true` (skip patterns already promoted in a prior `compound_improve` run).
+
+If no patterns survive the filter, skip Stage 1.7 entirely.
+
+### 1.7.2 Generate Edit Per Pattern Kind
+
+For each surviving pattern, produce a structured edit proposal. The edit content depends on `pattern.kind`:
+
+**`oscillation`** → edit goes into `<plugin_source_path>/commands/plan_epic_converge.md` Strategic Overview / Risk Factors guidance (around the "Risk factors and mitigation strategies" bullet in Stage 2.3's planner prompt). Edit template:
+```markdown
+> **Cross-epic oscillation watch:** Files matching basename `<basename>` in category `<category>`
+> have oscillated in <N> prior epics across this initiative. When this epic touches such files,
+> plan defensively: split tasks earlier, pre-validate threat class, or scope-expand.
+```
+
+**`architectural_escalation`** → edit goes into `<plugin_source_path>/commands/orchestrate_swarm.md` ARCHITECTURAL ESCALATION REQUIRED block (the worker spawn prompt section added by Tier 2 Step 2). Edit template:
+```markdown
+> **Pre-flight architectural escalation (cross-epic confirmed):** Combination of
+> category=`<category>` AND threat_class=`<threat_class>` triggered architectural
+> escalation in <N> prior epics. Worker MUST raise `[QUESTION] type: design_decision`
+> before any production-code change in this combination, regardless of file-iteration
+> -streak count.
+```
+
+**`type_escape`** → edit goes into `<plugin_source_path>/commands/code_from_validation_tests_swarm.md` Code Quality Standards (the Stage 3 type-safety rules section). Edit template:
+```markdown
+> **Banned pattern (cross-epic confirmed):** `<escape_pattern>` in `<basename>` was banned
+> across <N> prior epics. Native typing is mandatory from the first commit; raise
+> `[QUESTION] type: type_escape_needed` only with strict justification.
+```
+
+### 1.7.3 Surface in Stage 1 User Confirmation
+
+Promoted patterns appear in Stage 1.4's pattern listing prefixed with `[CROSS-EPIC]` to distinguish them from per-command lesson patterns:
+
+```
+=== Pattern Analysis ===
+
+[per-command patterns above ...]
+
+Cross-epic promotions (≥ 5 supporting epics):
+  1. [CROSS-EPIC] [OSCILLATION] plan_epic_converge.md / Strategic Overview
+     Pattern: files matching basename `users.ts` in category `data-integrity`
+     oscillated in 6 prior epics
+     Edit: append "Cross-epic oscillation watch" advisory note
+
+  2. [CROSS-EPIC] [TYPE-ESCAPE] code_from_validation_tests_swarm.md / Code Quality Standards
+     Pattern: `as any` in `auth-service.ts` banned across 5 prior epics
+     Edit: append "Banned pattern (cross-epic confirmed)" reminder
+```
+
+Stage 1.5's user-confirmation prompt is extended with a fifth option:
+```
+  5. Skip cross-epic promotions — Apply per-command lesson patterns only
+```
+
+The user can decline specific cross-epic patterns from option 3 ("Let me pick").
+
+### 1.7.4 Apply Edits and Mark as Promoted
+
+When the user approves a cross-epic promotion, Stage 2.2 applies the edit using the Edit tool with the same surgical-edit rules (preserve structure, add comment marker). Comment marker for cross-epic edits:
+
+```markdown
+<!-- Compound improvement: cross-epic <kind> — promoted from cross_epic_patterns.json (<N> supporting epics) -->
+```
+
+After applying, **write back** to `cross_epic_patterns.json`:
+```json
+{
+  "kind": "oscillation",
+  "category": "data-integrity",
+  ...,
+  "promoted_to_prompt": true,
+  "promoted_at": "<ISO 8601>",
+  "promoted_in_version": "<plugin version after bump>"
+}
+```
+
+This prevents re-promotion in the next `compound_improve` run.
+
+### 1.7.5 CHANGELOG Entry
+
+Stage 3.2's CHANGELOG section gets an additional sub-section for cross-epic promotions:
+
+```markdown
+**Cross-epic promotions:**
+- [OSCILLATION] plan_epic_converge.md: `users.ts` / `data-integrity` (6 supporting epics)
+- [TYPE-ESCAPE] code_from_validation_tests_swarm.md: `as any` / `auth-service.ts` (5 supporting epics)
+```
+
+### 1.7.6 Rollback Story
+
+Cross-epic promotions land in the plugin source repo as ordinary commits (via the existing Stage 2.2 → Stage 3 → user-driven git commit flow). Rollback is via standard `git revert` on the compound-improvement commit. The `promoted_to_prompt` flag in `cross_epic_patterns.json` does NOT auto-reset — manual reset is required if the user wants the same pattern re-considered for promotion (this is conservative: a reverted promotion was a deliberate choice, and re-surfacing it would re-prompt the user unnecessarily).
+
+---
+
 ## Stage 2: Rewrite Commands
 
 ### 2.1 Improvement Strategy
