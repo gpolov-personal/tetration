@@ -821,13 +821,83 @@ Collected for Stage 4. No response needed to the teammate.
 
    If `resolution == "failed"` → the task is failed; do NOT proceed to step 2. Mark `task.status = "failed"`, skip dependents per the existing failure cascade rules.
 
-2. Add task_id to `completed_tasks`, remove from `active_teammates`
-3. Update `[WAVE-STATUS]`
-4. Verify the `[WORK]` task is marked completed
-5. **Check wave completion**: if ALL tasks in current wave are done:
+2. **Full-suite regression gate (per-worker).** After the ownership audit passes, run the project's full test suite to catch regressions in tests the worker did not touch. This catches the common path to `P1_REGRESSION_PERSISTENT` one stage earlier than M1 — at worker time rather than at review time.
+
+   **Skip conditions (any one short-circuits the gate):**
+   - `iteration == 0` AND `swarm-manifest.json.last_green_baseline` is absent (no baseline to compare against; the gate runs starting iteration 1 once the first iteration's converged state has been captured).
+   - `task.documentation_only == true` OR all files in the worker's diff have extensions in `{.md, .txt, .rst, .adoc}`.
+   - `swarm-manifest.json.last_green_baseline` is missing for any other reason (recovered run, partial state).
+
+   **Run sequence:**
+   ```bash
+   # Use $FAST_SUITE_COMMAND from bootstrap_converge if set, else $FULL_SUITE_COMMAND.
+   suite_cmd="${FAST_SUITE_COMMAND:-$FULL_SUITE_COMMAND}"
+   suite_output=$($suite_cmd --json 2>&1) || suite_exit=$?
+
+   # Compute current sorted (test_name, status) pairs and their hash.
+   current_results=$(parse_suite_output "$suite_output" | sort)
+   current_hash=$(echo "$current_results" | sha1sum | cut -d' ' -f1)
+
+   # Compare to baseline.
+   baseline_hash=$(jq -r '.last_green_baseline.suite_result_hash' swarm-manifest.json)
+   baseline_failing=$(jq -r '.last_green_baseline.failing_tests[]' swarm-manifest.json)
+
+   if [ "$current_hash" = "$baseline_hash" ]; then
+       # Identical — gate passes, no regressions.
+       continue
+   fi
+
+   currently_failing=$(echo "$current_results" | grep ' FAIL$' | cut -d' ' -f1)
+   newly_failing=$(comm -23 <(echo "$currently_failing" | sort) <(echo "$baseline_failing" | sort))
+
+   if [ -z "$newly_failing" ]; then
+       # Differences are all PASS→PASS or in pre-existing failures — gate passes.
+       continue
+   fi
+   ```
+
+   **Flake mitigation.** For each `newly_failing` test, re-run that specific test up to 2 additional times (3 total). If it passes on retry, treat as flake — append to `tasks[].full_suite_flakes`, do NOT block. If it fails all 3 runs, treat as a real failure.
+
+   **Non-empty newly-failing → enter regression-resolution loop:**
+   1. **Inline fix attempt.** If the failing test's root cause is in `task.files_owned` (heuristic: `git log --follow <test_path>` produces a path that overlaps `files_owned`, OR the test imports a module from `files_owned`): instruct the worker to fix inline and re-run the suite. Up to 2 retries.
+   2. **Out-of-scope escalation.** Worker raises `[QUESTION] type: scope_expansion` to leader with payload `{failing_test, root_cause_file, minimal_patch_summary}`.
+   3. **Leader autonomous decision** (extends the existing `mvf_scope_expansion` policy):
+      - **APPROVE EXPANSION** — extend `task.files_owned`; worker patches inline and re-runs.
+      - **REASSIGN** — failing test belongs to a different worker. Fail current task with reason `cross_worker_regression`; create a fixup `[WORK]` task in the manifest for the actual owner; queue for the next iteration.
+      - **REVERT** — worker's change is incompatible with broader codebase. Abort task with reason `regression_unrecoverable`; the next review iteration's M1 handles via `P1_REGRESSION_PERSISTENT`.
+   4. **Circuit breaker.** After 2 failed escalation rounds → fail task with reason `full_suite_regression_unresolved`. Same N=2 cap as Tier 2 Step 2's `architectural_escalation_unresolved`.
+
+   **Manifest fields recorded:**
+   ```json
+   "tasks[]": {
+     "full_suite_regressions": ["<test_path>::<test_name>", ...],
+     "full_suite_resolution": "inline_fix" | "scope_expanded" | "reassigned" | "reverted" | "failed" | "skipped",
+     "full_suite_flakes": ["<test_path>::<test_name>", ...]
+   }
+   ```
+
+3. Add task_id to `completed_tasks`, remove from `active_teammates`
+4. Update `[WAVE-STATUS]`
+5. Verify the `[WORK]` task is marked completed
+6. **Check wave completion**: if ALL tasks in current wave are done:
    - If more non-integration waves remain → increment wave, spawn next wave
-   - If only integration wave remains → proceed to Stage 4
-6. Request shutdown for the completed teammate
+   - If only integration wave remains → proceed to Stage 4 (which now includes Stage 4.0 — pre-final-push integration gate, see below)
+7. Request shutdown for the completed teammate
+
+**Pre-final-push integration gate (Stage 4.0).** After all workers in the iteration have passed their per-worker gates and the wave-final integration phase is complete, run the suite ONE more time on the merged state. This catches integration regressions where workers A and B each pass their per-worker gate independently but their merged changes break a previously-passing test. Use the same flake mitigation. On non-empty newly-failing: identify the regressing commit via `git bisect`-style range scan over the iteration's commits, escalate to that commit's owning worker via the same scope_expansion → REASSIGN → REVERT decision tree above. Record outcomes in `iterations[].integration_regressions` and `iterations[].integration_resolution`.
+
+**Baseline capture (Stage 7 of `review_swarm_pr`, on CONVERGED clean only).** When `review_swarm_pr` reports Case 1.1 (P1=P2=P3=0) OR Case 2.1 (post-sweep clean) — i.e., the iteration converged genuinely clean, not via a degraded reason — write `last_green_baseline` to `swarm-manifest.json`:
+```json
+"last_green_baseline": {
+  "commit_sha": "<merged commit on $EIGEN_BRANCH>",
+  "suite_result_hash": "<sha1 of sorted (test_name, status) pairs>",
+  "failing_tests": ["<test_path>::<test_name>", ...],
+  "captured_at": "<ISO 8601>"
+}
+```
+Degraded convergence (CAPPED_BY_OSCILLATION, P1_REGRESSION_PERSISTENT, DIVERGING_LOOP, sweep aborted) does NOT update the baseline — those iterations may have known-failing tests; using them as baseline would taint the next iteration's gate.
+
+**Reviewer skip-list (`review_swarm_pr` Stage 2.1).** When loading `findings_history`, also load `tasks[].full_suite_regressions` and `iterations[].integration_regressions`. Findings whose underlying test path appears in either list are NOT counted as "new findings" in M1 — they were caught and handled at worker time, not introduced.
 
 ### Handling: Teammate Idle Notification
 

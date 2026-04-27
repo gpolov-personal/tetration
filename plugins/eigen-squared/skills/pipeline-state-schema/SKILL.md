@@ -356,6 +356,58 @@ Used by `review_swarm_pr` Stage 7 in the convergence-loop hot path. Legacy verbs
 
 The `--findings-detail` validation rules are identical to `complete review_swarm_pr` — iteration must match `swarm_execution.review_iteration - 1` after the bump. A failed validation aborts the entire verb (no partial state written) because the validation runs before any mutation is committed via `save_state`.
 
+### swarm-manifest.json.last_green_baseline (per-epic)
+
+Captured by `review_swarm_pr` Stage 7 when an iteration converges **genuinely clean** (Case 1.1 or Case 2.1) — NOT on degraded convergence (CAPPED_BY_OSCILLATION, P1_REGRESSION_PERSISTENT, DIVERGING_LOOP, sweep aborted), since those iterations may carry known-failing tests that would taint the next gate.
+
+```json
+"last_green_baseline": {
+  "commit_sha": "<merged commit on $EIGEN_BRANCH>",
+  "suite_result_hash": "<sha1 of sorted (test_name, status) pairs>",
+  "failing_tests": ["<test_path>::<test_name>", ...],
+  "captured_at": "<ISO 8601>"
+}
+```
+
+Consumer: `orchestrate_swarm` "Implementation Complete Message" step 2 (per-worker full-suite gate) and Stage 4.0 (pre-final-push integration gate). The gate computes `newly_failing = currently_failing - last_green_baseline.failing_tests` and only blocks on newly-failing tests.
+
+Backwards-compat: missing field disables the gate (skipped). New epics record their first baseline at iteration 0's clean convergence.
+
+### swarm-manifest.json.tasks[].full_suite_* (per-task)
+
+Set by `orchestrate_swarm` "Implementation Complete Message" step 2 when the per-worker full-suite gate fires.
+
+```json
+"tasks[]": {
+  "full_suite_regressions": ["<test_path>::<test_name>", ...],
+  "full_suite_resolution": "inline_fix" | "scope_expanded" | "reassigned" | "reverted" | "failed" | "skipped",
+  "full_suite_flakes": ["<test_path>::<test_name>", ...]
+}
+```
+
+`full_suite_resolution` values:
+- `inline_fix` — worker's change broke a test in `files_owned`; worker patched inline.
+- `scope_expanded` — leader extended `files_owned`; worker patched.
+- `reassigned` — leader created a fixup task for the actual owner; current task failed with reason `cross_worker_regression`.
+- `reverted` — leader chose REVERT; task aborted with `regression_unrecoverable`.
+- `failed` — circuit breaker tripped after 2 failed escalation rounds (`full_suite_regression_unresolved`).
+- `skipped` — gate did not run (iteration 0, doc-only task, or missing baseline).
+
+`full_suite_flakes` records tests that failed once but passed on retry. Non-blocking; surfaces suite-quality issues for observability.
+
+Consumer: `review_swarm_pr` Stage 2.1 reads these arrays and excludes the listed tests from M1's "new findings" count — they were caught and handled at worker time, not introduced to the reviewer.
+
+### swarm-manifest.json.iterations[].integration_regressions (per-iteration)
+
+Set by `orchestrate_swarm` Stage 4.0 (pre-final-push integration gate). Same shape and consumer semantics as `tasks[].full_suite_regressions`, but scoped to the wave-final integration phase where two workers' independently-passing changes interact.
+
+```json
+"iterations[]": {
+  "integration_regressions": ["<test_path>::<test_name>", ...],
+  "integration_resolution": "inline_fix" | "scope_expanded" | "reassigned" | "reverted" | "failed"
+}
+```
+
 ### swarm-manifest.json.tasks[].ownership_audit (per-task)
 
 Records the outcome of the post-worker ownership audit run by `orchestrate_swarm` "Implementation Complete Message" step 1. Computed from `git diff --name-only` against the worker's commit range, with `task.files_owned ∪ task.test_files_owned` as the authoritative scope.
