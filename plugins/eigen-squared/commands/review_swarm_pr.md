@@ -992,33 +992,31 @@ EOF
 
 `<N>` is the iteration just completed (the same number used in `review_report_iteration_<N>.md`); `signatures` is the array of every kept finding's signature from Stage 2.4. The CLI validates `iteration` matches `swarm_execution.review_iteration - 1` after the bump and refuses on mismatch — this catches stale or skewed detail files.
 
+All cases below use the **`finalize-iteration` atomic verb**: a single CLI call performs both the iteration-completion mutation and the convergence/status update under one state lock + one `save_state`. A SIGKILL between the legacy paired `complete` + `mark-converged` / `set-swarm-status` calls used to leave partial state on disk; `finalize-iteration` eliminates that window. The legacy verbs remain available for non-hot-path callers but should not be used in the convergence loop.
+
 **Case 1.1 — converged clean (`p1=p2=p3=0`):**
 ```bash
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "All findings resolved."
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "All findings resolved." --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": 0}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 **Case 1.2 — entering P3 sweep (`p1=p2=0, p3>0`, sweep tasks queued):**
 ```bash
 # Substate transition: still "iterating" from the watchdog's perspective so it auto-runs orchestrate_swarm next.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status iterating --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, ENTER P3 SWEEP (<z> P3 task(s) queued)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 **Case 1.3 — continuing iteration (`p1>0 OR p2>0`):**
 ```bash
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status iterating --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
 **Case 2.1 — post-sweep clean (`p1=p2=0`, sweep succeeded):**
 ```bash
 # Use the original residual P3 count (the count *before* the sweep ran; many P3s may now be addressed).
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "P3 sweep completed. <addressed> P3 finding(s) resolved; <z> recorded as residual."
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "P3 sweep completed. <addressed> P3 finding(s) resolved; <z> recorded as residual." --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (post-sweep)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
@@ -1028,8 +1026,7 @@ Stage 4.6 has already auto-reverted the sweep commits and updated `swarm-manifes
 
 ```bash
 # <z> here is the original residual P3 count from before the sweep ran.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "P3 sweep introduced <x> P1 / <y> P2 finding(s). Auto-reverted to base ref <base_ref:0:7>. Converging with original residual P3 list (<z>). Sweep aborted; regression recorded for compound_improve."
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "P3 sweep introduced <x> P1 / <y> P2 finding(s). Auto-reverted to base ref <base_ref:0:7>. Converging with original residual P3 list (<z>). Sweep aborted; regression recorded for compound_improve." --report-path <report_path> --findings-summary '{"p1": 0, "p2": 0, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (sweep aborted)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
@@ -1037,8 +1034,7 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONV
 
 ```bash
 # <x>, <y>, <z> are this iteration's pre-cap counts — recorded as-is so findings_history captures the final iteration that triggered the cap.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "CAPPED_BY_OSCILLATION: <pair_count> (file, category) pair(s) appeared in 3+ iterations: <pair1>, <pair2>, ... — accepting current state to break the loop. Logged to compound_improve."
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "CAPPED_BY_OSCILLATION: <pair_count> (file, category) pair(s) appeared in 3+ iterations: <pair1>, <pair2>, ... — accepting current state to break the loop. Logged to compound_improve." --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (CAPPED_BY_OSCILLATION)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
@@ -1048,8 +1044,7 @@ The pipeline stays `iterating`. The watchdog will run `orchestrate_swarm` next; 
 
 ```bash
 # <x>, <y>, <z> are this iteration's counts. The 'monotonicity_m1_firings' value comes from the just-incremented manifest counter.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared set-swarm-status iterating --phase <phase> --epic <epic>
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status iterating --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iteration <N>, CONTINUE (M1 firing #<count>: P1 grew <prev_p1> → <x>, fixup tasks tagged monotonicity-violation)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
@@ -1057,8 +1052,7 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — iter
 
 ```bash
 # Same counts; this is the terminal firing — no fixup tasks created.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "P1_REGRESSION_PERSISTENT: P1 grew in 3 iterations (last at iter <N>); architectural escalation could not stabilize the fix. Logged to compound_improve."
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "P1_REGRESSION_PERSISTENT: P1 grew in 3 iterations (last at iter <N>); architectural escalation could not stabilize the fix. Logged to compound_improve." --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (P1_REGRESSION_PERSISTENT)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
@@ -1066,8 +1060,7 @@ eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONV
 
 ```bash
 # <x>, <y>, <z> are this iteration's counts. Recorded as-is so findings_history captures the final iteration of the diverging trajectory.
-eigen-squared complete review_swarm_pr --phase <phase> --epic <epic> --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
-eigen-squared mark-converged swarm_execution --phase <phase> --epic <epic> --reason "DIVERGING_LOOP: trajectory across iterations <N-2..N> shows p3 rising (<p3_{N-2}> → <p3_{N-1}> → <z>) while p1+p2 did not improve (<sum_{N-1}> → <sum_N>). Accepting current state and surfacing for compound_improve."
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "DIVERGING_LOOP: trajectory across iterations <N-2..N> shows p3 rising (<p3_{N-2}> → <p3_{N-1}> → <z>) while p1+p2 did not improve (<sum_{N-1}> → <sum_N>). Accepting current state and surfacing for compound_improve." --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (DIVERGING_LOOP)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 

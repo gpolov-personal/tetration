@@ -299,6 +299,28 @@ Boolean flag on R-task entries (sibling to `monotonicity_violation`). Set by `re
 
 Consumer: `orchestrate_swarm` worker spawn — when this flag is `true`, the spawn prompt prepends an ARCHITECTURAL ESCALATION REQUIRED constraint block (sibling to the P3-SWEEP CONSTRAINT block) requiring the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's autonomous `design_decision` handler (orchestrate_swarm autonomous-mode rules) responds with one of: APPROVE INLINE (alternative bounded to files_owned), CONVERT TO SCOPE EXPANSION (alternative requires other files), or REQUEST REVISION (worker's alternatives weren't architectural). After two failed revisions the task is marked `failed` with reason `architectural_escalation_unresolved`.
 
+### `finalize-iteration` CLI verb (atomic complete + status update)
+
+Combines `complete review_swarm_pr` + `mark-converged swarm_execution` (or `set-swarm-status iterating`) into a single CLI call that performs both mutations under one state lock and one `save_state` call. POSIX atomicity (tmp + fsync + rename in `save_state`) then guarantees that a SIGKILL between the legacy paired calls cannot leave half-written state on disk.
+
+```
+eigen-squared finalize-iteration \
+  --phase <phase> --epic <epic> \
+  --status <converged|iterating> \
+  [--reason <reason>]                # required when --status converged
+  [--report-path <path>] \
+  [--findings-summary '{"p1":x,"p2":y,"p3":z}'] \
+  [--findings-detail /tmp/eigen_findings_iter_<N>.json]
+```
+
+On-disk effect is byte-equivalent to:
+- `--status converged` → `complete review_swarm_pr ...` + `mark-converged swarm_execution --reason ...`
+- `--status iterating` → `complete review_swarm_pr ...` + `set-swarm-status iterating ...`
+
+Used by `review_swarm_pr` Stage 7 in the convergence-loop hot path. Legacy verbs (`complete`, `mark-converged`, `set-swarm-status`) remain available for non-hot-path callers (e.g., `bootstrap_converge`, `plan_epic_converge`, manual recovery).
+
+The `--findings-detail` validation rules are identical to `complete review_swarm_pr` — iteration must match `swarm_execution.review_iteration - 1` after the bump. A failed validation aborts the entire verb (no partial state written) because the validation runs before any mutation is committed via `save_state`.
+
 ### swarm-manifest.json.tasks[].ownership_audit (per-task)
 
 Records the outcome of the post-worker ownership audit run by `orchestrate_swarm` "Implementation Complete Message" step 1. Computed from `git diff --name-only` against the worker's commit range, with `task.files_owned ∪ task.test_files_owned` as the authoritative scope.

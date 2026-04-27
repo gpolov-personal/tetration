@@ -194,6 +194,7 @@ def dispatch(args: Namespace) -> int:
         "add-recommendation": _with_state_lock(cmd_add_recommendation),
         "clear-recommendations": _with_state_lock(cmd_clear_recommendations),
         "set-swarm-status": _with_state_lock(cmd_set_swarm_status),
+        "finalize-iteration": _with_state_lock(cmd_finalize_iteration),
         "add-review-report": _with_state_lock(cmd_add_review_report),
         "init-plan": _with_state_lock(cmd_init_plan),
         "set-phase-review": _with_state_lock(cmd_set_phase_review),
@@ -1249,6 +1250,127 @@ def cmd_set_swarm_status(args: Namespace) -> int:
 
     save_state(state, sf)
     print(json.dumps({"status": "updated", "swarm_status": args.status_value}))
+    return 0
+
+
+def _ingest_findings_detail(detail_arg: str | None, sw) -> int | None:
+    """Process --findings-detail file and append to ``sw.findings_history``.
+
+    Returns ``None`` on success (or when ``detail_arg`` is None), or an
+    ``EXIT_*`` code on validation failure. Mutates ``sw.findings_history``
+    in place.
+
+    Shared between ``cmd_complete`` (review_swarm_pr branch) and
+    ``cmd_finalize_iteration`` so the validation rules stay identical
+    across both code paths.
+    """
+    if not detail_arg:
+        return None
+    try:
+        detail_path = Path(detail_arg)
+        detail = json.loads(detail_path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"ERROR: --findings-detail {detail_arg}: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        detail_iter = int(detail.get("iteration"))
+    except (TypeError, ValueError):
+        print("ERROR: --findings-detail JSON missing/invalid 'iteration'", file=sys.stderr)
+        return EXIT_ERROR
+    if detail_iter != sw.review_iteration - 1:
+        print(
+            f"ERROR: --findings-detail iteration {detail_iter} does not match "
+            f"the iteration just completed ({sw.review_iteration - 1}). "
+            "Refusing to corrupt findings_history.",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    sigs = detail.get("signatures") or []
+    if not isinstance(sigs, list) or not all(isinstance(s, str) for s in sigs):
+        print("ERROR: --findings-detail 'signatures' must be a list of strings", file=sys.stderr)
+        return EXIT_ERROR
+    entry = {
+        "iteration": detail_iter,
+        "p1": int(detail.get("p1", 0)),
+        "p2": int(detail.get("p2", 0)),
+        "p3": int(detail.get("p3", 0)),
+        "signatures": sigs,
+    }
+    existing = next(
+        (i for i, e in enumerate(sw.findings_history)
+         if isinstance(e, dict) and e.get("iteration") == detail_iter),
+        None,
+    )
+    if existing is not None:
+        sw.findings_history[existing] = entry
+    else:
+        sw.findings_history.append(entry)
+    return None
+
+
+def cmd_finalize_iteration(args: Namespace) -> int:
+    """Atomic merge of `complete review_swarm_pr` + status update.
+
+    Performs the same on-disk mutations as the legacy two-call sequence
+    (``complete review_swarm_pr`` followed by either ``mark-converged
+    swarm_execution`` or ``set-swarm-status iterating``) but inside a
+    single state-lock + single ``save_state`` call. A SIGKILL between
+    the two legacy calls used to leave partial state on disk; this verb
+    eliminates that window.
+
+    The on-disk effect is byte-equivalent to the legacy sequence — the
+    legacy verbs remain available for non-hot-path callers.
+    """
+    state, sf = _load_or_die(args)
+    phase, epic = args.phase, args.epic
+    pk, ek = str(phase), str(epic)
+    if pk not in state.phases or ek not in state.phases[pk].plans:
+        print(f"ERROR: Plan P{phase}.E{epic} not found", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.status == "converged" and not args.reason:
+        print("ERROR: --reason required when --status converged", file=sys.stderr)
+        return EXIT_ERROR
+
+    sw = state.phases[pk].plans[ek].swarm_execution
+    now = _now()
+
+    # === complete review_swarm_pr (mirrors cmd_complete review_swarm_pr branch) ===
+    if sw.convergence.converged:
+        print(
+            f"ERROR: cannot finalize review_swarm_pr for P{phase}.E{epic}: "
+            "swarm_execution.convergence.converged is already True. "
+            "The review loop is complete; further iterations are not counted.",
+            file=sys.stderr,
+        )
+        return EXIT_IDEMPOTENT_NOOP
+    sw.review_iteration += 1
+    if args.report_path:
+        sw.review_reports.append(args.report_path)
+    if args.findings_summary:
+        sw.findings_summary = json.loads(args.findings_summary)
+    detail_err = _ingest_findings_detail(args.findings_detail, sw)
+    if detail_err is not None:
+        return detail_err
+
+    # === apply status (mirrors cmd_mark_converged swarm_execution branch
+    #     or cmd_set_swarm_status iterating branch) ===
+    if args.status == "converged":
+        sw.convergence.converged = True
+        sw.convergence.decided_by = "review_swarm_pr"
+        sw.convergence.decided_at = now
+        sw.convergence.reason = args.reason
+        sw.status = "converged"
+    else:  # "iterating"
+        sw.status = "iterating"
+
+    save_state(state, sf)
+    print(json.dumps({
+        "status": "finalized",
+        "swarm_status": sw.status,
+        "iteration": sw.review_iteration - 1,
+        "converged": sw.convergence.converged,
+    }))
     return 0
 
 
