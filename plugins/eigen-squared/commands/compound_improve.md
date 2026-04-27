@@ -223,15 +223,21 @@ Build three buckets keyed by a stable signature; each bucket records `supporting
 
 **Source of truth for per-finding metadata:** `findings_history[].entries[]` (each entry has `signature`, `severity`, `file`, `category`, `threat_class`, `title_normalized`). For pre-Tier-4 epics that lack `entries[]`, fall back to the per-iteration `review_convergence_state.json` sidecar — those epics will be missing `threat_class` and are excluded from Kind-2 evaluation (logged once per run, not fatal).
 
-**Kind 1 — Cross-epic oscillation.** For each epic, walk `review_convergence_state.json.iterations[].file_iteration_counts` and pick files where the streak ≥ 2 (i.e., the file oscillated within the epic). Bucket key: `(category, normalized_path_basename)`. `category` comes from the matching `entries[]` payload looked up by `signature`. `normalized_path_basename` is the file's basename lowercased (`src/api/users.ts` → `users.ts`) — full paths differ across projects/epics, but basenames provide a useful cross-epic equivalence.
+**Path key construction.** All three pattern kinds use a `path_key` defined as `parent_dir + "/" + basename` where `parent_dir` is the IMMEDIATE parent directory of the file (e.g., `src/api/users.ts` → `api/users.ts`). Including ≥ 1 path segment prevents `users.ts` from `src/api/`, `web/admin/`, and `tests/` colliding into a single false positive while still allowing meaningful cross-project equivalence. Files with no parent directory (i.e. at repo root) use the bare basename — they're rare enough to ignore the resulting potential collision. Note: this replaces the earlier `path_basename` key; entries written under the old scheme are migrated on next run via `schema_version` (Step H14).
+
+**Kind 1 — Cross-epic oscillation.** For each epic, walk `review_convergence_state.json.iterations[].file_iteration_counts` and pick files where the streak ≥ 2 (i.e., the file oscillated within the epic). Bucket key: `(category, path_key)`. `category` comes from the matching `entries[]` payload looked up by `signature`.
 
 **Kind 2 — Cross-epic architectural escalation.** For each epic, scan `swarm-manifest.json.tasks[]` for `architectural_escalation == true`. Bucket key: `(category, threat_class)` read directly from the originating finding's `entries[]` payload. Skip entries where `threat_class == "other"` (excluded from Kind-2 promotion by definition). If an epic recorded an `m1_firings` count ≥ 1 OR a `convergence.reason` of `P1_REGRESSION_PERSISTENT` / `DIVERGING_LOOP`, also include the dominant `(category, threat_class)` pair from the epic's last review iteration's `entries[]`.
 
-**Kind 3 — Cross-epic type escapes.** For each epic, scan `entries[]` whose `category == "type-safety"` OR `threat_class == "type-escape"`. The `threat_class` field is now authoritative — the Tier-4 ban (`code_from_validation_tests_swarm.md`) requires workers to tag every type-escape finding with `threat_class: "type-escape"`, so the title-regex fallback is only used for pre-Tier-4 entries. Bucket key: `(escape_pattern, normalized_path_basename)`.
+**Kind 3 — Cross-epic type escapes.** For each epic, scan `entries[]` whose `category == "type-safety"` OR `threat_class == "type-escape"`. The `threat_class` field is now authoritative — the Tier-4 ban (`code_from_validation_tests_swarm.md`) requires workers to tag every type-escape finding with `threat_class: "type-escape"`, so the title-regex fallback is only used for pre-Tier-4 entries. Bucket key: `(escape_pattern, path_key)`.
+
+**Exclude oscillation-capped epics from supporting evidence.** Any epic whose `convergence.reason` starts with `CAPPED_BY_OSCILLATION`, `P1_REGRESSION_PERSISTENT`, `DIVERGING_LOOP`, `SWEEP_ABORTED`, or `CAP_REACHED_WITH_RESIDUAL` is excluded from the `supporting_epics` set across all three kinds. Those epics never converged cleanly; using them as "pattern occurrences" treats unresolved noise as signal and inflates `occurrences` by exactly the count of patterns that *defeated* the convergence loop — a feedback loop that promotes more aggressive future warnings about the same vector that is already proving unfix-able. Include them only as `degraded_supporting_epics: [<phase/epic id>]` for observability; do NOT count toward thresholds.
 
 ### 1.6.3 Apply 3+ Epic Threshold
 
-For each bucket across all three kinds: keep only entries where `len(unique supporting_epics) >= 3`. This matches the existing "3+ supporting lessons" gate used by Stage 1.2 above (strong-pattern threshold) and keeps the artifact terse.
+For each bucket across all three kinds: keep only entries where `len(unique supporting_epics) >= 3` (excluding the degraded-reason epics per 1.6.2). This matches the existing "3+ supporting lessons" gate used by Stage 1.2 above (strong-pattern threshold).
+
+**`occurrences` field semantics.** `occurrences` is the COUNT of distinct supporting epics in which the pattern was observed (i.e. `len(unique supporting_epics)`), NOT the raw event count summed across epics. Counting raw events lets a single oscillating epic that fires the same pattern 5 times trip an "occurrences >= 5" threshold; counting unique epics prevents that. A separate field `total_event_count: <int>` is recorded for observability but is not used in any threshold.
 
 ### 1.6.4 Write Artifact
 
@@ -318,9 +324,12 @@ This stage promotes high-confidence cross-epic patterns from runtime advisory to
 
 ### 1.7.1 Promotion Threshold
 
-Read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json`. Filter to entries where:
-- `occurrences >= 5` (vs. the runtime-advisory threshold of 3 — promotion to permanent prompt content needs more evidence), AND
-- `promoted_to_prompt != true` (skip patterns already promoted in a prior `compound_improve` run).
+Read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json`. Filter to entries where ALL of the following hold:
+- `len(unique supporting_epics) >= 5` — promotion needs at least five DISTINCT epics, not five total events. (The Stage 1.6.3 threshold is 3 unique epics; promotion is a higher bar.)
+- `total_event_count >= 5` — at least five total event occurrences across those epics (handles the edge where 5 unique epics each contributed one weak signal).
+- `promoted_to_prompt != true` AND `pending_promotion != true` — skip patterns already promoted (or in-flight promotion per the H14 ladder).
+
+Both unique-epic AND total-event counts must clear 5; this catches the failure mode where one runaway epic fires the same pattern 5 times and tries to promote it as if it had 5 supporting epics.
 
 If no patterns survive the filter, skip Stage 1.7 entirely.
 
