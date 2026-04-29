@@ -132,13 +132,13 @@ If a previous review report exists (`review_report_iteration_<review_iteration -
 
 The pipeline runs as a small state machine over `(p1, p2, p3, p3_sweep.active)` plus the cross-iteration history in `findings_history`. Evaluate the rules below **in order**, stopping at the first match:
 
-1. **Oscillation circuit-breaker** — strongest historical signal (3+ iterations with same `(file, category)` pair). CONVERGED with `CAPPED_BY_OSCILLATION`.
+1. **Oscillation circuit-breaker** — strongest historical signal (3+ iterations with same `(file, symbol, category)` triple). CONVERGED with `CAPPED_BY_OSCILLATION`.
 2. **Monotonicity rule M1** — P1 must not grow between iterations. Tags the next iteration's fixup tasks with `monotonicity-violation` and a body section forcing `[QUESTION] type: design_decision` before patching. Caps at 2 consecutive firings; the third firing (P1 grew again) CONVERGES with `P1_REGRESSION_PERSISTENT`.
 3. **Monotonicity rule M1-stale** — P1 stuck non-zero after M1 has fired twice. CONVERGES with `P1_REGRESSION_PERSISTENT` even when P1 did not grow this iteration. Catches the gap where M1 needs growth to fire but the loop is just not making progress.
 4. **Monotonicity rule M2** — diverging-loop detector. CONVERGES with `DIVERGING_LOOP` when `p3` grows while `p1+p2` is flat or worse across iterations.
 5. **Cases 1 / 2** — dispatch to Case 1 (normal iteration) or Case 2 (post-sweep iteration) depending on `p3_sweep.active`. Cases 1 and 2 are mutually exclusive.
 
-**Rule ordering rationale.** Oscillation precedes M1 because a 3-iteration `(file, category)` repeat is the strongest "stop iterating" signal we have — even if P1 grew this iteration, the oscillation tag is more informative for `compound_improve` than a generic "P1 grew" tag. M1 precedes M1-stale because M1 catches the *first two* growth events with no convergence (it's a CONTINUE rule for those firings); M1-stale only fires when M1's growth predicate would NOT fire but the loop is still stuck (P1 > 0 and we already fired M1 twice without converging). M2 is last because it's the weakest signal — `p3` rising while `p1+p2` flat is unusual; the prior rules cover the common pathological paths.
+**Rule ordering rationale.** Oscillation precedes M1 because a 3-iteration `(file, symbol, category)` repeat is the strongest "stop iterating" signal we have — even if P1 grew this iteration, the oscillation tag is more informative for `compound_improve` than a generic "P1 grew" tag. M1 precedes M1-stale because M1 catches the *first two* growth events with no convergence (it's a CONTINUE rule for those firings); M1-stale only fires when M1's growth predicate would NOT fire but the loop is still stuck (P1 > 0 and we already fired M1 twice without converging). M2 is last because it's the weakest signal — `p3` rising while `p1+p2` flat is unusual; the prior rules cover the common pathological paths.
 
 `m1_firings` is monotonic across the lifetime of the epic (no resets). The third growth event after two prior firings is what M1 itself catches; M1-stale is the safety net for the case where the third growth never comes but P1 simply will not go to zero.
 
@@ -146,30 +146,50 @@ M1, M1-stale, and M2 read `pipeline_state.json.swarm_execution.findings_history`
 
 #### Oscillation circuit-breaker (always evaluated first)
 
-After Stage 2.4 has appended the current iteration's findings to `review_convergence_state.json`, group every finding ever recorded for this epic by its **`(file, category)` pair** — derive both fields from each finding's `sig` (or directly from the `file` and `category` columns if present). For each pair, count the number of **distinct iterations** in which it appeared.
+After Stage 2.4 has appended the current iteration's findings to `review_convergence_state.json`, group every finding ever recorded for this epic by its **`(file, symbol, category)` triple**. Read `file` and `category` directly from the entry; read `symbol` from the entry's `symbol` field. **If `symbol` is missing, null, or empty on a finding entry (legacy entry written before the symbol field landed, or a finding whose reviewer omitted it), substitute the literal sentinel `"<file-level>"`** — this makes mixed-iteration ledgers safe and degrades the rule to its prior `(file, category)` behavior for those entries. For each triple, count the number of **distinct iterations** in which it appeared.
 
-If **any** `(file, category)` pair appears in **≥ 3 distinct iterations** within this epic:
+Reference grouping logic:
+
+```python
+def oscillation_triples(ledger_iterations):
+    """ledger_iterations: list from review_convergence_state.json["iterations"]"""
+    triples = {}
+    for it in ledger_iterations:
+        iter_n = it["iteration"]
+        for f in it.get("findings", []):
+            symbol = f.get("symbol") or "<file-level>"   # legacy / mixed safety
+            key = (f["file"], symbol, f["category"])
+            entry = triples.setdefault(key, {"iterations": set(), "signatures": set()})
+            entry["iterations"].add(iter_n)
+            entry["signatures"].add(f["sig"])
+    return triples
+```
+
+If **any** `(file, symbol, category)` triple appears in **≥ 3 distinct iterations** within this epic:
 
 - **Decision is CONVERGED**, with the special tag `CAPPED_BY_OSCILLATION`.
 - Skip Cases 1 and 2 entirely. Skip Stage 4 (no fixup tasks created — the oscillation proves more fixups will not help).
 - Set `swarm_execution.convergence.reason` to:
   ```
-  CAPPED_BY_OSCILLATION: <pair_count> (file, category) pair(s) appeared in 3+ iterations: <pair1>, <pair2>, ... — accepting current state to break the loop. Logged to compound_improve.
+  CAPPED_BY_OSCILLATION: <triple_count> (file, symbol, category) triple(s) appeared in 3+ iterations: <triple1>, <triple2>, ... — accepting current state to break the loop. Logged to compound_improve.
   ```
-- Record the oscillating signatures and pairs in the iteration's `review_convergence_state.json` entry under a top-level `oscillation` key:
+- Record the oscillating signatures and triples in the iteration's `review_convergence_state.json` entry under a top-level `oscillation` key:
   ```json
   {
     "oscillation": {
       "triggered_at_iteration": <current_iteration>,
-      "pairs": [
-        {"file": "<path>", "category": "<category>", "iterations": [0, 1, 2], "signatures": ["<sha1>", "..."]}
+      "triple_count": <int>,
+      "triples": [
+        {"file": "<path>", "symbol": "<symbol or '<file-level>'>", "category": "<category>", "iterations": [0, 1, 2], "signatures": ["<sha1>", "..."]}
       ]
     }
   }
   ```
 - This branch terminates with `swarm_status == converged` and a non-empty residual P3 list (whatever was current). The PR is merged in Stage 7.2 as in Case 1.1, with the residual list disclosed and the oscillation reason surfaced.
 
-This rule is **load-bearing**: without it, the same `(file, category)` pair can ping-pong forever across iterations (the P2.E3 SQL whack-a-mole pattern). Three iterations is the minimum signal — fewer might be a legitimate iterative fix; three says the same vector keeps coming back.
+This rule is **load-bearing**: without symbol-aware grouping, a single broad type-contract file can ping-pong forever — different declarations within one file (e.g. `SchemaEnum`, `SchemaTable`, `MigrationResult` in one `backend-contract.ts`) get rolled into one bucket and trip the cap on unrelated findings (the P3.E1 false-positive pattern). With the symbol field, the rule fires only when the same named declaration's same category recurs three times, which is the actual whack-a-mole signal (the P2.E3 SQL pattern). Three iterations is the minimum signal — fewer might be a legitimate iterative fix; three says the same vector keeps coming back.
+
+**Schema versioning.** This file does not carry an explicit `schema_version` field today; field presence is the version signal. A finding entry with no `symbol` key is treated as legacy (`<file-level>` substituted at read time). Mixed in-flight epics (some iterations pre-Layer-1, others post-) are safe by construction: the fallback never makes the rule *less* permissive than the prior `(file, category)` rule, only more.
 
 #### Monotonicity rule M1 — P1 must not grow (evaluated after oscillation)
 
@@ -213,7 +233,7 @@ Read `swarm-manifest.json.monotonicity.m1_firings` (default 0). If **all** of:
 - `current_p1 > 0` — there is still a P1 finding outstanding,
 - `current_p1 <= prev_p1` — P1 did NOT grow this iteration (so M1 itself does not fire),
 
-then the loop is stuck: M1's escalation ladder ran twice, P1 is still non-zero, and the loop is not making progress in either direction. Without this rule, the epic would oscillate indefinitely between flat-but-stuck iterations, never tripping M1 (no growth) and never tripping oscillation (each iteration's findings might have different `(file, category)` pairs).
+then the loop is stuck: M1's escalation ladder ran twice, P1 is still non-zero, and the loop is not making progress in either direction. Without this rule, the epic would oscillate indefinitely between flat-but-stuck iterations, never tripping M1 (no growth) and never tripping oscillation (each iteration's findings might have different `(file, symbol, category)` triples).
 
 - **Decision is CONVERGED** with `convergence.reason`:
   ```
@@ -361,7 +381,7 @@ Assemble for all review agents:
   **Priority ordering — high-priority context emitted FIRST**: before the bounded prior-finding list, emit:
   - The current iteration's M1 status (`m1_firings`, `prev_p1`, `current_p1`).
   - Files flagged by Stage 4.1.a's architectural-escalation predicate (file_iteration_counts ≥ 2).
-  - Oscillating `(file, category)` pairs (count ≥ 2 across the epic so far).
+  - Oscillating `(file, symbol, category)` triples (count ≥ 2 across the epic so far).
 
   This guarantees the load-bearing context is at the top of the prompt where it cannot be truncated by downstream prompt-size limits.
 
@@ -383,7 +403,7 @@ Assemble for all review agents:
   > 2. **Articulate why the prior fix is wrong**, not just "this still seems risky".
   > 3. If you cannot articulate (1) and (2), **downgrade the finding to P3** — the existence of a prior fix is itself evidence the maintainers considered the issue, so weak re-raises do not warrant blocking severity.
   >
-  > The signature-based oscillation rule (Convergence Protocol) treats any `(file, category)` pair appearing in ≥ 3 iterations as oscillation and converges with `CAPPED_BY_OSCILLATION` — your re-raise contributes to that count. Re-raise judiciously.
+  > The signature-based oscillation rule (Convergence Protocol) treats any `(file, symbol, category)` triple appearing in ≥ 3 iterations as oscillation and converges with `CAPPED_BY_OSCILLATION` — your re-raise contributes to that count. Re-raise judiciously.
 
   If `review_convergence_state.json` is missing or its `iterations` array is empty (e.g., epic started before Step 4 landed, or this is iteration 0), this section is omitted. Stage 2.2 falls back to "all findings are New".
 
@@ -546,7 +566,7 @@ For each finding, in order:
 
    **Signature versioning.** `pipeline_state.json.swarm_execution.signature_version` (default `2`) records the algorithm in use. Loaders that encounter `signature_version < 2` (legacy state from before this step landed) re-compute every entry's signature under v2 rules on the next read and write back. The pre-v2 signature is preserved in a `legacy_signatures: ["<old_sig>", ...]` array on each finding entry so retroactive comparisons against old reports still match. Migration is idempotent — safe to re-run.
 
-2. **Regression-gate skip-list (iteration ≥ 1)**: load the union of (a) `swarm-manifest.json.tasks[].full_suite_regressions` (per-worker gate, Step 5) and (b) `swarm-manifest.json.iterations[<prev>].integration_regressions` (Stage 4.0 pre-final-push gate). Mark each signature in this union as `skipped_by_regression_gate` for THIS finding pass: such signatures are **excluded** from the M1 / M2 monotonicity counts (Stage 2.4) and excluded from the `(file, category)` pair set fed to the oscillation rule (Stage 2.5). The findings themselves are still reported in the per-iteration report (Stage 5.1) as informational, with a `[gated-by: full-suite]` prefix, so reviewers can audit; they just do not contribute to convergence-loop math because the regression gate already handled them in-iteration. Surface a `regression_gate_skipped: <count>` line in the Stage 5.1 review comment for observability.
+2. **Regression-gate skip-list (iteration ≥ 1)**: load the union of (a) `swarm-manifest.json.tasks[].full_suite_regressions` (per-worker gate, Step 5) and (b) `swarm-manifest.json.iterations[<prev>].integration_regressions` (Stage 4.0 pre-final-push gate). Mark each signature in this union as `skipped_by_regression_gate` for THIS finding pass: such signatures are **excluded** from the M1 / M2 monotonicity counts (Stage 2.4) and excluded from the `(file, symbol, category)` triple set fed to the oscillation rule (Stage 2.5). The findings themselves are still reported in the per-iteration report (Stage 5.1) as informational, with a `[gated-by: full-suite]` prefix, so reviewers can audit; they just do not contribute to convergence-loop math because the regression gate already handled them in-iteration. Surface a `regression_gate_skipped: <count>` line in the Stage 5.1 review comment for observability.
 
 3. **Scope membership**: file in `scope_files`? If not → drop with reason `file not in scope_files (T-task ownership)`. Scope membership is evaluated **before** the prior-discard rule below; without this ordering, a finding discarded at iter 1 because its file was momentarily out of scope would silently drop at iter 5 even if the user has since explicitly expanded scope.
 
@@ -686,7 +706,7 @@ The decision dispatches Stage 4's behavior:
 
 | Case | Decision | Stage 4 behavior |
 |---|---|---|
-| **Oscillation circuit-breaker** (any `(file, category)` pair in ≥ 3 iterations) | **CONVERGED — `CAPPED_BY_OSCILLATION`** | Skip Stage 4 entirely; proceed to Stage 5. Reason cites oscillating pairs and signatures. Evaluated **first**. |
+| **Oscillation circuit-breaker** (any `(file, symbol, category)` triple in ≥ 3 iterations) | **CONVERGED — `CAPPED_BY_OSCILLATION`** | Skip Stage 4 entirely; proceed to Stage 5. Reason cites oscillating triples and signatures. Evaluated **first**. |
 | **M1 — P1 regression, firing 3+** (`current_p1 > prev_p1` AND `m1_firings >= 2`) | **CONVERGED — `P1_REGRESSION_PERSISTENT`** | Skip Stage 4; proceed to Stage 5. The third M1 firing converges. |
 | **M1 — P1 regression, firings 1–2** (`current_p1 > prev_p1` AND `m1_firings < 2`) | **CONTINUE — monotonicity violation** | Stage 4 generates fixup tasks for **P1 + P2** (Case 1.3 selection). Tasks carry the `monotonicity-violation` label and a body section forcing `[QUESTION] type: design_decision` before patching. Counter incremented in Stage 4.5. |
 | **M2 — diverging loop** (`p3` grew AND `p1+p2` flat-or-worse, iter ≥ 2) | **CONVERGED — `DIVERGING_LOOP`** | Skip Stage 4; proceed to Stage 5. Trajectory (last 3 iterations) recorded in the convergence ledger. |
@@ -957,7 +977,7 @@ The review body must include:
   - `Sweep state: post-sweep ABORTED — sweep introduced <p1_new> P1 / <p2_new> P2; reverted <revert_count> commit(s) to <base_ref:0:7>. See "Sweep Aborted" in the report.` (Case 2.2)
 - **Convergence status** — CONVERGED / CONTINUE — with the case identifier (e.g., "Case 1.2 — sweep entry", "CAPPED_BY_OSCILLATION", "Case M1 — monotonicity violation #<count>", "DIVERGING_LOOP").
 - **Oscillation line** (only if the circuit-breaker fired):
-  - `Oscillation: CAPPED_BY_OSCILLATION — pair(s) repeated across 3+ iterations: (<file>, <category>) [iters: 0,1,2], ... See review_convergence_state.json.oscillation.`
+  - `Oscillation: CAPPED_BY_OSCILLATION — triple(s) repeated across 3+ iterations: (<file> :: <symbol> / <category>) [iters: 0,1,2], ... See review_convergence_state.json.oscillation.`
 - **Architectural escalation line** (only if Stage 4.1.a's escalation list is non-empty):
   - `Architectural escalation: <count> file(s) modified in ≥ 2 consecutive iterations — <count_tasks> R-task(s) tagged architectural-escalation: <file1> (streak <n1>), <file2> (streak <n2>), ... See review_report.md "Architectural Escalations" section.`
 - **Monotonicity line** (only if M1 or M2 fired):
@@ -1027,7 +1047,7 @@ Check the cases in this order; the first matching rule wins:
 
 - **If E2E Testing epic** (read `epic_manifest.json` — the E2E epic has `name == "E2E Testing"` and `features == []`): create lessons for **ALL findings (P1, P2, and P3)**. The E2E Testing epic is the most critical learning opportunity in each phase — every finding here (infrastructure failures, cross-component bugs, integration patterns) is a systemic insight that improves future phases. Do not skip any severity.
 
-- **If regular feature epic**: create lessons for **P1 and P2 findings**. P3s are excluded by default (volume — feature epics typically generate many low-severity stylistic findings that drown out the architectural signal). P3s still become lessons via the oscillation-promotion rule above when their signature is part of an oscillating `(file, category)` pair, so the high-value P3s aren't lost.
+- **If regular feature epic**: create lessons for **P1 and P2 findings**. P3s are excluded by default (volume — feature epics typically generate many low-severity stylistic findings that drown out the architectural signal). P3s still become lessons via the oscillation-promotion rule above when their signature is part of an oscillating `(file, symbol, category)` triple, so the high-value P3s aren't lost.
 
   **Why include P2 (changed in Tier 2 Step 4):** P2 findings on feature epics are usually architectural — JSON.parse without try/catch, missing transaction boundaries, contract drift between services, ad-hoc retry logic without backoff. Excluding them was a Tier 1 carry-over from before signature dedup landed (`a8f2b98`), when there was a real risk of lesson-file sprawl from the same P2 surfacing in multiple iterations. With Tier 1's signature scheme, same-(file, category, normalized_title) P2s across iterations collapse to one lesson automatically (Stage 6.3 Deduplicate and Write enforces this), so the volume risk is gone and `compound_improve`'s next-project loop gets a richer architectural signal.
 
@@ -1112,11 +1132,11 @@ eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converge
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (sweep aborted)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
-**Oscillation circuit-breaker — `CAPPED_BY_OSCILLATION` (any `(file, category)` pair in ≥ 3 iterations):**
+**Oscillation circuit-breaker — `CAPPED_BY_OSCILLATION` (any `(file, symbol, category)` triple in ≥ 3 iterations):**
 
 ```bash
 # <x>, <y>, <z> are this iteration's pre-cap counts — recorded as-is so findings_history captures the final iteration that triggered the cap.
-eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "CAPPED_BY_OSCILLATION: <pair_count> (file, category) pair(s) appeared in 3+ iterations: <pair1>, <pair2>, ... — accepting current state to break the loop. Logged to compound_improve." --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
+eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converged --reason "CAPPED_BY_OSCILLATION: <triple_count> (file, symbol, category) triple(s) appeared in 3+ iterations: <triple1>, <triple2>, ... — accepting current state to break the loop. Logged to compound_improve." --report-path <report_path> --findings-summary '{"p1": <x>, "p2": <y>, "p3": <z>}' --findings-detail /tmp/eigen_findings_iter_<N>.json
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (CAPPED_BY_OSCILLATION)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
@@ -1146,7 +1166,7 @@ eigen-squared finalize-iteration --phase <phase> --epic <epic> --status converge
 eigen-squared commit-state --message "pipeline: review P<phase>.E<epic> — CONVERGED (DIVERGING_LOOP)" --additional-paths eigen_initiative/phases/phase_<phase>/epic_<epic>/
 ```
 
-In Cases 2.1, 2.2, the oscillation cap, M1 (any firing), and M2, also write a lesson to `eigen_initiative/eigen_lessons/review_swarm_pr/` capturing whichever signal applies (clean sweep success, regression vectors, oscillating-pair vectors, or monotonicity trajectory). For M1 the lesson includes the firing count and the offending P1 signatures; for M2 the lesson includes the three-iteration trajectory. This is consumed by `compound_improve` on its next pass and is the only persistent record of the sweep / oscillation / monotonicity outcome outside of `swarm-manifest.json` and `review_convergence_state.json`.
+In Cases 2.1, 2.2, the oscillation cap, M1 (any firing), and M2, also write a lesson to `eigen_initiative/eigen_lessons/review_swarm_pr/` capturing whichever signal applies (clean sweep success, regression vectors, oscillating-triple vectors, or monotonicity trajectory). For M1 the lesson includes the firing count and the offending P1 signatures; for M2 the lesson includes the three-iteration trajectory. This is consumed by `compound_improve` on its next pass and is the only persistent record of the sweep / oscillation / monotonicity outcome outside of `swarm-manifest.json` and `review_convergence_state.json`.
 
 ### 7.1.5 Refresh PR Body (every iteration, including pre-convergence)
 
@@ -1185,7 +1205,7 @@ if [ -z "$skip_pr_body_update" ]; then
 - Resolved this iteration: <count>
 - Newly introduced this iteration: <count>
 - Persistent across iterations: <count>
-- Oscillating (file, category) pairs: <list or "none">
+- Oscillating (file, symbol, category) triples: <list or "none">
 
 _Last updated: <ISO 8601>_
 <!-- eigen-managed:end -->
@@ -1345,7 +1365,7 @@ Findings:
   <if Case 2.2 (sweep aborted):>
   Sweep regression: <x_new> P1 + <y_new> P2 introduced; auto-reverted <revert_count> commit(s) to <base_ref:0:7>.
   <if oscillation cap fired:>
-  Oscillation: <pair_count> (file, category) pair(s) repeated in 3+ iterations — see review_convergence_state.json.oscillation.
+  Oscillation: <triple_count> (file, symbol, category) triple(s) repeated in 3+ iterations — see review_convergence_state.json.oscillation.
   <if M1 fired:>
   Monotonicity M1: P1 grew <prev_p1> → <x>; firing #<count>/3. <if continued: tagged R-tasks with monotonicity-violation | if 3rd: CONVERGED with P1_REGRESSION_PERSISTENT.>
   <if M2 fired:>
@@ -1387,7 +1407,7 @@ Next steps:
 - **Runs from the integration branch**: same branch as orchestrate_swarm. All artifacts committed to `feat/P<N>.E<M>`.
 - **Review task IDs**: `P<N>.E<M>.R<K>` format (R for Review).
 - **Convergence**: all P1 and P2 findings must be resolved. Residual P3 findings are allowed and recorded in `pipeline_state.json` (`swarm_execution.findings_summary.p3` and `swarm_execution.convergence.reason`) and in `swarm-manifest.json.residual_p3`. Max 8 iterations. The convergence loop has a three-tier safety net evaluated in this order, all reading the cross-iteration ledger in `swarm_execution.findings_history` and `review_convergence_state.json`:
-  1. **Oscillation circuit-breaker** — `(file, category)` pair in ≥ 3 distinct iterations → CONVERGED with `CAPPED_BY_OSCILLATION`.
+  1. **Oscillation circuit-breaker** — `(file, symbol, category)` triple in ≥ 3 distinct iterations → CONVERGED with `CAPPED_BY_OSCILLATION`.
   2. **Monotonicity rule M1** — P1 grew between iterations → tag fixup tasks with `monotonicity-violation` and require the worker to raise `[QUESTION] type: design_decision` before patching (leader's existing autonomous `design_decision` policy responds). Cap at 3 firings; the third converges with `P1_REGRESSION_PERSISTENT`. Counter persisted in `swarm-manifest.json.monotonicity.m1_firings`.
   3. **Monotonicity rule M2** — `p3` rises while `p1+p2` does not improve across ≥ 2 iterations → CONVERGED with `DIVERGING_LOOP`. Trajectory recorded in `review_convergence_state.json.monotonicity`.
 - **Architectural-escalation rule (per-file)**: orthogonal to the convergence safety net above. Tracked in `review_convergence_state.json.iterations[].file_iteration_counts` (a streak counter per file). When a file's streak reaches ≥ 2 consecutive iterations, every R-task created for that file in the current Stage 4 receives the `architectural-escalation` label and a body section forcing the worker to raise `[QUESTION] type: design_decision` before patching. The leader's existing autonomous `design_decision` handler responds. This is the per-file analog of M1's iteration-level escalation and directly targets root cause E (the SQL whack-a-mole pattern from `docs/p2e3-convergence-oscillation-deep-analysis.md`).
@@ -1399,5 +1419,5 @@ Next steps:
 - **Testing philosophy**: when evaluating tests, prefer real dependencies over mocks. Flag tests that mock where real infrastructure is available.
 - **Agent roster is locked at iteration 0**: the set of review agents spawned for an epic's PR is computed once on iteration 0 and persisted to that iteration's report front-matter. Iterations ≥ 1 reuse the iter-0 roster verbatim. Conditional triggers (diff size, performance-mention) are evaluated only on iteration 0. Any new reviewer type only takes effect starting from the next epic. This guarantees that growth in apparent finding count across iterations of the same epic reflects genuine new regressions, not late-discovered latent issues from an expanded roster.
 - **Scope is locked at iteration 0**: `scope_files` is computed once from the **original T-tasks'** `files_owned` and `test_files_owned` (plus `shared_files` and `e2e_config`) and is invariant across iterations of the same epic. R-task ownership is a subset by construction and never expands scope. Out-of-scope findings discarded in iteration K are persisted in `review_discards.json` and re-applied as discards in all subsequent iterations — promoting a previously-discarded finding requires an explicit promotion step (Tier 2 enhancement), not a silent re-admission.
-- **Findings are tracked by signature, not by free-text title**: every kept finding has `sig = sha1("<normalized_file_path>|<category>|<normalized_title>")`. Cross-iteration comparison (Stage 2.2), the oscillation circuit-breaker, the auto-revert regression list (Stage 4.6), and `swarm_execution.findings_history` all use the same scheme so they agree iteration-for-iteration. The full per-iteration ledger lives in `review_convergence_state.json` (next to the report) with `{file, category, severity, title}` for human readers; the CLI mirror in `findings_history` keeps just `{iteration, p1, p2, p3, signatures}` for the oscillation rule and downstream consumers.
+- **Findings are tracked by signature, not by free-text title**: every kept finding has `sig = sha1("<normalized_file_path>|<category>|<normalized_title>")`. Cross-iteration comparison (Stage 2.2), the oscillation circuit-breaker, the auto-revert regression list (Stage 4.6), and `swarm_execution.findings_history` all use the same scheme so they agree iteration-for-iteration. The full per-iteration ledger lives in `review_convergence_state.json` (next to the report) with `{file, symbol, category, severity, title}` for human readers; the CLI mirror in `findings_history` keeps just `{iteration, p1, p2, p3, signatures}` for the oscillation rule and downstream consumers. The `symbol` field on each ledger entry is grouping metadata for the oscillation rule only — it is **not** part of the signature, so adding/changing/inferring a symbol after the fact does not break cross-iteration sig comparisons.
 
