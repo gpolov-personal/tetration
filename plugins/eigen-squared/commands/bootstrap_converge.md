@@ -525,6 +525,7 @@ This is the crash recovery checkpoint — if the coordinator crashes after this 
 1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_<N>_manifest.md`.
 2. Read recommendations from CLI context (filter by current phase).
 3. If `is_first_run: false` and `convergence_state.json` shows `round_1_status: in_progress`, run `git log --oneline -20` in `$EIGEN_ROOT` to detect commits already made by a prior bootstrapper attempt.
+4. **Cross-epic patterns (advisory).** Attempt to read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (written by `/compound_improve` Stage 1.6). If the file does not exist or `patterns` is empty, skip silently. Otherwise extract patterns whose `kind` is `oscillation` or `architectural_escalation` AND whose `category` is in {`infrastructure`, `tooling`, `architecture`, `dependency`, `type-safety`} (the categories that affect phase scaffolding). These will be prepended as a "Known oscillation-prone patterns from prior projects" advisory block in the Stage 2.2 bootstrapper prompt — see Stage 2.2.
 
 ### 2.2 Send to Bootstrapper
 
@@ -538,6 +539,14 @@ PHASE MANIFEST:
 
 UPSTREAM RECOMMENDATIONS:
 <recommendations content, or 'None'>
+
+KNOWN OSCILLATION-PRONE PATTERNS FROM PRIOR PROJECTS:
+[Render only if Stage 2.1 step 4 found applicable patterns; otherwise omit this block entirely.]
+The following patterns triggered oscillation or architectural escalation in 3+ epics across this initiative. Plan defensively when scaffolding decisions touch these areas:
+<for each applicable pattern>
+  - [<kind>] <category> / <path_basename or threat_class>: <recommendation>
+    (supporting epics: <count>, last seen: <last_seen>)
+</for>
 
 EIGEN_ROOT: <absolute path>
 EIGEN_BRANCH: <branch>
@@ -846,6 +855,34 @@ Write to `phases/phase_<N>/feedback/bootstrap_converge_feedback.json`:
 ```
 
 The `findings` array includes ALL findings from all rounds — both resolved and remaining. The `resolution` field tracks how each was handled.
+
+### 7.2.5 Capture Project-Bootstrap Baseline
+
+When the bootstrap converges cleanly (convergence decision `converged`, no critical or high-severity unresolved findings), capture a **project-bootstrap baseline** for downstream epic gates. This is the green-state suite snapshot that every epic's iter-0 inherits when no prior epic-level baseline exists; without it, the per-worker and Stage 4.0 regression gates skip on every epic's first iteration (per `orchestrate_swarm.md` Stage 4.0.1 skip conditions), and a regression introduced at iter 0 of any epic could land in `$EIGEN_BRANCH` undetected.
+
+Write to `$EIGEN_ROOT/eigen_initiative/phases/phase_<N>/bootstrap_baseline.json`:
+
+```json
+{
+  "schema_version": 1,
+  "captured_at": "<ISO 8601>",
+  "captured_at_phase": <N>,
+  "commit_sha": "<git rev-parse HEAD on $EIGEN_BRANCH>",
+  "suite_result_hash": "<sha256 of the per-test pass/fail manifest from a fresh suite run>",
+  "failing_tests": ["<test_path>::<test_name>", ...],
+  "tech_stack": ["<languages from Stage 1.1>"]
+}
+```
+
+Run the project's full test suite once to populate `suite_result_hash` and `failing_tests`. Tests that fail at this baseline are treated as "already failing pre-iteration" by every downstream regression gate — workers are never blamed for breakage they inherited.
+
+**Inheritance contract** (consumed by `orchestrate_swarm.md` Stage 4.0 and per-worker gates):
+1. If the epic's `swarm-manifest.json.last_green_baseline` exists → use it (most recent CONVERGED-clean state for THIS epic).
+2. Otherwise, walk backward through prior epics in the initiative; if any prior epic has `last_green_baseline`, use the most recent one.
+3. Otherwise, fall back to `bootstrap_baseline.json` for this phase.
+4. If none of (1)–(3) exist, the gate skips with `stage_4_0_skipped: { reason: "no_baseline_anywhere" }`.
+
+Atomic write: tempfile + fsync + rename, same pattern as `pipeline_state.json`. The file is committed to `$EIGEN_BRANCH` alongside `bootstrap-report.json` so all future epics on the same branch see it.
 
 ### 7.3 Lesson Extraction
 

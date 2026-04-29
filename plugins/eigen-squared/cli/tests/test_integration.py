@@ -164,6 +164,187 @@ class TestFullPipelineWalk:
         result = run_json(["next", "--json"])
         assert result["command"] is None
 
+    def test_findings_detail_appends_history(self, pipeline_env):
+        """`complete review_swarm_pr --findings-detail` appends to findings_history."""
+        run(["init", "--initiative", "Test", "--phase-count", "1"])
+        run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
+        run(["init-plan", "--phase", "1", "--epic", "1"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--plan-file", "plan.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
+             "--pr-url", "https://github.com/test/pull/1", "--pr-number", "1"])
+
+        # Iteration 0: write detail file and complete
+        detail0 = pipeline_env / "detail_0.json"
+        detail0.write_text(json.dumps({
+            "iteration": 0, "p1": 1, "p2": 6, "p3": 14,
+            "signatures": ["sha-aaa", "sha-bbb"],
+        }))
+        rc = run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+                  "--report-path", "r0.md",
+                  "--findings-summary", '{"p1":1,"p2":6,"p3":14}',
+                  "--findings-detail", str(detail0)])
+        assert rc == 0
+
+        sf = pipeline_env / "eigen_initiative" / "phases" / "pipeline_state.json"
+        sw = json.loads(sf.read_text())["state"]["phases"]["1"]["plans"]["1"]["swarm_execution"]
+        assert sw["review_iteration"] == 1
+        assert len(sw["findings_history"]) == 1
+        assert sw["findings_history"][0]["iteration"] == 0
+        assert sw["findings_history"][0]["signatures"] == ["sha-aaa", "sha-bbb"]
+
+        # Iteration 1: append a second entry
+        detail1 = pipeline_env / "detail_1.json"
+        detail1.write_text(json.dumps({
+            "iteration": 1, "p1": 1, "p2": 0, "p3": 19,
+            "signatures": ["sha-bbb", "sha-ccc"],
+        }))
+        rc = run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+                  "--report-path", "r1.md",
+                  "--findings-summary", '{"p1":1,"p2":0,"p3":19}',
+                  "--findings-detail", str(detail1)])
+        assert rc == 0
+        sw = json.loads(sf.read_text())["state"]["phases"]["1"]["plans"]["1"]["swarm_execution"]
+        assert sw["review_iteration"] == 2
+        assert len(sw["findings_history"]) == 2
+        assert sw["findings_history"][1]["iteration"] == 1
+        assert sw["findings_history"][1]["p3"] == 19
+
+    def test_findings_detail_with_entries_writes_payload(self, pipeline_env):
+        """`--findings-detail` with `entries[]` writes self-describing per-finding payloads."""
+        run(["init", "--initiative", "Test", "--phase-count", "1"])
+        run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
+        run(["init-plan", "--phase", "1", "--epic", "1"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--plan-file", "plan.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
+             "--pr-url", "u", "--pr-number", "1"])
+
+        detail = pipeline_env / "detail_entries.json"
+        detail.write_text(json.dumps({
+            "iteration": 0, "p1": 1, "p2": 0, "p3": 0,
+            "signatures": ["sha-aaa"],
+            "entries": [{
+                "signature": "sha-aaa",
+                "severity": "P1",
+                "file": "src/api/users.ts",
+                "category": "security",
+                "threat_class": "auth-bypass",
+                "title_normalized": "input validation",
+            }],
+        }))
+        rc = run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+                  "--report-path", "r0.md",
+                  "--findings-summary", '{"p1":1,"p2":0,"p3":0}',
+                  "--findings-detail", str(detail)])
+        assert rc == 0
+        sf = pipeline_env / "eigen_initiative" / "phases" / "pipeline_state.json"
+        sw = json.loads(sf.read_text())["state"]["phases"]["1"]["plans"]["1"]["swarm_execution"]
+        entry = sw["findings_history"][0]
+        assert entry["signature_version"] == 2
+        assert entry["entries"][0]["threat_class"] == "auth-bypass"
+        assert entry["entries"][0]["category"] == "security"
+
+    def test_findings_detail_invalid_threat_class_rejected(self, pipeline_env):
+        """Unknown threat_class is rejected with non-zero exit before mutation."""
+        run(["init", "--initiative", "Test", "--phase-count", "1"])
+        run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
+        run(["init-plan", "--phase", "1", "--epic", "1"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--plan-file", "plan.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
+             "--pr-url", "u", "--pr-number", "1"])
+
+        bad = pipeline_env / "bad_threat.json"
+        bad.write_text(json.dumps({
+            "iteration": 0, "p1": 1, "p2": 0, "p3": 0,
+            "signatures": ["sha-aaa"],
+            "entries": [{
+                "signature": "sha-aaa",
+                "severity": "P1",
+                "file": "src/api/users.ts",
+                "category": "security",
+                "threat_class": "totally-bogus-class",
+            }],
+        }))
+        rc = run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+                  "--report-path", "r.md",
+                  "--findings-summary", '{"p1":1,"p2":0,"p3":0}',
+                  "--findings-detail", str(bad)])
+        assert rc != 0
+
+    def test_findings_detail_iteration_mismatch_rejected(self, pipeline_env):
+        """A detail file whose iteration does not match the just-bumped one is rejected."""
+        run(["init", "--initiative", "Test", "--phase-count", "1"])
+        run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+        run(["complete", "deepen_time_split", "--feedback-path", "f",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "time_split", "--reason", "clean"])
+        run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+        run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+        run(["complete", "space_split_converge", "--phase", "1",
+             "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+        run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
+        run(["init-plan", "--phase", "1", "--epic", "1"])
+        run(["complete", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--plan-file", "plan.md"])
+        run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", "1",
+             "--reason", "clean"])
+        run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", "1",
+             "--manifest-path", "m.json", "--integration-branch", "feat/P1.E1"])
+        run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", "1",
+             "--pr-url", "u", "--pr-number", "1"])
+
+        # Detail says iteration=5 but we're completing iteration 0 (review_iteration goes 0→1)
+        bad = pipeline_env / "bad.json"
+        bad.write_text(json.dumps({"iteration": 5, "p1": 0, "p2": 0, "p3": 0,
+                                    "signatures": []}))
+        rc = run(["complete", "review_swarm_pr", "--phase", "1", "--epic", "1",
+                  "--report-path", "r.md",
+                  "--findings-summary", '{"p1":0,"p2":0,"p3":0}',
+                  "--findings-detail", str(bad)])
+        assert rc != 0  # mismatch refused
+
     def test_validate_after_walk(self, pipeline_env):
         """State remains valid throughout the pipeline walk."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
@@ -328,3 +509,151 @@ class TestFullPipelineWalk:
         run(["set-phase-review", "--phase", "2", "--status", "approved"])
         result = run_json(["next", "--json"])
         assert result["command"] is None, "All phases approved — pipeline complete"
+
+
+def _bring_to_orchestrate_complete(epic: int = 1) -> None:
+    """Walk pipeline state up to orchestrate_swarm completion (PR created)."""
+    run(["init", "--initiative", "Test", "--phase-count", "1"])
+    run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
+    run(["complete", "deepen_time_split", "--feedback-path", "f",
+         "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+    run(["mark-converged", "time_split", "--reason", "clean"])
+    run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
+    run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
+    run(["complete", "space_split_converge", "--phase", "1",
+         "--epic-manifest", "dag.json", "--e2e-config", "e2e.json",
+         "--findings-summary", '{"high":0,"medium":0,"low":0}'])
+    run(["mark-converged", "space_split_converge", "--phase", "1", "--reason", "clean"])
+    run(["init-plan", "--phase", "1", "--epic", str(epic)])
+    run(["complete", "plan_epic_converge", "--phase", "1", "--epic", str(epic),
+         "--plan-file", "plan.md"])
+    run(["mark-converged", "plan_epic_converge", "--phase", "1", "--epic", str(epic),
+         "--reason", "clean"])
+    run(["complete", "create_issues_from_plan_swarm", "--phase", "1", "--epic", str(epic),
+         "--manifest-path", "m.json", "--integration-branch", f"feat/P1.E{epic}"])
+    run(["complete", "orchestrate_swarm", "--phase", "1", "--epic", str(epic),
+         "--pr-url", "https://example/pr/1", "--pr-number", "1"])
+
+
+def _read_swarm(env: Path, epic: int = 1) -> dict:
+    sf = env / "eigen_initiative" / "phases" / "pipeline_state.json"
+    return json.loads(sf.read_text())["state"]["phases"]["1"]["plans"][str(epic)]["swarm_execution"]
+
+
+class TestFinalizeIteration:
+    """H9: coverage for the atomic finalize-iteration verb."""
+
+    def test_converged_flips_status_and_convergence_in_one_save(self, pipeline_env):
+        _bring_to_orchestrate_complete()
+        rc = run([
+            "finalize-iteration", "--phase", "1", "--epic", "1",
+            "--status", "converged",
+            "--reason", "All findings resolved.",
+            "--report-path", "r0.md",
+            "--findings-summary", '{"p1":0,"p2":0,"p3":0}',
+        ])
+        assert rc == 0
+        sw = _read_swarm(pipeline_env)
+        assert sw["status"] == "converged"
+        assert sw["convergence"]["converged"] is True
+        assert sw["convergence"]["decided_by"] == "review_swarm_pr"
+        assert sw["convergence"]["reason"] == "All findings resolved."
+        assert sw["review_iteration"] == 1
+
+    def test_iterating_only_flips_status(self, pipeline_env):
+        _bring_to_orchestrate_complete()
+        rc = run([
+            "finalize-iteration", "--phase", "1", "--epic", "1",
+            "--status", "iterating",
+            "--report-path", "r0.md",
+            "--findings-summary", '{"p1":1,"p2":0,"p3":0}',
+        ])
+        assert rc == 0
+        sw = _read_swarm(pipeline_env)
+        assert sw["status"] == "iterating"
+        assert sw["convergence"]["converged"] is False
+        assert sw["review_iteration"] == 1
+
+    def test_converged_without_reason_fails_before_mutation(self, pipeline_env):
+        _bring_to_orchestrate_complete()
+        sw_before = _read_swarm(pipeline_env)
+        rc = run([
+            "finalize-iteration", "--phase", "1", "--epic", "1",
+            "--status", "converged",
+            "--report-path", "r0.md",
+        ])
+        assert rc != 0
+        sw_after = _read_swarm(pipeline_env)
+        assert sw_after["status"] == sw_before["status"]
+        assert sw_after["review_iteration"] == sw_before["review_iteration"]
+
+    def test_idempotent_after_convergence(self, pipeline_env):
+        _bring_to_orchestrate_complete()
+        run([
+            "finalize-iteration", "--phase", "1", "--epic", "1",
+            "--status", "converged", "--reason", "clean",
+            "--report-path", "r0.md",
+            "--findings-summary", '{"p1":0,"p2":0,"p3":0}',
+        ])
+        sw_first = _read_swarm(pipeline_env)
+        rc = run([
+            "finalize-iteration", "--phase", "1", "--epic", "1",
+            "--status", "converged", "--reason", "second-call",
+            "--report-path", "r1.md",
+            "--findings-summary", '{"p1":0,"p2":0,"p3":0}',
+        ])
+        assert rc != 0  # IDEMPOTENT_NOOP exit
+        sw_second = _read_swarm(pipeline_env)
+        # review_iteration MUST NOT have bumped on the no-op path
+        assert sw_second["review_iteration"] == sw_first["review_iteration"]
+        assert sw_second["convergence"]["reason"] == "clean"
+
+    def test_parity_flags_propagated_atomically(self, pipeline_env):
+        """H10 parity: --pr-url, --manifest-path, --integration-branch land under the same save."""
+        _bring_to_orchestrate_complete()
+        rc = run([
+            "finalize-iteration", "--phase", "1", "--epic", "1",
+            "--status", "iterating",
+            "--report-path", "r0.md",
+            "--findings-summary", '{"p1":1,"p2":0,"p3":0}',
+            "--pr-url", "https://example/pr/99",
+            "--pr-number", "99",
+            "--manifest-path", "swarm-manifest.json",
+            "--integration-branch", "feat/P1.E1-fixup",
+        ])
+        assert rc == 0
+        sw = _read_swarm(pipeline_env)
+        assert sw["pr_url"] == "https://example/pr/99"
+        assert sw["pr_number"] == 99
+        assert sw["manifest_path"] == "swarm-manifest.json"
+        assert sw["integration_branch"] == "feat/P1.E1-fixup"
+        assert sw["status"] == "iterating"
+
+    def test_with_findings_detail_writes_history(self, pipeline_env):
+        """finalize-iteration ingests --findings-detail same as cmd_complete."""
+        _bring_to_orchestrate_complete()
+        detail = pipeline_env / "fin_detail.json"
+        detail.write_text(json.dumps({
+            "iteration": 0, "p1": 0, "p2": 0, "p3": 1,
+            "signatures": ["sha-fin"],
+            "entries": [{
+                "signature": "sha-fin",
+                "severity": "P3",
+                "file": "src/util.py",
+                "category": "test-quality",
+                "threat_class": "other",
+            }],
+        }))
+        rc = run([
+            "finalize-iteration", "--phase", "1", "--epic", "1",
+            "--status", "iterating",
+            "--report-path", "r0.md",
+            "--findings-summary", '{"p1":0,"p2":0,"p3":1}',
+            "--findings-detail", str(detail),
+        ])
+        assert rc == 0
+        sw = _read_swarm(pipeline_env)
+        assert len(sw["findings_history"]) == 1
+        entry = sw["findings_history"][0]
+        assert entry["entries"][0]["threat_class"] == "other"
+        assert entry["signature_version"] == 2

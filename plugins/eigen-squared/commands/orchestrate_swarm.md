@@ -65,9 +65,19 @@ Example JSON (this command gets the swarm-specific context):
 | `phase`, `epic` | Which epic's swarm to orchestrate. |
 | `branch` | Integration branch (feat/P<N>.E<M>). You must be on this branch. |
 | `manifest_path` | Path to swarm-manifest.json. |
-| `swarm_status` | Current status: "not_started" (first run) or "iterating" (fixup run). |
+| `swarm_status` | Current status: "not_started" (first run) or "iterating" (fixup run, including the P3 sweep — see manifest's `p3_sweep` block to disambiguate). |
 | `review_iteration` | How many review cycles have occurred. |
 | `pr_number`, `pr_url` | Existing PR info (null on first run, set after creating PR). |
+
+**Read `swarm-manifest.json.p3_sweep` on entry.** This field signals whether the current iteration is a bounded P3-sweep round (set by `review_swarm_pr` when entering Case 1.2). Default to `{ "active": false, ... }` if absent. When `p3_sweep.active == true`, every fixup task in the next-to-execute wave is a P3-sweep task and **must** receive the P3-SWEEP CONSTRAINT block in its worker spawn prompt (see Stage 1, Worker Spawn Prompt). The leader does not need to do anything else differently — wave execution, integration, and PR-update logic are unchanged. The post-sweep `review_swarm_pr` enforces the bounded-loop invariant; orchestrate_swarm just runs the workers.
+
+**On iteration ≥ 1 (`swarm_status == "iterating"`), load the prior review context** so each worker's spawn prompt can include a "PRIOR REVIEW CONTEXT" block (see Stage 1, Worker Spawn Prompt). Read:
+
+- `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_convergence_state.json` — the per-iteration finding ledger (signature, file, category, severity, title). Default to `{ "epic_id": "...", "iterations": [] }` if absent (epics started before Step 4 landed).
+- `eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_<N-1>.md` — human-readable narrative of the prior review (referenced by path in the worker prompt; the worker reads it as needed).
+- `eigen_initiative/eigen_lessons/review_swarm_pr/*.json` — accumulated lessons (filter per-worker by `affected_files ∩ task.files_owned`).
+
+If `review_convergence_state.json` is missing on iteration ≥ 1, **continue without error** — the prior-context block degrades to "no machine-readable history available; consult `review_report_iteration_<N-1>.md` directly". This preserves backwards compatibility for in-flight epics. Report-file missing is also non-fatal (omit the path from the worker block).
 
 ---
 
@@ -351,6 +361,158 @@ Do NOT instantiate concrete implementations directly. See "Import / Dependency R
 language-profiles skill for language-specific import conventions.
 </if>
 
+<if swarm-manifest.json.p3_sweep.active == true AND task.priority == 'P3' AND task.labels contains 'review-finding':>
+P3-SWEEP CONSTRAINT — read carefully:
+You are fixing a non-blocking P3 finding during this epic's BOUNDED P3 sweep. The sweep is
+one-shot — there will be NO further fixup iterations after the next review_swarm_pr round,
+regardless of how many findings remain. The post-sweep review enforces this invariant
+autonomously by auto-reverting the entire sweep if your fix introduces any new P1 or P2
+finding.
+
+You MUST NOT introduce any P1 or P2 issues while solving this P3. Specifically, your fix
+must not:
+  - Open or weaken any security/validation/authorization control (regex bypasses,
+    deserialization holes, broken authn/z gates, SQL injection vectors, etc.).
+  - Introduce type-safety regressions: `as any`, `@ts-ignore`, `@ts-expect-error`, Python
+    `typing.cast`, reflection into private/`__`-prefixed members, monkey-patching of
+    typed interfaces.
+  - Break any acceptance criterion of any prior task in this epic, or any
+    previously-passing test.
+  - Add a runtime-correctness gap in code that downstream tasks depend on.
+
+If your fix would require any of the above, STOP and create a [QUESTION] task to team-lead
+explaining the trade-off. A residual P3 is acceptable; a regression is not. The leader
+will decide whether to skip this P3 (recording it as residual) or accept the trade-off.
+
+Worked example: if the P3 says "remove unnecessary type annotation in foo.ts" and removing
+it forces you to use `as any` to compile, do NOT remove the annotation — return [QUESTION]
+saying "removing the annotation requires `as any` here; recommend skip". The auto-revert
+mechanism will revert the entire sweep if you push a regression, undoing the work of every
+other P3 worker in this wave. Be conservative.
+
+This block is injected by orchestrate_swarm only when (a) the manifest's `p3_sweep.active`
+is true AND (b) your task is a P3 review-finding task. It does not appear for normal
+P1/P2 fixup iterations.
+</if>
+
+<if task.architectural_escalation == true:>
+ARCHITECTURAL ESCALATION REQUIRED — read carefully before doing anything else:
+
+The following file(s) in your `files_owned` have been modified by fixup commits in **two or
+more consecutive prior iterations** of this epic's review loop. Surface-level patches are
+no longer trusted on these files — past iterations have shown the loop is on track to
+whack-a-mole.
+
+Escalated file(s): <task.architectural_escalation_files>
+
+**MANDATORY first action**: raise `[QUESTION] type: design_decision` to team-lead BEFORE
+authoring any production-code change. The question MUST contain:
+1. The threat class or bug class your task addresses (one sentence).
+2. **At least two architectural alternatives** to another surface patch. Examples:
+   - Replace a regex-based parser with a real parser (e.g. `libpg_query` for SQL).
+   - Introduce an abstraction layer that constrains the dangerous surface.
+   - Replace the dependency entirely.
+   - Restructure the module so the constraint is enforced by the type system rather than
+     runtime checks.
+3. Your recommendation, with rationale (what's reversible, what minimizes coupling, what
+   doesn't close doors).
+
+Validation-test changes (writing/expanding tests that document the threat class) are
+permitted before the leader's response — they're useful no matter which alternative wins.
+But tests alone do NOT satisfy this gate; you MUST wait for `[DECISION-AUTONOMOUS]` before
+shipping production code.
+
+If your recommended alternative requires modifying files OUTSIDE your `files_owned`,
+declare it explicitly in the question. The leader will either grant temporary scope
+expansion via `[DECISION-AUTONOMOUS]` or convert the task into a scope-expansion request
+for the next iteration (your task is then marked `deferred_for_architectural_change` rather
+than `failed`).
+
+Why this matters: the next review_swarm_pr round computes the streak counter again. If you
+push another surface patch and the same file appears in the diff, the streak grows to
+3 iterations and oscillation will likely cap convergence with `CAPPED_BY_OSCILLATION`,
+shipping the residual finding intact. The design-decision route is the only way out.
+
+This block is injected by orchestrate_swarm only when the manifest's task entry has
+`architectural_escalation: true` (set by review_swarm_pr Stage 4.1.a when the file's
+streak counter reaches ≥ 2 in `review_convergence_state.json`).
+</if>
+
+<if swarm_status == "iterating" AND review_iteration >= 1:>
+PRIOR REVIEW CONTEXT — read carefully:
+
+This is iteration <review_iteration> of the convergence loop. The previous review pass already
+ran on this branch and identified findings; some that overlap your owned files are listed
+below. Your job is to fix YOUR assigned task without re-introducing or regressing prior
+findings — the next review_swarm_pr round will re-check every signature and treat any
+re-appearance as oscillation evidence (3 distinct iterations triggers CAPPED_BY_OSCILLATION
+and ships the epic with the residue intact).
+
+Prior review report: eigen_initiative/phases/phase_<phase>/epic_<epic>/review_report_iteration_<review_iteration - 1>.md
+Prior convergence ledger: eigen_initiative/phases/phase_<phase>/epic_<epic>/review_convergence_state.json
+  (machine-readable signatures + per-iteration finding metadata; consult this for any
+  signature whose location intersects your files_owned)
+
+**Context partition by worker stage**:
+- **Step A workers** (`design_validation_tests_swarm` — adversarial test design) consume the **HEADERS** block only: `(category, severity, file, title)` for prior findings. Step A's job is to enumerate threat classes from acceptance criteria and write tests; reading prior fix attempts (`signature`, prior-fix recommendations, DO-NOT-REGRESS clauses) biases the threat-class enumeration toward exactly the vectors the prior worker covered, defeating the generalization the test-design pass is supposed to provide. The `signature` and DO-NOT-REGRESS detail are NOT injected into the Step A prompt.
+- **Step B workers** (`code_from_validation_tests_swarm` — implementation against the tests) consume both HEADERS and DETAIL — they need the full prior context to avoid re-introducing fixed issues.
+
+The block below is rendered for Step B. Step A's spawn prompt renders the same block but truncated at the [HEADERS-ONLY-FOR-STEP-A] marker, dropping the DETAIL fields and the DO-NOT-REGRESS clause.
+
+Findings raised in prior iteration(s) that touch YOUR owned files — INLINE LIST is filtered for
+prompt-size discipline. The full ledger is at the path above; consult it on demand.
+
+INLINE filter (kept compact on purpose):
+  - severity ∈ {P1, P2} (P3 ledger entries are NOT inlined — they live in the ledger file)
+  - last_seen_iteration == <review_iteration - 1> (just-prior pass only — older history is in the ledger)
+
+[HEADERS — emitted to BOTH Step A and Step B]
+<for each prior finding F where F.file ∈ task.files_owned ∪ task.test_files_owned
+                            AND F.severity ∈ {P1, P2}
+                            AND F.last_seen_iteration == review_iteration - 1:>
+- [<F.severity>] <F.file>: <F.title>
+  category: <F.category>
+</for>
+[HEADERS-ONLY-FOR-STEP-A]
+[DETAIL — emitted to Step B only; Step A spawn truncates here]
+<for each prior finding F as above:>
+  signature: <F.sig>
+  last seen iter: <F.last_seen_iteration>
+  prior_fix_summary: <one-line excerpt from the prior R-task's commit message, if available>
+</for>
+
+<if there are >0 prior findings touching files_owned that did NOT make the inline cut
+   (P3, OR last seen earlier than the just-prior iteration):>
++ <count_overflow> additional prior finding(s) touch your owned files but were filtered out
+  of the inline list (P3 severity OR last_seen_iteration < <review_iteration - 1>). Read
+  review_convergence_state.json — search for entries where file ∈ your files_owned — if
+  you suspect your fix could regress one of them. The DO-NOT-REGRESS clause below applies
+  to ALL signatures in the ledger, not just the inlined ones.
+</if>
+
+(If the inline list is empty, no immediately-prior P1/P2 finding touches your owned files —
+but the DO-NOT-REGRESS clause below still applies to every signature in the ledger.)
+
+Lessons accumulated for this scope (filtered by affected_files ∩ files_owned, capped at 5
+most-recent — older lessons available in eigen_lessons/review_swarm_pr/):
+<for each lesson L where L.affected_files ∩ task.files_owned ≠ ∅, sorted by L.created_at desc, top 5:>
+- <L.title> (<L.lesson_path>)
+  Summary: <L.summary>
+</for>
+
+DO-NOT-REGRESS clause (Step B only — emitted alongside [DETAIL] block above):
+- If your fix would re-introduce ANY signature listed in the ledger above (same
+  normalized_file_path | category | normalized_title combination), STOP and create a
+  [QUESTION] task to team-lead explaining the trade-off. Do NOT silently re-introduce
+  the issue and hope the next review misses it — the signature scheme catches identical
+  re-appearances even when the surface text differs.
+- If you cannot fix YOUR finding without invalidating a prior fix (i.e. the prior fix is
+  demonstrably wrong, not merely inconvenient), articulate that explicitly in a
+  [QUESTION]. The leader decides whether to invalidate the prior fix on the record.
+- The post-iteration review enforces this; in the P3-sweep case a regression triggers
+  auto-revert of the entire sweep wave.
+</if>
+
 COMMUNICATION RULES:
 - Your leader's name is 'team-lead'
 - For questions/decisions: create a [QUESTION] task assigned to team-lead
@@ -364,7 +526,30 @@ FILE OWNERSHIP AND ISOLATION:
 - NEVER modify shared files — send an integration request instead
 - NEVER use git add . or git add -A — only add your owned files by path
 - NEVER create branches, switch branches, or checkout other branches
-- NEVER cd to any directory outside $EIGEN_ROOT"
+- NEVER cd to any directory outside $EIGEN_ROOT
+
+TYPE-SAFETY HARD RULES (apply to ALL task types — production AND test code):
+- FORBIDDEN to satisfy a type checker: `as any`, `as unknown as <T>` (chained casts),
+  `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `: any` parameter declarations
+  (TypeScript); `typing.cast(Any, ...)`, bare `# type: ignore` (without an error code),
+  `# pyright: ignore` (broad form), reflective bypass via `getattr(obj, '_<...>')` or
+  attribute access through `__`-prefixed names you do not own (Python); `unsafe.Pointer`
+  outside the narrow set of approved low-level packages (Go); monkey-patching of typed
+  interfaces in tests; mutation of frozen / dataclass / record structures via `__dict__`
+  (any language).
+- Needing one of these is a `[QUESTION] type: type_escape_needed` to team-lead — never a
+  silent escape. The leader's autonomous-mode handler approves the escape ONLY when ALL
+  of: (a) test-only code, (b) genuinely unable to ship within fix budget, (c) types
+  documented as insufficient. Approved escapes carry an inline comment immediately above
+  the line: `// REVIEWER: type-escape approved by leader, see [DECISION-<id>]` (or the
+  language-equivalent comment).
+- review_swarm_pr Stage 1.3 runs a deterministic detector over the iteration's added diff
+  lines. Unauthorized escapes are synthesized as P1 findings (`category: type-safety`,
+  `agent: type-escape-detector`) and participate in the oscillation cap. Pre-existing
+  escapes in unmodified code are NOT flagged (only added lines).
+- The complete set of forbidden patterns and rationale is in
+  `code_from_validation_tests_swarm.md` Stage 3 step 3 (Code Quality Standards).
+"
 ```
 
 ### Sub-step 2A: Spawn Interface Providers First
@@ -427,9 +612,9 @@ A teammate needs a technical decision.
 2. **Route based on question type:**
 
 **Route A — Staff Engineer decides (non-design questions):**
-Applies to: `task_classification`, `coverage_decision`, `test_placement`, `test_issue`, `final_review`
+Applies to: `task_classification`, `coverage_decision`, `test_placement`, `test_issue`, `final_review`, `trade_off`, `prior_fix_invalid`, `threat_class_unclear`, `type_escape_needed`, `mvf_scope_expansion`
 
-Make the decision yourself considering the plan, task requirements, impact on other tasks, `decision_precedents`, and conservative defaults (meaningful tests > trivial tests, strict typing > loose).
+Make the decision yourself considering the plan, task requirements, impact on other tasks, `decision_precedents`, and conservative defaults (meaningful tests > trivial tests, strict typing > loose, residual finding > regression).
 
 ```javascript
 TaskUpdate({ taskId: "<question_id>", status: "completed",
@@ -456,6 +641,16 @@ Design decisions affect architecture and need user approval. Contextualize the q
 
 - **`final_review`**: Review each proposed test individually against the test quality principle. Reject tautological or trivial tests — tell the teammate to remove them. A good final review results in fewer, stronger tests — not more.
 
+- **`trade_off`** (worker can fix the assigned finding only by introducing a new P1/P2 finding, or — during a P3 sweep — by violating the P3-SWEEP CONSTRAINT block): **Default: tell the worker to skip the assigned finding** and mark it as residual. A P3 fixup that requires a regression is net-negative by construction — the post-sweep auto-revert would undo it anyway, taking every other sweep worker's progress with it. The skipped finding stays in `swarm-manifest.json.residual_p3` (P3 case) or remains unresolved on the PR (P1/P2 case); the next review's signature comparison will catch it as Persistent, and the oscillation circuit-breaker bounds the worst case to 3 iterations. **Override only when**: the unfixed finding is severity-P1 AND skipping it would mean shipping a known-broken security/data-integrity contract (e.g., the finding is about a missing auth check, not a code-quality smell). In that case, accept the trade-off, instruct the worker to document the new finding's signature in their commit message so the next reviewer sees the precedent, and create a `[DECISION-AUTONOMOUS]` task.
+
+- **`prior_fix_invalid`** (worker says they cannot fix their assigned finding without invalidating a fix from a prior iteration): **Default: reject the request to invalidate the prior fix.** Tell the worker to either work around it (without re-introducing the prior signature) or, if that is genuinely impossible, escalate via a separate `[QUESTION]` whose subject is "prior fix appears defective" — that question goes to a fresh decision flow, not conflated with the current task. **Override only when**: the new finding is strictly higher severity than the prior fix's finding (P1 supersedes P2 supersedes P3) AND the worker articulates a concrete defect in the prior fix (not just inconvenience). In that case, instruct the worker to invalidate the prior fix; the prior signature will be re-added to the ledger as a known regression and surfaced in the next review. Create a `[DECISION-AUTONOMOUS]` task documenting which prior fix was invalidated and why. **Reason**: silent invalidation of prior fixes is the textbook oscillation enabler — the loop would just toggle which fix is active across iterations.
+
+- **`threat_class_unclear`** (REVIEW_FINDING worker cannot enumerate ≥ 5 sibling vectors of the threat class in Stage 3D): **Default: downgrade the worker's scope.** Instruct them to fix only the literal vector cited in the finding's title, write tests for that single vector, and document the threat-class gap in a `[DECISION-AUTONOMOUS]` task. Better to ship one solid vector-fix than block on enumeration the worker cannot produce — the next review's signature comparison will treat any sibling vector as New, and the oscillation circuit-breaker still bounds the worst case. **Override only when**: the leader's own analysis can complete the enumeration (the finding category is one with clear domain knowledge — e.g., classic SQL injection, HTML escaping, JWT validation). In that case, supply the missing sibling vectors to the worker as an explicit list and instruct them to proceed with the full Stage 3D discipline. **Reason**: blocking on threat-class enumeration the worker lacks is exactly what autonomous mode must avoid; the cost of a partial fix is bounded by the loop, the cost of a stalled task is not.
+
+- **`type_escape_needed`** (worker wants `as any`, `@ts-ignore`, `@ts-expect-error`, `typing.cast(Any, ...)`, bare `# type: ignore`, or equivalent): **Default: deny.** Instruct the worker to refactor the surrounding code so the type checker is satisfied legitimately, or to escalate via `[STUCK]` if they have already tried 3 approaches. Type-escapes are flagged as P1/P2 by review agents in every iteration they appear, so allowing one almost guarantees a future regression and an oscillation count toward `CAPPED_BY_OSCILLATION`. **Override only when ALL** of: (a) the escape is in test-only code (never in production), (b) the alternative is "unable to ship at all within fix budget", AND (c) the worker has documented why the existing types are genuinely insufficient (not just inconvenient). In the override case, instruct the worker to add a code comment immediately above the escape `// REVIEWER: type-escape approved by leader, see [DECISION-<id>]` so the next reviewer sees the precedent inline. Create a `[DECISION-AUTONOMOUS]` task. **Reason**: type-escapes are the single most common source of cross-iteration P1/P2 oscillation in real codebases — the rule is hard for that reason, not stylistic.
+
+- **`mvf_scope_expansion`** (REVIEW_FINDING worker wants to expand the fix beyond what the new validation tests require): **Default: deny.** The minimum-viable-fix gate exists because adjacent cleanup increases (a) parallel-wave conflict surface and (b) the surface area of new findings the next reviewer catches — both of which directly cause oscillation. Tell the worker to (1) ship the minimum fix that makes the new validation tests pass, (2) NOT touch adjacent code, and (3) create a `[FOLLOW-UP]` task in the manifest for the wider refactor — a separate planning concern, not a fixup. **Override only when**: the minimum fix is demonstrably incorrect, not merely less elegant — e.g., a structural invariant is violated by the minimum fix, or the minimum fix would itself trip a `prior_fix_invalid` check. In that case, allow the wider scope; tell the worker to document the necessity in their commit message; create a `[DECISION-AUTONOMOUS]` task. **Reason**: scope creep from fixup tasks is the second-most-common oscillation enabler after type-escapes (the first creates new findings inline, the second creates new findings via integration conflicts at PR-update time).
+
 - **`design_decision`**: Forward to user via Route B — UNLESS running in autonomous mode (see below).
 
 **Escalation to user is ALLOWED:** Unlike teammates, you (the leader) CAN ask the user for input when you need it. If a decision could have significant architectural impact and you are not confident, escalate. You are the leader, not a background worker.
@@ -463,10 +658,16 @@ Design decisions affect architecture and need user approval. Contextualize the q
 **Autonomous Mode (default):** The pipeline runs without a human present. Do NOT use AskUserQuestion at any escalation point. Instead, take the **most conservative and reversible decision** yourself. If `$HUMAN_SWARM_FALLBACK` is `true`, you MAY escalate to the user at decision points marked below — otherwise, always decide autonomously:
 
 - **design_decision**: Choose the option that minimizes coupling, is easiest to revert, and doesn't close doors to alternatives. Create a `[DECISION-AUTONOMOUS]` task documenting: the decision made, rationale, reversibility assessment, and the worker's original question. Respond to the worker and continue.
+  - **`design_decision` raised in response to the ARCHITECTURAL ESCALATION REQUIRED preamble** (worker's task has `architectural_escalation: true` in the manifest): apply the per-case rules below, *all* autonomous — never escalate to the user, even when `$HUMAN_SWARM_FALLBACK == "true"`. The override conditions are deterministic (file-set inclusion, alternative count) and the leader can evaluate them.
+    - **APPROVE INLINE** when the worker proposes ≥ 2 alternatives, identifies a recommendation, and the recommendation is bounded to the worker's `files_owned`: respond `APPROVED — proceed with <chosen alternative>`, record the decision and the chosen alternative in `[DECISION-AUTONOMOUS] type: design_decision_approved`, and unblock the worker. The worker proceeds with the architectural alternative inline (not a surface patch). **If the task carries `monotonicity_violation: true`** (M1 R-task per `review_swarm_pr` Case M1), additionally bump `swarm-manifest.json.monotonicity.m1_firings += 1` and append `last_fired_at_iteration: <current_iteration>` in the same atomic write — the third firing predicate at the next iteration's Stage 2.4 reads this counter to decide whether to converge with `P1_REGRESSION_PERSISTENT`.
+    - **CONVERT TO SCOPE EXPANSION** when the worker's recommendation requires modifying files **outside** `files_owned`: do NOT grant ad-hoc scope. Mark the task `state: deferred_for_architectural_change` (not `failed`) in its YAML front-matter and the manifest entry as `"status": "deferred_for_architectural_change"`. Create a `[DECISION-AUTONOMOUS] type: design_decision_deferred` documenting the recommended alternative and the additional files required; the next `/plan_epic_converge` (or the next iteration of `/review_swarm_pr` Stage 4) plans a properly-scoped fixup. Unblock the worker by skipping the task; remaining tasks in the wave continue.
+    - **REQUEST REVISION** when the worker proposes < 2 alternatives, or none of the alternatives are architectural (all are still surface variants): respond `REVISION REQUESTED — your alternatives are <reason>; please re-analyze` and instruct the worker to retry. Track the retry count on the task's `[DECISION-AUTONOMOUS]` entries. **After two failed revisions** on the same task, escalate by marking the task `state: failed` with reason `"architectural_escalation_unresolved"`, surface the file in the next review iteration's report (review_swarm_pr Stage 5.2 will see the failure and may converge with `DIVERGING_LOOP` or `CAPPED_BY_OSCILLATION`), and let the next pass decide.
+    - **Reasoning**: the architectural-escalation route exists specifically to break whack-a-mole loops; granting silent scope expansion or accepting non-architectural alternatives defeats it. The deferred-for-architectural-change state is the autonomous-mode equivalent of "park this for proper planning" — the file's streak counter is preserved, so the next iteration's review will see it and either re-trigger escalation or accept the new alternative.
 - **fix loop exhausted** (Stage 4.7, 4.8): Accept the current state and proceed to PR creation. Document unresolved failures in a `[DECISION-AUTONOMOUS]` task. `/review_swarm_pr` will capture them as findings.
 - **worker stuck (budget exhausted)**: Mark the task as failed, skip it and its dependents. Create a `[DECISION-AUTONOMOUS]` task with full context. Continue with the rest of the swarm.
 - **ambiguous requirement**: Choose the simpler interpretation. Document the ambiguity in a `[DECISION-AUTONOMOUS]` task so the reviewer can assess.
 - **stub not replaced / Step C failure / attribution uncertain**: Take the safest action (skip the questionable component, document it). Never block the pipeline waiting for input that won't come.
+- **`trade_off`, `prior_fix_invalid`, `threat_class_unclear`, `type_escape_needed`, `mvf_scope_expansion`**: apply the per-type defaults from the "Decision guidelines" section above. Each has an explicit Default/Override split designed for autonomous mode — never escalate these to the user even when `$HUMAN_SWARM_FALLBACK == "true"`, because the override conditions are deterministic (severity comparison, test-only-code check, demonstrability of incorrectness) and the leader can evaluate them without the user. If the escalation conditions are not met, take the Default path and create a `[DECISION-AUTONOMOUS]` task; the next `/review_swarm_pr` will catch any wrong calls and signature comparison will route them through the oscillation rule if they keep coming back.
 - **unverifiable external dependency** (EXCEPTION — breaks autonomous mode): If a worker reports they cannot verify an external identifier (API method name, model ID, catalog values, etc.) and you also cannot verify it from the installed SDK or codebase, you MUST use AskUserQuestion regardless of `$HUMAN_SWARM_FALLBACK`. This is the ONE case where guessing autonomously is worse than pausing — fabricated external details cause cascading review cycles that cost far more than a pause. Create a `[BLOCKER-EXTERNAL-DEP]` task documenting exactly what needs verification and what was attempted. If the user is unavailable (timeout), mark the task as blocked and continue with other tasks that don't depend on the unverifiable detail.
 
 All `[DECISION-AUTONOMOUS]` tasks will be visible in the PR summary and to `/review_swarm_pr`, which can create fixup tasks if any decision was wrong.
@@ -480,6 +681,12 @@ A teammate hit a blocking issue. These are time-sensitive.
 **Dependency Mismatch**: coordinate between the two teammates until resolved.
 
 **`[BLOCKER-EXTERNAL-DEP]`** (subtype): a worker cannot verify an external identifier (API method name, model ID, catalog values, etc.). This is the one blocker type that breaks autonomous mode — you MUST use AskUserQuestion regardless of `$HUMAN_SWARM_FALLBACK`. If the user is unavailable (timeout), mark the task as blocked and continue with other tasks that don't depend on the unverifiable detail.
+
+**`[BLOCKER-REAL-DEP]`** (subtype): a REVIEW_FINDING worker reports they cannot exercise a security/validation/authorization/data-integrity test path because the real dependency is unavailable in the test environment (e.g., test needs a Postgres instance with `BYPASSRLS` role; CI only has SQLite). This is raised by Stage 3D's mock-ban rule.
+
+- **Default (autonomous)**: skip the task. Mark the corresponding `task_R<K>.md` as `state: skipped` in its YAML front-matter and the manifest entry as `"status": "skipped"`. Document the missing dependency in a `[DECISION-AUTONOMOUS]` task with subject `"Missing real dep for security review-finding fixup — <missing_dep>"`. The next review iteration will re-raise the original finding (the signature stays in `review_convergence_state.json`), so the issue is honestly tracked even though this iteration cannot fix it. **Do NOT** instruct the worker to mock the dependency — the mock-ban is a hard rule of Stage 3D and bypassing it would ship a security fix that passes tests against a stub.
+- **Override** only when `$HUMAN_SWARM_FALLBACK == "true"` AND the missing dep is plausibly provisionable by the user (e.g., spinning up a Postgres container, granting a role, providing test credentials for a sandbox). In that case escalate via `AskUserQuestion` describing exactly what's missing and how to provision it; if the user provisions it, instruct the worker to retry; if the user declines or times out, fall back to the Default path.
+- **Reason**: skipping a security-finding fixup is the safest outcome when the alternative is shipping a fix that was never exercised against the real dependency. The signature persists, so the next iteration sees it; the oscillation circuit-breaker will not fire for a finding that was never genuinely attempted (it requires 3 distinct iterations of fixups, and a skipped task does not count as a fixup attempt — the leader records this distinction in the `[DECISION-AUTONOMOUS]` task).
 
 ### Handling: `[STUCK]` Task
 
@@ -593,13 +800,105 @@ Collected for Stage 4. No response needed to the teammate.
 
 ### Handling: Implementation Complete Message
 
-1. Add task_id to `completed_tasks`, remove from `active_teammates`
-2. Update `[WAVE-STATUS]`
-3. Verify the `[WORK]` task is marked completed
-4. **Check wave completion**: if ALL tasks in current wave are done:
+1. **Ownership audit (pre-completion gate).** Before recording the task as completed, run a boundary check on the worker's commits. This is a hard gate — workers that quietly exceeded `files_owned` are not silently accepted.
+
+   ```bash
+   # <n> = worker's commit count on the integration branch this iteration.
+   modified=$(git diff --name-only HEAD~<n>..HEAD)
+   created=$(git diff --name-only --diff-filter=A HEAD~<n>..HEAD)
+   ```
+
+   Compute set differences against `task.files_owned ∪ task.test_files_owned`:
+   - `out_of_scope_modified = modified - owned`
+   - `out_of_scope_created = created - owned`
+
+   **Both empty → proceed to step 2.** Audit is ~1s; near-zero overhead in the common case.
+
+   **Non-empty → handle each file via the existing `mvf_scope_expansion` policy** (see "Handling: `[QUESTION]` Task" Route A above). The leader's autonomous decision per file is one of:
+   - **APPROVE INLINE** — extend `task.files_owned` in `swarm-manifest.json` to cover the file AND append an entry to `swarm-manifest.json.scope_expansion_log[]`: `{iteration: <current>, file: "<X>", reason: "ownership_audit_inline", decided_by: "leader_autonomous|user", decided_at: "<ISO 8601>"}`. Both writes happen in the same atomic save. The expansion-log entry is what lets `review_swarm_pr` Stage 0.2's drift check accept the new ownership without firing `scope_files drift detected`. Worker keeps the change. Use when the file is clearly within the worker's logical slice (adjacent helper, sibling util) and the extension does not collide with another task's `files_owned`.
+   - **REVERT MODIFIED** — `git checkout HEAD~<n> -- <file>` restores the file to its pre-worker state. Safe for tracked files; the original content is recovered byte-for-byte.
+   - **DELETE CREATED** — `git rm <file> && git commit --amend --no-edit` removes the unauthorized new file. **Destructive**; use only when the leader explicitly chose DELETE. Never default to this.
+   - **REVERT WORKER** (last resort) — `git revert --no-commit <worker_commits> && git commit -m "revert: <task_id> exceeded ownership boundaries"`. Fail the task with reason `out_of_scope_unrecoverable`; the next review iteration's M1 / oscillation logic handles re-attempt.
+
+   Record the outcome in `swarm-manifest.json`:
+   ```json
+   "tasks[]": {
+     "ownership_audit": {
+       "out_of_scope_modified": ["<file>", ...],
+       "out_of_scope_created": ["<file>", ...],
+       "resolution": "clean" | "scope_expanded" | "reverted_modified" | "deleted_created" | "reverted_worker" | "failed"
+     }
+   }
+   ```
+
+   If `resolution == "failed"` → the task is failed; do NOT proceed to step 2. Mark `task.status = "failed"`, skip dependents per the existing failure cascade rules.
+
+2. **Full-suite regression gate (per-worker).** After the ownership audit passes, run the project's full test suite to catch regressions in tests the worker did not touch. This catches the common path to `P1_REGRESSION_PERSISTENT` one stage earlier than M1 — at worker time rather than at review time.
+
+   **Skip conditions (any one short-circuits the gate):**
+   - `iteration == 0` AND `swarm-manifest.json.last_green_baseline` is absent (no baseline to compare against; the gate runs starting iteration 1 once the first iteration's converged state has been captured).
+   - `task.documentation_only == true` OR all files in the worker's diff have extensions in `{.md, .txt, .rst, .adoc}`.
+   - `swarm-manifest.json.last_green_baseline` is missing for any other reason (recovered run, partial state).
+
+   **Run sequence:**
+   ```bash
+   # Use $FAST_SUITE_COMMAND from bootstrap_converge if set, else $FULL_SUITE_COMMAND.
+   suite_cmd="${FAST_SUITE_COMMAND:-$FULL_SUITE_COMMAND}"
+   suite_output=$($suite_cmd --json 2>&1) || suite_exit=$?
+
+   # Compute current sorted (test_name, status) pairs and their hash.
+   current_results=$(parse_suite_output "$suite_output" | sort)
+   current_hash=$(echo "$current_results" | sha1sum | cut -d' ' -f1)
+
+   # Compare to baseline.
+   baseline_hash=$(jq -r '.last_green_baseline.suite_result_hash' swarm-manifest.json)
+   baseline_failing=$(jq -r '.last_green_baseline.failing_tests[]' swarm-manifest.json)
+
+   if [ "$current_hash" = "$baseline_hash" ]; then
+       # Identical — gate passes, no regressions.
+       continue
+   fi
+
+   currently_failing=$(echo "$current_results" | grep ' FAIL$' | cut -d' ' -f1)
+   newly_failing=$(comm -23 <(echo "$currently_failing" | sort) <(echo "$baseline_failing" | sort))
+
+   if [ -z "$newly_failing" ]; then
+       # Differences are all PASS→PASS or in pre-existing failures — gate passes.
+       continue
+   fi
+   ```
+
+   **Flake mitigation.** For each `newly_failing` test, re-run that specific test up to 2 additional times (3 total). If it passes on retry, treat as flake — append to `tasks[].full_suite_flakes`, do NOT block. If it fails all 3 runs, treat as a real failure.
+
+   **Non-empty newly-failing → enter regression-resolution loop:**
+   1. **Inline fix attempt.** If the failing test's root cause is in `task.files_owned` (heuristic: `git log --follow <test_path>` produces a path that overlaps `files_owned`, OR the test imports a module from `files_owned`): instruct the worker to fix inline and re-run the suite. Up to 2 retries.
+   2. **Out-of-scope escalation.** Worker raises `[QUESTION] type: scope_expansion` to leader with payload `{failing_test, root_cause_file, minimal_patch_summary}`.
+   3. **Leader autonomous decision** (extends the existing `mvf_scope_expansion` policy):
+      - **APPROVE EXPANSION** — extend `task.files_owned` AND append to `swarm-manifest.json.scope_expansion_log[]` with `reason: "regression_gate_expansion"` (same atomic save). Worker patches inline and re-runs. The expansion-log entry is what lets `review_swarm_pr` Stage 0.2's drift check accept the new ownership without firing.
+      - **REASSIGN** — failing test belongs to a different worker. The whole point of Tier-3 Step 5 is to catch the regression *one full review cycle earlier than M1*; queueing for the next iteration would defeat that. Re-spawn the owning worker **in the current iteration** with a fixup `[WORK]` task in the manifest. The original (regressing) worker's task stays at `failed` with reason `cross_worker_regression`; the owner's fixup task runs in a new wave appended to the current iteration. After the owner finishes, re-run the full-suite gate on the merged state. If it passes, integration proceeds. **Only fall back to next-iteration queueing when the owner's worker budget is already exhausted** (per `swarm-manifest.json.tasks[<owner>].retries >= MAX_WORKER_RETRIES`); in that case the regression is recorded in `iterations[].integration_regressions` and review_swarm_pr's M1 will catch it next iteration.
+      - **REVERT** — worker's change is incompatible with broader codebase. Abort task with reason `regression_unrecoverable`; the next review iteration's M1 handles via `P1_REGRESSION_PERSISTENT`.
+   4. **Circuit breaker.** After 2 failed escalation rounds → fail task with reason `full_suite_regression_unresolved`. Same N=2 cap as Tier 2 Step 2's `architectural_escalation_unresolved`.
+
+   **Manifest fields recorded:**
+   ```json
+   "tasks[]": {
+     "full_suite_regressions": ["<test_path>::<test_name>", ...],
+     "full_suite_resolution": "inline_fix" | "scope_expanded" | "reassigned" | "reverted" | "failed" | "skipped",
+     "full_suite_flakes": ["<test_path>::<test_name>", ...]
+   }
+   ```
+
+3. Add task_id to `completed_tasks`, remove from `active_teammates`
+4. Update `[WAVE-STATUS]`
+5. Verify the `[WORK]` task is marked completed
+6. **Check wave completion**: if ALL tasks in current wave are done:
    - If more non-integration waves remain → increment wave, spawn next wave
-   - If only integration wave remains → proceed to Stage 4
-5. Request shutdown for the completed teammate
+   - If only integration wave remains → proceed to **Stage 4.0** (pre-final-push integration gate) before Stage 4.1.
+7. Request shutdown for the completed teammate
+
+**Cross-references for the iteration tail**, all now hosted on the `review_swarm_pr` side:
+- Baseline capture lives in `review_swarm_pr` **Stage 7.1.6** (CONVERGED-clean only). See that file for the exact `last_green_baseline` schema and the explicit guard that degraded convergence MUST NOT update the baseline.
+- Reviewer skip-list lives in `review_swarm_pr` **Stage 2.1 step 2**: loads `tasks[].full_suite_regressions` ∪ `iterations[].integration_regressions` and excludes those signatures from M1/M2 monotonicity counts and the oscillation pair set.
 
 ### Handling: Teammate Idle Notification
 
@@ -639,9 +938,62 @@ SendMessage({
 
 ---
 
+## Stage 4.0: Pre-Final-Push Integration Gate
+
+**Trigger**: All non-integration tasks complete AND every per-worker full-suite gate (Step 5) has passed. Run BEFORE entering Stage 4.1 (Prepare Integration Context).
+
+**Purpose**: catch integration regressions where workers A and B each pass their per-worker gate independently but their *merged* changes break a previously-passing test. The per-worker gate runs against `last_green_baseline` immediately after each worker's commits land; this stage runs against `last_green_baseline` after the full iteration's commits are merged on the integration branch.
+
+### 4.0.1 Skip Conditions
+
+- All workers in this iteration are no-ops (no commits) → skip (nothing to gate).
+- No baseline available anywhere — the gate runs against the first available baseline using the inheritance contract:
+  1. `swarm-manifest.json.last_green_baseline` for the current epic (most recent CONVERGED-clean of THIS epic).
+  2. Otherwise the most recent `last_green_baseline` from any prior epic in the initiative (walk backward through `eigen_initiative/phases/phase_*/epic_*/swarm-manifest.json`).
+  3. Otherwise `eigen_initiative/phases/phase_<current_phase>/bootstrap_baseline.json` written by `bootstrap_converge` Stage 7.2.5.
+  4. If NONE of (1)–(3) exist → skip with `stage_4_0_skipped: { iteration: <N>, reason: "no_baseline_anywhere", at: "<ISO 8601>" }`. This should never happen on a properly-bootstrapped initiative; if it does, surface a hard warning so the user can re-run `bootstrap_converge` to create the baseline.
+
+### 4.0.2 Run Sequence
+
+1. Checkout the integration branch HEAD (i.e., the merge of all worker commits this iteration).
+2. Run the project's full test suite: `bun test` / `pytest -q` / `go test ./...` per the project's tech stack.
+3. Compute the per-test pass/fail manifest. Diff against `last_green_baseline.suite_result_hash` (the prior CONVERGED-clean baseline) to identify newly-failing tests.
+4. If newly-failing is empty → gate passes, proceed to Stage 4.1.
+5. Apply flake mitigation: re-run each newly-failing test 3 times; only tests that fail in ≥ 2 of 3 retries are confirmed regressions.
+
+### 4.0.3 On Confirmed Regressions
+
+Identify the regressing commit via `git bisect`-style range scan over the iteration's commits. The first commit whose pre-state passes and post-state fails owns the regression.
+
+Escalate to that commit's owning worker via the same scope_expansion → REASSIGN → REVERT decision tree as the per-worker gate (`Stage 6`'s "Implementation Complete Message" handler). Three terminal states:
+
+- **APPROVE EXPANSION** — owning worker re-spawned in current iteration with a fixup task; on success, integration regressions resolved, gate re-runs.
+- **REASSIGN** — failing test belongs to a different worker; that worker re-spawned in current iteration; on success, gate re-runs.
+- **REVERT WORKER** — owning worker's commits are reverted; the iteration ships without their change; gate re-runs and must pass before Stage 4.1.
+
+Circuit breaker: if the regression-resolution loop fails to clear after N=2 attempts, raise `[QUESTION] type: scope_expansion` with subtype `integration_regression_unresolved` to the user (or autonomous-mode policy). Do NOT proceed to Stage 4.1 with confirmed regressions.
+
+### 4.0.4 Manifest Records
+
+Append to `swarm-manifest.json.iterations[<N>].integration_regressions` (one entry per confirmed regression):
+
+```json
+{
+  "test_signature": "<sha256 of test_path::test_name>",
+  "owning_commit": "<git sha>",
+  "owning_worker": "<worker_id>",
+  "resolution": "approve_expansion | reassign | revert_worker",
+  "resolved_at": "<ISO 8601>"
+}
+```
+
+These signatures are consumed by `review_swarm_pr` Stage 2.1's regression-gate skip-list so M1/M2 don't double-count them.
+
+---
+
 ## Stage 4: Integration
 
-**Trigger**: All non-integration tasks are completed.
+**Trigger**: Stage 4.0 passed (or skipped on iter 0 with no baseline).
 
 ### 4.1 Prepare Integration Context
 
@@ -711,9 +1063,16 @@ INSTRUCTIONS:
 
 Continue reacting to messages while the integrator works. When it signals completion:
 
-1. Run the full test suite to double-check
-2. If tests pass → proceed to Stage 4.6
-3. If tests fail → proceed to Stage 4.6 (post-integration failure attribution)
+1. **Integrator ownership audit** — apply the same `git diff --name-only` audit as the per-worker ownership audit (Stage 6 step 1), but with `shared_files` as the authoritative scope (the integrator's only legitimate scope per its spawn prompt). Compute:
+   - `integrator_modified = git diff --name-only <integrator_first_commit>~1..HEAD`
+   - `integrator_created = git diff --name-only --diff-filter=A <integrator_first_commit>~1..HEAD`
+   - `out_of_scope_modified = integrator_modified - shared_files`
+   - `out_of_scope_created = integrator_created - shared_files`
+
+   On non-empty out-of-scope sets, `revert_modified` (or `delete_created`) per the same decision tree as worker audits. Record outcome in `swarm-manifest.json.integrator.ownership_audit` (mirroring the per-task field). The integrator was given `shared_files` as its scope; deviations are not pre-approved.
+2. Run the full test suite to double-check
+3. If tests pass → proceed to Stage 4.6
+4. If tests fail → proceed to Stage 4.7 (post-integration failure attribution)
 
 ### 4.6 Shut Down Integrator
 

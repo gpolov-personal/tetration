@@ -27,6 +27,13 @@ class PhaseReview:
     summary_presented_at: Optional[str] = None
     approved_at: Optional[str] = None
     testing_recipe: Optional[str] = None
+    # Set to True only when the user typed APPROVE-DEGRADED on the
+    # eigen_continue Mode 2 prompt for a phase containing degraded epics
+    # (CAPPED_BY_OSCILLATION, P1_REGRESSION_PERSISTENT, DIVERGING_LOOP,
+    # SWEEP_ABORTED, CAP_REACHED_WITH_RESIDUAL). The watchdog refuses to
+    # auto-launch Phase N+1 when any epic is degraded and this flag is
+    # not also True.
+    degraded_acknowledged: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -34,6 +41,7 @@ class PhaseReview:
             "summary_presented_at": self.summary_presented_at,
             "approved_at": self.approved_at,
             "testing_recipe": self.testing_recipe,
+            "degraded_acknowledged": self.degraded_acknowledged,
         }
 
     @classmethod
@@ -45,6 +53,7 @@ class PhaseReview:
             summary_presented_at=d.get("summary_presented_at"),
             approved_at=d.get("approved_at"),
             testing_recipe=d.get("testing_recipe"),
+            degraded_acknowledged=bool(d.get("degraded_acknowledged", False)),
         )
 
 
@@ -103,7 +112,24 @@ class SwarmExecution:
     findings_summary: dict = field(
         default_factory=lambda: {"p1": 0, "p2": 0, "p3": 0}
     )
+    # findings_history is a per-iteration ledger written by review_swarm_pr.
+    # Each entry: {"iteration": int, "p1": int, "p2": int, "p3": int,
+    # "signatures": list[str]}. findings_summary mirrors the last entry.
+    # Consumed by the oscillation rule in review_swarm_pr's Convergence
+    # Protocol — same (file, category) pair appearing in >=3 distinct
+    # iterations triggers CAPPED_BY_OSCILLATION.
+    findings_history: list = field(default_factory=list)
     review_reports: list = field(default_factory=list)
+    # Signature algorithm version. v2 introduces stopword-strip + casefold
+    # normalization (see pipeline-state-schema/SKILL.md "Finding signature
+    # algorithm (v2)"). State with version < 2 is migrated on read: legacy
+    # signatures are preserved in `legacy_signatures` so oscillation matching
+    # can union v1 and v2 sets across the migration boundary. Migration is
+    # idempotent — re-loading a v2 state is a no-op.
+    signature_version: int = 2
+    # Flat list of pre-v2 signatures preserved across migration. Empty for
+    # state born under v2.
+    legacy_signatures: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -116,7 +142,10 @@ class SwarmExecution:
             "review_iteration": self.review_iteration,
             "convergence": self.convergence.to_dict(),
             "findings_summary": self.findings_summary,
+            "findings_history": self.findings_history,
             "review_reports": self.review_reports,
+            "signature_version": self.signature_version,
+            "legacy_signatures": self.legacy_signatures,
         }
 
     @classmethod
@@ -129,6 +158,24 @@ class SwarmExecution:
                 pr_number = int(pr_number)
             except (ValueError, TypeError):
                 pr_number = None
+        findings_history = list(d.get("findings_history") or [])
+        legacy_signatures = list(d.get("legacy_signatures") or [])
+        try:
+            signature_version = int(d.get("signature_version", 1))
+        except (ValueError, TypeError):
+            signature_version = 1
+        # v1→v2 migration: preserve historical signatures in legacy_signatures so
+        # the oscillation matcher can union v1 and v2 sets. We can't recompute
+        # legacy signatures (raw title/file/category not stored on pre-v2
+        # entries), so the original strings are kept as-is.
+        if signature_version < 2 and findings_history:
+            seen = set(legacy_signatures)
+            for entry in findings_history:
+                for sig in entry.get("signatures", []) or []:
+                    if sig not in seen:
+                        legacy_signatures.append(sig)
+                        seen.add(sig)
+        signature_version = max(signature_version, 2)
         return cls(
             status=d.get("status", "not_started"),
             integration_branch=d.get("integration_branch"),
@@ -139,7 +186,10 @@ class SwarmExecution:
             review_iteration=int(d.get("review_iteration", 0)),
             convergence=Convergence.from_dict(d.get("convergence")),
             findings_summary=d.get("findings_summary") or {"p1": 0, "p2": 0, "p3": 0},
+            findings_history=findings_history,
             review_reports=list(d.get("review_reports") or []),
+            signature_version=signature_version,
+            legacy_signatures=legacy_signatures,
         )
 
 
@@ -324,6 +374,28 @@ VALID_MAIN_STATUSES = {"not_started", "completed", "iterating"}
 VALID_DEEPEN_STATUSES = {"not_started", "completed"}
 VALID_SWARM_STATUSES = {"not_started", "pr_created", "iterating", "converged"}
 VALID_PHASE_REVIEW_STATUSES = {"not_started", "testing", "approved"}
+
+# Closed enum used as bucket key for compound_improve cross-epic Kind-2
+# patterns (`(category, threat_class)`) and as a structured field on
+# `findings_history.entries[].threat_class`. See
+# `pipeline-state-schema/SKILL.md#threat_class--closed-enum` for taxonomy.
+THREAT_CLASS_ENUM = frozenset({
+    "auth-bypass",
+    "injection",
+    "data-loss",
+    "race-condition",
+    "type-escape",
+    "permissions",
+    "concurrency",
+    "secrets-exposure",
+    "path-traversal",
+    "denial-of-service",
+    "crypto-misuse",
+    "input-validation",
+    "error-handling",
+    "resource-leak",
+    "other",
+})
 
 RECOMMENDATION_MATRIX: dict[str, set[str]] = {
     "deepen_time_split": {"bootstrap_converge", "space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},

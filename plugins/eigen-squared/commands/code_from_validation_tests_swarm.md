@@ -73,13 +73,14 @@ SendMessage({
 })
 ```
 
-**Ownership violation request** -- send when implementation requires a file outside ownership:
+**Scope expansion request** -- send when implementation requires a file outside ownership. The question type **MUST** be `mvf_scope_expansion` (matching the leader's autonomous-decision policy key in `orchestrate_swarm.md`); previous versions of this template used `ownership_violation` which did not route through the leader's autonomous handler.
+
 ```javascript
-// 1. Create a blocker task for the leader
+// 1. Create a question task for the leader
 TaskCreate({
-  subject: "[BLOCKER] Ownership request: <file path>",
-  description: "Task: <task_id>\nBlocker type: ownership_violation\n\nFile needed: <path to file outside ownership>\nReason: <why this file needs to be modified>\n\nI am STOPPED and waiting for your decision.",
-  activeForm: "Blocked: waiting for ownership decision"
+  subject: "[QUESTION] Scope expansion: <file path>",
+  description: "Task: <task_id>\nQuestion type: mvf_scope_expansion\n\nFile needed: <path to file outside ownership>\nMinimum-fix summary: <why your owned files cannot satisfy the test>\nProposed expansion: inline (extend files_owned) | scope_expansion (queue fixup task)\n\nI am STOPPED and waiting for your decision.",
+  activeForm: "Blocked: waiting for scope-expansion decision"
 })
 TaskUpdate({ taskId: "<new_task_id>", owner: "team-lead" })
 
@@ -87,15 +88,29 @@ TaskUpdate({ taskId: "<new_task_id>", owner: "team-lead" })
 SendMessage({
   to: "team-lead",
   type: "message",
-  content: "I need to modify <file> which is outside my ownership. See task <new_task_id>. I'm stopped and waiting.",
-  summary: "BLOCKED: ownership request for <file>"
+  content: "I need to modify <file> which is outside my ownership to make a failing test pass. See task <new_task_id>. I'm stopped and waiting.",
+  summary: "BLOCKED: mvf_scope_expansion for <file>"
 })
 ```
 
 After sending this, STOP and WAIT. The leader's response will arrive automatically as a `@team-lead>` message. Handle the response:
-- **granted**: proceed to modify the file
-- **denied**: do NOT touch the file, follow the leader's suggested alternative
-- **alternative**: the leader suggests a different approach (e.g., "create a local helper in your owned files instead")
+- **APPROVE INLINE / granted**: proceed to modify the file. The leader has already extended `files_owned` and written `scope_expansion_log[]` in the manifest.
+- **CONVERT TO SCOPE EXPANSION / queued**: do NOT touch the file. Your task is marked `deferred_for_architectural_change`; the broader fix lands in a separate fixup task next iteration.
+- **DENIED / alternative**: follow the leader's suggested alternative (e.g., "create a local helper in your owned files instead").
+
+### Cross-worker regression handling
+
+When a per-worker full-suite gate fails on a test you do not own, you may receive a `[QUESTION] type: scope_expansion` ticket via SendMessage from the leader (REASSIGN flow — see `orchestrate_swarm.md` Stage 6 step 2). The ticket has three terminal states:
+
+- **`inline_fix`** — the leader expanded your `files_owned` to cover the regressing test's source file. Patch inline; the gate re-runs after your commit.
+- **`reassigned`** — leader determined the regression is owned by a different worker. Your current task is failed (status: `cross_worker_regression`); spin down. The owning worker has been re-spawned IN THE CURRENT ITERATION (per Tier-4 Step H2) to fix it.
+- **`full_suite_regression_unresolved`** — circuit breaker tripped after N=2 attempts. The regression is recorded in `iterations[].integration_regressions` and surfaced to `review_swarm_pr` Stage 2.1's skip-list; M1/M2 will not double-count it.
+
+**Post-audit recovery.** If the leader's ownership audit (Stage 6 step 1) results in `revert_modified` or `deleted_created`, your local working copy is now divergent from `git HEAD`. On the next message after the audit:
+1. Re-run `git status` to confirm what was rolled back.
+2. Read the `[DECISION-AUTONOMOUS]` task the leader created — it explains what was reverted and why.
+3. Re-run failing tests with the rolled-back state to confirm they still fail (the audit may have removed scope; the test failure may now require `mvf_scope_expansion` rather than direct edits).
+4. Resume from your `working-notes-<task.id>.md` checkpoint, NOT from in-memory state — the in-memory state is now stale.
 
 **Integration request** -- send when a shared file needs changes:
 ```javascript
@@ -493,6 +508,12 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
    - Add appropriate error handling
    - Include docstrings/comments for complex logic
    - Ensure type hints are correct
+   - **Type-escape ban (FORBIDDEN in BOTH production and test code)**: do NOT use any of the following to make code or tests compile/pass — they defeat the type system that the rest of the pipeline relies on for correctness. Needing one of these is a `[QUESTION]` to team-lead, not a silent escape hatch.
+       - TypeScript: `as any`, `as unknown as <T>` (chained casts), `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, declaring a parameter as `any`
+       - Python: `typing.cast(Any, ...)` to satisfy a checker, `# type: ignore` (without an issue link / specific error code), `Any` parameter types when a real Protocol exists, reflective access via `getattr(obj, "_<dunder_or_private>")` to bypass encapsulation
+       - Go: `interface{}` parameter types when a typed alternative exists; `unsafe.Pointer` outside the narrow set of approved low-level packages
+       - Any language: monkey-patching of typed interfaces in tests; mutating frozen / dataclass / record structures via `__dict__` or equivalent; reflection into `_`/`__`-prefixed members of code you do not own
+     **Why this is a hard rule**: review-agents (security-sentinel, data-integrity-guardian, architecture-strategist) flag these as P1/P2 in every iteration they appear. The pipeline's oscillation circuit-breaker treats their reappearance as evidence that the loop is stuck. If your tests "pass" because of a `as any` cast that shadows a missing implementation, the next review will catch it and the iteration count goes up. If you genuinely need an escape, the `[QUESTION]` to leader documents the trade-off explicitly so the reviewer can either approve it or propose an alternative.
 
 4. **Design Decision Escalation**
 
@@ -617,10 +638,20 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
    - Is there proper separation of concerns?
    - Are there any code smells or anti-patterns?
 
-   If issues found:
+   If issues found AND `<task_type> != REVIEW_FINDING`:
    - Refactor the implementation (within `<files_owned>` only)
    - Ensure validation tests still pass
    - Update unit tests if needed
+
+   **Minimum-viable-fix gate (REVIEW_FINDING tasks only)**:
+
+   If `<task_type> == REVIEW_FINDING`, the refactor branch above is **disabled**. You may only modify what is required to make the new validation tests pass. Resist the urge to "clean up" adjacent code, rename, restructure, or improve patterns — even if the surrounding code has obvious smells. Reasoning:
+
+   - Review-fixup waves run in parallel across many R-tasks; refactors increase the surface area of conflicts at integration time and the surface area of new findings the next reviewer catches.
+   - Each adjacent refactor is itself an opportunity to introduce a regression that triggers the auto-revert (P3 sweep) or contributes to the oscillation count.
+   - The original task that "owned" the refactored code already shipped its own validation tests; reshaping its internals from a fixup task is out of scope.
+
+   If you genuinely believe a structural change is required to fix the finding correctly (not just to make the code prettier), raise a `[QUESTION]` to team-lead explaining what the change is, why the minimal fix is insufficient, and what the smaller alternative would look like. The leader can either approve the wider scope or split it into a separate follow-up task.
 
    **Checkpoint: post-unit-tests** — Update working notes with unit test files/counts and Next Step.
 

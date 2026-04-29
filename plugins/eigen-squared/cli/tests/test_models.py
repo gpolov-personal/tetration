@@ -84,6 +84,78 @@ class TestRoundTrip:
         )
         assert SwarmExecution.from_dict(s.to_dict()) == s
 
+    def test_swarm_execution_findings_history(self):
+        s = SwarmExecution(
+            status="iterating", review_iteration=2,
+            findings_summary={"p1": 1, "p2": 0, "p3": 19},
+            findings_history=[
+                {"iteration": 0, "p1": 1, "p2": 6, "p3": 14,
+                 "signatures": ["sha1aaa", "sha1bbb"]},
+                {"iteration": 1, "p1": 1, "p2": 0, "p3": 19,
+                 "signatures": ["sha1bbb", "sha1ccc"]},
+            ],
+        )
+        d = s.to_dict()
+        assert "findings_history" in d
+        assert len(d["findings_history"]) == 2
+        assert d["findings_history"][0]["signatures"] == ["sha1aaa", "sha1bbb"]
+        assert SwarmExecution.from_dict(d) == s
+
+    def test_swarm_execution_findings_history_default_empty(self):
+        s = SwarmExecution()
+        assert s.findings_history == []
+        assert SwarmExecution.from_dict({}).findings_history == []
+
+    def test_swarm_execution_signature_v2_default(self):
+        s = SwarmExecution()
+        assert s.signature_version == 2
+        assert s.legacy_signatures == []
+        d = s.to_dict()
+        assert d["signature_version"] == 2
+        assert d["legacy_signatures"] == []
+
+    def test_swarm_execution_v1_to_v2_migration(self):
+        legacy = {
+            "status": "iterating",
+            "review_iteration": 2,
+            "findings_history": [
+                {"iteration": 0, "p1": 1, "p2": 0, "p3": 5,
+                 "signatures": ["sha1aaa", "sha1bbb"]},
+                {"iteration": 1, "p1": 1, "p2": 0, "p3": 5,
+                 "signatures": ["sha1bbb", "sha1ccc"]},
+            ],
+        }
+        s = SwarmExecution.from_dict(legacy)
+        assert s.signature_version == 2
+        assert set(s.legacy_signatures) == {"sha1aaa", "sha1bbb", "sha1ccc"}
+        assert len(s.legacy_signatures) == 3
+        assert s.findings_history[0]["signatures"] == ["sha1aaa", "sha1bbb"]
+
+    def test_swarm_execution_migration_idempotent(self):
+        legacy = {
+            "findings_history": [
+                {"iteration": 0, "p1": 0, "p2": 0, "p3": 1,
+                 "signatures": ["sha1xxx"]},
+            ],
+        }
+        first = SwarmExecution.from_dict(legacy)
+        second = SwarmExecution.from_dict(first.to_dict())
+        assert first == second
+        assert second.signature_version == 2
+        assert second.legacy_signatures == ["sha1xxx"]
+
+    def test_swarm_execution_v2_native_no_migration(self):
+        native_v2 = {
+            "signature_version": 2,
+            "findings_history": [
+                {"iteration": 0, "p1": 0, "p2": 0, "p3": 1,
+                 "signatures": ["sha1zzz"]},
+            ],
+        }
+        s = SwarmExecution.from_dict(native_v2)
+        assert s.signature_version == 2
+        assert s.legacy_signatures == []  # no migration needed
+
     def test_epic_plan(self):
         e = EpicPlan(
             plan_epic_converge=MainCommandState(status="completed", iteration=2),

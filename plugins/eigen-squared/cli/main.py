@@ -48,6 +48,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--output-paths", help="JSON dict of output paths")
     p.add_argument("--feedback-path", help="Feedback file path (deepen + converge commands)")
     p.add_argument("--findings-summary", help="JSON findings summary (deepen + converge commands)")
+    p.add_argument(
+        "--findings-detail",
+        help=(
+            "Path to a JSON file with the current iteration's findings detail "
+            "(review_swarm_pr only). Schema: "
+            '{"iteration": N, "p1": x, "p2": y, "p3": z, "signatures": [...]}. '
+            "Appended to swarm_execution.findings_history."
+        ),
+    )
     p.add_argument("--manifest-path", help="Swarm manifest path")
     p.add_argument("--integration-branch", help="Integration branch name")
     p.add_argument("--pr-url", help="Pull request URL")
@@ -88,6 +97,46 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pr-number", type=int, help="Pull request number")
     p.add_argument("--manifest-path", help="Manifest path")
     p.add_argument("--integration-branch", help="Integration branch")
+
+    # ── finalize-iteration ──
+    # Atomic merge of `complete review_swarm_pr` + `mark-converged
+    # swarm_execution` (or `set-swarm-status`). Both mutations happen
+    # under a single state lock and a single save_state call, so a
+    # SIGKILL between them cannot leave partial state on disk. Used by
+    # review_swarm_pr Stage 7 in the convergence-loop hot path.
+    p = sub.add_parser(
+        "finalize-iteration",
+        help="Atomic complete+(mark-converged|set-swarm-status) for review_swarm_pr",
+    )
+    p.add_argument("--phase", type=int, required=True)
+    p.add_argument("--epic", type=int, required=True)
+    p.add_argument(
+        "--status",
+        required=True,
+        choices=["converged", "iterating"],
+        help="converged → mark-converged path; iterating → set-swarm-status path",
+    )
+    p.add_argument(
+        "--reason",
+        help="Convergence reason (required when --status converged)",
+    )
+    p.add_argument("--report-path", help="Review report path (appended to review_reports)")
+    p.add_argument(
+        "--findings-summary",
+        help="JSON findings summary, same schema as `complete review_swarm_pr`",
+    )
+    p.add_argument(
+        "--findings-detail",
+        help="Path to per-iteration findings detail file (same schema as `complete`)",
+    )
+    # Parity flags with `set-swarm-status`. Without these, callers needing
+    # to set status=iterating AND attach pr_url/pr_number/etc. (e.g. the
+    # first iteration where the PR was just created) cannot use the
+    # atomic verb and would silently lose those fields.
+    p.add_argument("--pr-url", help="Pull request URL (parity with set-swarm-status)")
+    p.add_argument("--pr-number", type=int, help="Pull request number (parity with set-swarm-status)")
+    p.add_argument("--manifest-path", help="Manifest path (parity with set-swarm-status)")
+    p.add_argument("--integration-branch", help="Integration branch (parity with set-swarm-status)")
 
     # ── add-review-report ──
     p = sub.add_parser("add-review-report", help="Append review report path")

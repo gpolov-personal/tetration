@@ -201,6 +201,239 @@ Store the user's selection and approved patterns.
 
 ---
 
+## Stage 1.6: Cross-Epic Pattern Aggregation
+
+This stage runs **independently of the per-command lesson edits above** and produces a separate artifact at `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json`. The artifact is consumed at planning time by `bootstrap_converge` and `plan_epic_converge` to surface oscillation-prone patterns from prior epics into the next planning context.
+
+The per-command lesson aggregation in Stages 0–1 looks at lessons (qualitative). This stage looks at the **convergence ledgers** (quantitative) — `review_convergence_state.json`, `swarm-manifest.json`, `pipeline_state.json.swarm_execution.findings_history` — and detects patterns that recurred across **3 or more epics**.
+
+### 1.6.1 Walk Epics
+
+Glob `$EIGEN_ROOT/eigen_initiative/phases/phase_*/epic_*/`. For each epic directory, attempt to read:
+
+- `review_convergence_state.json` — if missing, skip this epic (legacy / pre-Tier-1)
+- `swarm-manifest.json` — for `monotonicity.m1_firings`, `tasks[].architectural_escalation`, `tasks[].architectural_escalation_files`, `p3_sweep`
+- `pipeline_state.json` — for `swarm_execution.findings_history` and `swarm_execution.convergence.reason`
+
+Missing files are non-fatal: epics without ledgers are silently skipped. This keeps the aggregator forward-compatible with old initiatives.
+
+### 1.6.2 Detect Three Pattern Kinds
+
+Build three buckets keyed by a stable signature; each bucket records `supporting_epics: [<phase/epic id>]` and `occurrences: <int>`.
+
+**Source of truth for per-finding metadata:** `findings_history[].entries[]` (each entry has `signature`, `severity`, `file`, `category`, `threat_class`, `title_normalized`). For pre-Tier-4 epics that lack `entries[]`, fall back to the per-iteration `review_convergence_state.json` sidecar — those epics will be missing `threat_class` and are excluded from Kind-2 evaluation (logged once per run, not fatal).
+
+**Path key construction.** All three pattern kinds use a `path_key` defined as `parent_dir + "/" + basename` where `parent_dir` is the IMMEDIATE parent directory of the file (e.g., `src/api/users.ts` → `api/users.ts`). Including ≥ 1 path segment prevents `users.ts` from `src/api/`, `web/admin/`, and `tests/` colliding into a single false positive while still allowing meaningful cross-project equivalence. Files with no parent directory (i.e. at repo root) use the bare basename — they're rare enough to ignore the resulting potential collision. Note: this replaces the earlier `path_basename` key; entries written under the old scheme are migrated on next run via `schema_version` (Step H14).
+
+**Kind 1 — Cross-epic oscillation.** For each epic, walk `review_convergence_state.json.iterations[].file_iteration_counts` and pick files where the streak ≥ 2 (i.e., the file oscillated within the epic). Bucket key: `(category, path_key)`. `category` comes from the matching `entries[]` payload looked up by `signature`. **Note: per-epic oscillation detection (`review_swarm_pr` Stage 2.5) keys on the finer-grained `(file, symbol, category)` triple, while this aggregator deliberately keys on the coarser `(category, path_key)` so cross-project advisories surface even when symbol names differ between projects.**
+
+**Kind 2 — Cross-epic architectural escalation.** For each epic, scan `swarm-manifest.json.tasks[]` for `architectural_escalation == true`. Bucket key: `(category, threat_class)` read directly from the originating finding's `entries[]` payload. Skip entries where `threat_class == "other"` (excluded from Kind-2 promotion by definition). If an epic recorded an `m1_firings` count ≥ 1 OR a `convergence.reason` of `P1_REGRESSION_PERSISTENT` / `DIVERGING_LOOP`, also include the dominant `(category, threat_class)` pair from the epic's last review iteration's `entries[]`.
+
+**Kind 3 — Cross-epic type escapes.** For each epic, scan `entries[]` whose `category == "type-safety"` OR `threat_class == "type-escape"`. The `threat_class` field is now authoritative — the Tier-4 ban (`code_from_validation_tests_swarm.md`) requires workers to tag every type-escape finding with `threat_class: "type-escape"`, so the title-regex fallback is only used for pre-Tier-4 entries. Bucket key: `(escape_pattern, path_key)`.
+
+**Exclude oscillation-capped epics from supporting evidence.** Any epic whose `convergence.reason` starts with `CAPPED_BY_OSCILLATION`, `P1_REGRESSION_PERSISTENT`, `DIVERGING_LOOP`, `SWEEP_ABORTED`, or `CAP_REACHED_WITH_RESIDUAL` is excluded from the `supporting_epics` set across all three kinds. Those epics never converged cleanly; using them as "pattern occurrences" treats unresolved noise as signal and inflates `occurrences` by exactly the count of patterns that *defeated* the convergence loop — a feedback loop that promotes more aggressive future warnings about the same vector that is already proving unfix-able. Include them only as `degraded_supporting_epics: [<phase/epic id>]` for observability; do NOT count toward thresholds.
+
+### 1.6.3 Apply 3+ Epic Threshold
+
+For each bucket across all three kinds: keep only entries where `len(unique supporting_epics) >= 3` (excluding the degraded-reason epics per 1.6.2). This matches the existing "3+ supporting lessons" gate used by Stage 1.2 above (strong-pattern threshold).
+
+**`occurrences` field semantics.** `occurrences` is the COUNT of distinct supporting epics in which the pattern was observed (i.e. `len(unique supporting_epics)`), NOT the raw event count summed across epics. Counting raw events lets a single oscillating epic that fires the same pattern 5 times trip an "occurrences >= 5" threshold; counting unique epics prevents that. A separate field `total_event_count: <int>` is recorded for observability but is not used in any threshold.
+
+### 1.6.4 Write Artifact
+
+**Carry forward promotion state from the prior artifact.** Before writing, read the existing `cross_epic_patterns.json` (if any). For each newly-aggregated pattern, look up a matching entry in the prior file by **composite key**:
+
+```
+(kind, category, threat_class, path_basename, escape_pattern)
+```
+
+If a match exists AND it has `promoted_to_prompt: true` (or `pending_promotion: true` from the H14 transactional ladder), copy `promoted_to_prompt`, `promoted_at`, `promoted_in_version`, `pending_promotion`, `pending_at` onto the newly-aggregated entry verbatim. Without this carry-forward, Stage 1.6.4 would clobber the promotion flag on every run, and Stage 1.7.1's `promoted_to_prompt != true` filter would re-promote every pattern every run — re-applying the same prompt edits and re-prompting the user.
+
+Composite-key matching tolerates updates to `supporting_epics`, `occurrences`, `first_seen`, `last_seen`, `recommendation` (those fields legitimately change as new epics complete). It does NOT match across changes to `kind`, `category`, `threat_class`, `path_basename`, or `escape_pattern` — those identify the pattern semantically.
+
+Write to `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (create the directory if needed):
+
+```json
+{
+  "schema_version": 1,
+  "generated_at": "<ISO 8601>",
+  "eigen_root": "<absolute path>",
+  "threshold": 3,
+  "patterns": [
+    {
+      "kind": "oscillation" | "architectural_escalation" | "type_escape",
+      "category": "<category>",
+      "threat_class": "<threat_class or null>",
+      "path_basename": "<basename or null>",
+      "escape_pattern": "<pattern literal or null>",
+      "supporting_epics": ["phase_1/epic_3", "phase_2/epic_1", "phase_3/epic_2"],
+      "occurrences": 7,
+      "first_seen": "<ISO 8601 of earliest supporting epic's convergence_state>",
+      "last_seen": "<ISO 8601 of latest>",
+      "recommendation": "<one-sentence guidance — e.g., 'Plan auth-middleware changes with explicit threat-class review; this category oscillated in 4 prior epics'>"
+    }
+  ]
+}
+```
+
+**Atomic write contract.** This stage rewrites the file wholesale (the deterministic detector recomputes the patterns every run). Use the same POSIX-atomic pattern the CLI uses for `pipeline_state.json`: write to `<target>.tmp`, `fsync`, then `rename(<target>.tmp, <target>)`. A SIGKILL between the temp-write and rename leaves the prior `cross_epic_patterns.json` intact. Bash equivalent:
+
+```bash
+TMP="$ARTIFACT.tmp.$$"
+cat > "$TMP" <<EOF
+<JSON content>
+EOF
+sync "$TMP" 2>/dev/null || true
+mv -f "$TMP" "$ARTIFACT"
+```
+
+**Acquire a state lock around the read-modify-write.** Other concurrent `compound_improve` runs (rare but possible if the user manually invokes the command while a watchdog also has it scheduled) MUST serialize. Reuse the CLI's flock pattern: `flock $EIGEN_ROOT/eigen_initiative/.compound_improve.lock <write sequence>`. If the lock is held, abort with a clear error rather than racing.
+
+**`schema_version` field** identifies the artifact version. Future migrations (e.g. switching from `path_basename` to `parent_dir/basename` per Tier-4 Step B4) bump this and trigger a one-time recompute on the next `compound_improve` run. Consumers (`bootstrap_converge`, `plan_epic_converge`) MUST read `schema_version` first and skip the artifact entirely if version > current-known.
+
+The `recommendation` is generated deterministically from the kind:
+- `oscillation` → `"Files matching <basename> in category <category> oscillated in <N> prior epics — plan defensively (split task, pre-validate threat class, or scope-expand)."`
+- `architectural_escalation` → `"Category <category> with threat class <threat_class> required architectural escalation in <N> prior epics — pre-flight a design_decision question in the plan."`
+- `type_escape` → `"Pattern <escape_pattern> in <basename> was banned across <N> prior epics — plan native typing from the start."`
+
+### 1.6.5 Print Summary
+
+Print:
+
+```
+=== Cross-Epic Patterns ===
+
+Walked: <N> epics (<M> with full ledgers)
+Patterns detected (≥ 3 supporting epics): <K>
+  Oscillation:               <a>
+  Architectural escalation:  <b>
+  Type escape:               <c>
+
+Artifact: $EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json
+```
+
+If `K == 0`, write an empty `"patterns": []` array (still create the artifact so consumers see "no known patterns" rather than missing-file).
+
+---
+
+## Stage 1.7: Cross-Epic Pattern Promotion to Prompt Edits
+
+Stage 1.6 produces `cross_epic_patterns.json` for **runtime advisory** consumption — `bootstrap_converge` and `plan_epic_converge` read it on every invocation to inject prior-epic warnings into planning context. But the patterns never make it into the prompt files themselves; every new initiative re-discovers the same threat classes, and the artifact dies when `EIGEN_ROOT` resets.
+
+This stage promotes high-confidence cross-epic patterns from runtime advisory to **permanent prompt edits** in the plugin source repo. Promotion is a higher bar than runtime injection — a bad promotion affects every future initiative.
+
+### 1.7.1 Promotion Threshold
+
+Read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json`. Filter to entries where ALL of the following hold:
+- `len(unique supporting_epics) >= 5` — promotion needs at least five DISTINCT epics, not five total events. (The Stage 1.6.3 threshold is 3 unique epics; promotion is a higher bar.)
+- `total_event_count >= 5` — at least five total event occurrences across those epics (handles the edge where 5 unique epics each contributed one weak signal).
+- `promoted_to_prompt != true` AND `pending_promotion != true` — skip patterns already promoted (or in-flight promotion per the H14 ladder).
+
+Both unique-epic AND total-event counts must clear 5; this catches the failure mode where one runaway epic fires the same pattern 5 times and tries to promote it as if it had 5 supporting epics.
+
+If no patterns survive the filter, skip Stage 1.7 entirely.
+
+### 1.7.2 Generate Edit Per Pattern Kind
+
+For each surviving pattern, produce a structured edit proposal. The edit content depends on `pattern.kind`:
+
+**`oscillation`** → edit goes into `<plugin_source_path>/commands/plan_epic_converge.md` Strategic Overview / Risk Factors guidance (around the "Risk factors and mitigation strategies" bullet in Stage 2.3's planner prompt). Edit template:
+```markdown
+> **Cross-epic oscillation watch:** Files matching basename `<basename>` in category `<category>`
+> have oscillated in <N> prior epics across this initiative. When this epic touches such files,
+> plan defensively: split tasks earlier, pre-validate threat class, or scope-expand.
+```
+
+**`architectural_escalation`** → edit goes into `<plugin_source_path>/commands/orchestrate_swarm.md` ARCHITECTURAL ESCALATION REQUIRED block (the worker spawn prompt section added by Tier 2 Step 2). Edit template:
+```markdown
+> **Pre-flight architectural escalation (cross-epic confirmed):** Combination of
+> category=`<category>` AND threat_class=`<threat_class>` triggered architectural
+> escalation in <N> prior epics. Worker MUST raise `[QUESTION] type: design_decision`
+> before any production-code change in this combination, regardless of file-iteration
+> -streak count.
+```
+
+**`type_escape`** → edit goes into `<plugin_source_path>/commands/code_from_validation_tests_swarm.md` Code Quality Standards (the Stage 3 type-safety rules section). Edit template:
+```markdown
+> **Banned pattern (cross-epic confirmed):** `<escape_pattern>` in `<basename>` was banned
+> across <N> prior epics. Native typing is mandatory from the first commit; raise
+> `[QUESTION] type: type_escape_needed` only with strict justification.
+```
+
+### 1.7.3 Surface in Stage 1 User Confirmation
+
+Promoted patterns appear in Stage 1.4's pattern listing prefixed with `[CROSS-EPIC]` to distinguish them from per-command lesson patterns:
+
+```
+=== Pattern Analysis ===
+
+[per-command patterns above ...]
+
+Cross-epic promotions (≥ 5 supporting epics):
+  1. [CROSS-EPIC] [OSCILLATION] plan_epic_converge.md / Strategic Overview
+     Pattern: files matching basename `users.ts` in category `data-integrity`
+     oscillated in 6 prior epics
+     Edit: append "Cross-epic oscillation watch" advisory note
+
+  2. [CROSS-EPIC] [TYPE-ESCAPE] code_from_validation_tests_swarm.md / Code Quality Standards
+     Pattern: `as any` in `auth-service.ts` banned across 5 prior epics
+     Edit: append "Banned pattern (cross-epic confirmed)" reminder
+```
+
+Stage 1.5's user-confirmation prompt is extended with a fifth option:
+```
+  5. Skip cross-epic promotions — Apply per-command lesson patterns only
+```
+
+The user can decline specific cross-epic patterns from option 3 ("Let me pick").
+
+### 1.7.4 Apply Edits and Mark as Promoted
+
+When the user approves a cross-epic promotion, Stage 2.2 applies the edit using the Edit tool with the same surgical-edit rules (preserve structure, add comment marker). Comment marker for cross-epic edits:
+
+```markdown
+<!-- Compound improvement: cross-epic <kind> — promoted from cross_epic_patterns.json (<N> supporting epics) -->
+```
+
+**Transactional apply-edit + write-back.** The promotion path (apply git edits, then write `promoted_to_prompt: true` back to `cross_epic_patterns.json`) needs SIGKILL safety: if the process dies between applying the git edits and the writeback, the next run would re-apply the edits and double-write the prompt content. Solve with a write-pending-first, three-step ladder:
+
+1. **Mark pending** (atomic write-1): set `promoted_to_prompt: false, pending_promotion: true, pending_at: <ISO 8601>` on the pattern entry. Use the same atomic write contract from 1.6.4 (tempfile + fsync + rename, under the state lock).
+2. **Apply edits** (idempotent git operations): the per-pattern Edit-tool calls. Edit calls are idempotent because they include the unique comment marker `<!-- Compound improvement: cross-epic ... -->`; re-running them either no-ops (marker present) or applies the same edit again (marker absent).
+3. **Mark complete** (atomic write-2): set `promoted_to_prompt: true, promoted_at: <ISO 8601>, promoted_in_version: <plugin version>, pending_promotion: false` on the pattern entry. Same atomic write.
+
+If the process dies between step 1 and step 2, the next run sees `pending_promotion: true` and re-applies step 2 (which is idempotent) before step 3. If the process dies between step 2 and step 3, same recovery. The window where state can be inconsistent is the brief moment between a successful `rename()` and the same caller's next state read — well under a millisecond.
+
+After applying, the pattern entry looks like:
+```json
+{
+  "kind": "oscillation",
+  "category": "data-integrity",
+  ...,
+  "promoted_to_prompt": true,
+  "pending_promotion": false,
+  "promoted_at": "<ISO 8601>",
+  "promoted_in_version": "<plugin version after bump>"
+}
+```
+
+This prevents re-promotion in the next `compound_improve` run.
+
+### 1.7.5 CHANGELOG Entry
+
+Stage 3.2's CHANGELOG section gets an additional sub-section for cross-epic promotions:
+
+```markdown
+**Cross-epic promotions:**
+- [OSCILLATION] plan_epic_converge.md: `users.ts` / `data-integrity` (6 supporting epics)
+- [TYPE-ESCAPE] code_from_validation_tests_swarm.md: `as any` / `auth-service.ts` (5 supporting epics)
+```
+
+### 1.7.6 Rollback Story
+
+Cross-epic promotions land in the plugin source repo as ordinary commits (via the existing Stage 2.2 → Stage 3 → user-driven git commit flow). Rollback is via standard `git revert` on the compound-improvement commit. The `promoted_to_prompt` flag in `cross_epic_patterns.json` does NOT auto-reset — manual reset is required if the user wants the same pattern re-considered for promotion (this is conservative: a reverted promotion was a deliberate choice, and re-surfacing it would re-prompt the user unnecessarily).
+
+---
+
 ## Stage 2: Rewrite Commands
 
 ### 2.1 Improvement Strategy

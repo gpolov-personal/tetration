@@ -7,6 +7,20 @@ description: "Pipeline state schema reference for eigen-squared. Use when any co
 
 This is the **single source of truth** for iteration tracking across all eigen-squared pipeline commands. Every command reads this file on entry and updates it on exit via the `eigen-squared` CLI.
 
+## Schema authority
+
+The eigen-squared codebase has three classes of persistent JSON files. They are governed differently and intentionally so — this section is the authoritative declaration of which file is which.
+
+| File pattern | Authority | Mutation contract | Reader contract |
+|---|---|---|---|
+| `eigen_initiative/phases/pipeline_state.json` | **Typed** — `cli/models.py` (`PipelineState` and friends). The dataclass is the single source of truth for the schema; missing keys fill from typed defaults via `from_dict`. | CLI verbs only (`eigen-squared <verb>`). Direct `jq` / `cat >>` writes are forbidden — they bypass `to_dict`/`from_dict` and risk drift. | Any command. Read via `eigen-squared get-context` (preferred) or by parsing the JSON if the field is loose-text. |
+| `swarm-manifest.json` (per-epic, on integration branch) | **Loose-JSON sidecar governed by prose** — schemas defined in this SKILL but not mirrored in any Python dataclass. Fields: `monotonicity`, `m1_firings`, `last_green_baseline`, `architectural_escalation`, `ownership_audit`, `full_suite_*`, `integration_regressions`, `pr_body_update_failed`, `mvf_scope_expansion`, `scope_files_snapshot`, `scope_expansion_log`, `tasks[].*`. | Direct `jq -r` / `cat > <tmp>` / `mv` writes by command prompts. Atomic-rename pattern when `tmp + fsync + mv` is feasible from bash; otherwise best-effort. | Direct JSON parse with field-presence guards (legacy entries lack newer fields). |
+| `cross_epic_patterns.json`, `review_convergence_state.json`, `review_discards.json`, `bootstrap_baseline.json` | **Loose-JSON sidecars governed by prose** — schemas defined in this SKILL, no dataclass. Per-artifact `schema_version` field where introduced. | Direct writes by command prompts; atomic-rename pattern documented per file. State lock via `flock` where concurrency matters (e.g. `compound_improve` reads-modify-writes). | Direct JSON parse. Unknown `schema_version` → skip the artifact rather than crash. |
+
+**Rationale for the split.** `pipeline_state.json` carries the cross-command iteration handshake (which command runs next, which has converged); type-checking it via dataclasses prevents schema drift when commands are added or fields renamed. The sidecars carry per-artifact, per-epic, or per-iteration data that's intrinsically loose: new fields land in prose without breaking existing readers, and the convergence loop is robust to legacy entries with missing fields. Adding dataclasses for the sidecars would force every prompt that touches them to round-trip through the CLI, which is more friction than the safety is worth — but the prose schemas are still load-bearing and any command modifying a sidecar MUST update this SKILL in the same commit.
+
+**When in doubt**: if the file is read by Python code (the CLI), it needs a dataclass — drift is not detectable any other way. If the file is read only by prompts, prose-only is fine, but prose drift IS still drift, so keep this SKILL up-to-date.
+
 ## Commands
 
 **Pipeline commands (tracked in state):**
@@ -196,6 +210,10 @@ Tracks the phase-level review and transition lifecycle:
       "reason": null
     },
     "findings_summary": { "p1": 0, "p2": 0, "p3": 0 },
+    "findings_history": [
+      { "iteration": 0, "p1": 1, "p2": 6, "p3": 14, "signatures": ["<sha1>", "..."] },
+      { "iteration": 1, "p1": 1, "p2": 0, "p3": 19, "signatures": ["<sha1>", "..."] }
+    ],
     "review_reports": []
   }
 }
@@ -210,7 +228,341 @@ Tracks the phase-level review and transition lifecycle:
 
 Note: `swarm_execution.findings_summary` uses **`p1/p2/p3`** (not `high/medium/low`).
 
+### swarm_execution.findings_history
+
+Per-iteration ledger appended by `review_swarm_pr` via `eigen-squared complete review_swarm_pr --findings-detail <path-to-json>` (or `finalize-iteration --findings-detail`). Each entry:
+
+```json
+{
+  "iteration": <int>,
+  "p1": <int>, "p2": <int>, "p3": <int>,
+  "signatures": ["<sha1>", "..."],
+  "signature_version": 2,
+  "entries": [
+    {
+      "signature": "<sha1>",
+      "severity": "P1",
+      "file": "src/api/users.ts",
+      "category": "security",
+      "threat_class": "auth-bypass",
+      "title_normalized": "input validation"
+    }
+  ]
+}
+```
+
+A finding's signature is `sha1("<normalized_file_path>|<category>|<normalized_title>")` per the v2 algorithm above.
+
+`entries[]` is the self-describing per-finding payload that downstream consumers (`compound_improve` Stage 1.6 cross-epic aggregator, observability tooling) need but the legacy entry shape did not store. Required fields per entry: `signature`, `severity` (`P1|P2|P3`), `file` (POSIX-relative), `category` (lowercase short), `threat_class` (must be one of the closed enum below). Optional: `title_normalized`.
+
+`findings_history` and `findings_summary` are coupled: `findings_summary` mirrors the latest `findings_history[-1]` counts. The CLI accepts a JSON file via `--findings-detail` whose `iteration` field MUST match the iteration just completed (i.e. `swarm_execution.review_iteration - 1` after the bump). A mismatch is rejected with a non-zero exit. Re-completing the same iteration replaces the existing entry rather than appending a duplicate.
+
+**Backwards compatibility:** legacy entries written before this schema extension lack `entries[]` and `signature_version`. Loaders treat absent `entries[]` as an empty list (consumers skip them rather than crash); absent `signature_version` triggers the v1→v2 migration documented above.
+
+#### threat_class — closed enum
+
+Used as a bucket key for `compound_improve` Kind-2 cross-epic patterns (`(category, threat_class)`) and as a structured field on `findings_history.entries[].threat_class`. CLI rejects unknown values with non-zero exit.
+
+| value                  | description                                                          |
+|------------------------|----------------------------------------------------------------------|
+| `auth-bypass`          | Authentication / authorization can be bypassed                       |
+| `injection`            | SQL / shell / template / XPath / NoSQL injection                     |
+| `data-loss`            | Persistent state corruption, dropped writes, lost migrations         |
+| `race-condition`       | Time-of-check-time-of-use, concurrent-write, ordering bugs           |
+| `type-escape`          | `as any`, `# type: ignore`, `cast(Any, ...)`, runtime monkey-patches |
+| `permissions`          | Excessive privileges, missing RBAC checks, IAM drift                 |
+| `concurrency`          | Deadlocks, leaks, unbounded goroutines, missing locks                |
+| `secrets-exposure`     | Hardcoded credentials, leaked tokens, logged secrets                 |
+| `path-traversal`       | `../` traversal, symlink follow, zip-slip                            |
+| `denial-of-service`    | Unbounded memory/CPU, missing timeouts, regex catastrophic backtrack |
+| `crypto-misuse`        | Weak ciphers, ECB, missing MAC, IV reuse, deterministic RNG          |
+| `input-validation`     | Missing/insufficient input validation (non-injection)                |
+| `error-handling`       | Swallowed errors, missing rollback, log-and-continue                 |
+| `resource-leak`        | File handles, sockets, transactions never released                   |
+| `other`                | Catch-all for findings that do not fit a specific class              |
+
+The `other` bucket exists so workers can always populate the field, but it is excluded from cross-epic Kind-2 promotion (`compound_improve` skips `threat_class == "other"` when computing supporting epics).
+
+Consumers:
+- `review_swarm_pr` Convergence Protocol — the **oscillation rule** converges immediately with `CAPPED_BY_OSCILLATION` if any `(file, category)` pair (derived from a signature) appears in ≥ 3 distinct iterations within the same epic.
+- `review_swarm_pr` Stage 0.6 (prior-context threading, Step 5) — review agents and workers read this ledger to know which signatures were raised before so they don't blindly re-raise or re-introduce them.
+- `compound_improve` — historical record for cross-epic learning.
+
+Sidecar: a richer JSON artifact `eigen_initiative/phases/phase_N/epic_M/review_convergence_state.json` stores the same iteration trajectory with full per-finding metadata (file, category, severity, title) the CLI does not need. The signatures in `findings_history` and the signatures in the sidecar are computed from the same scheme and must agree iteration-for-iteration.
+
 Both `orchestrate_swarm` and `review_swarm_pr` run on the integration branch (`feat/P<N>.E<M>`). Pipeline state updates are committed to this branch and merge to `$EIGEN_BRANCH` when the PR is merged.
+
+### swarm_execution.convergence.reason — taxonomy
+
+`convergence.reason` is a free-text field (no CLI-side enum validation), but `review_swarm_pr` writes one of the prefixes below so downstream commands and the PR-comment renderer can dispatch on the leading token. The prefix is followed by a `:` and human-readable details.
+
+| Prefix | Producer | Status set | Semantics |
+|---|---|---|---|
+| `All findings resolved` | review_swarm_pr Case 1.1 | converged | Clean convergence; no residual findings. |
+| `P3 sweep completed` | review_swarm_pr Case 2.1 | converged | Bounded P3 sweep ran successfully; residual P3 list disclosed. |
+| `P3 sweep introduced` | review_swarm_pr Case 2.2 | converged | Sweep introduced P1 / P2; commits auto-reverted to `p3_sweep.base_ref`. `swarm-manifest.json.p3_sweep.aborted=true`. |
+| `CAPPED_BY_OSCILLATION` | review_swarm_pr oscillation circuit-breaker | converged | Same `(file, category)` pair appeared in ≥ 3 iterations — accepting current state to break the loop. Pairs and signatures recorded in `review_convergence_state.json.oscillation`. |
+| `P1_REGRESSION_PERSISTENT` | review_swarm_pr Monotonicity rule M1 — third firing | converged | P1 count grew in three iterations; `monotonicity-violation` + `blocker-real-dep` task tagging did not stabilize the fix. Counter at `swarm-manifest.json.monotonicity.m1_firings == 2` going into the firing iteration. |
+| `DIVERGING_LOOP` | review_swarm_pr Monotonicity rule M2 | converged | `p3` count rose while `p1+p2` did not improve across the most recent two iterations (iteration ≥ 2). Trajectory of the last three iterations recorded in `review_convergence_state.json.monotonicity.trajectory`. |
+| `Maximum review iterations` | review_swarm_pr outer safety net | converged | Iteration cap (8) hit. Treated as Case 1.1 regardless of finding counts. |
+| `<p1+p2> blocking findings remain` | review_swarm_pr Case 1.3 / Case M1 (firings 1–2) | iterating | Continuation; new R-tasks created. M1 firings 1–2 prepend `M1 firing #<count>:` to the reason text and tag tasks. |
+| `Entering one-shot P3 sweep` | review_swarm_pr Case 1.2 | iterating | Sweep entry; `swarm-manifest.json.p3_sweep.active=true`. |
+
+`compound_improve` reads these prefixes (and the structured sidecar files referenced by them) when rolling cross-epic patterns into the next-project context.
+
+### swarm-manifest.json.monotonicity (per-epic)
+
+Sibling to `swarm-manifest.json.p3_sweep` and `swarm-manifest.json.residual_p3`. Tracks the M1 firing counter so the third firing converges:
+
+```json
+{
+  "monotonicity": {
+    "m1_firings": <int>,
+    "last_fired_at_iteration": <int|null>
+  }
+}
+```
+
+Initialized lazily (default `{ "m1_firings": 0, "last_fired_at_iteration": null }`) when M1 first fires. Read on entry to each iteration's Convergence Decision. Incremented in `review_swarm_pr` Stage 4.5 step 7 in Case M1. M2 does not write to this field.
+
+### review_convergence_state.json.iterations[].file_iteration_counts (per-epic, per-iteration)
+
+Streak counter per file used by the **architectural-escalation rule** (Tier 2 Step 2). Each entry records the count of consecutive recent iterations in which the file was modified by worker commits, ending at the iteration's review:
+
+```json
+{
+  "iteration": 2,
+  "file_iteration_counts": {
+    "server/backend/supabase-schema-service.ts": 3,
+    "server/ai/tool-dispatcher.ts": 1
+  }
+}
+```
+
+Computation (in `review_swarm_pr` Stage 2.4):
+1. Find the prior iteration's report addition commit (`git log -1 --diff-filter=A`) — that is the iteration boundary. Iter 0 uses the merge-base with `$EIGEN_BRANCH`.
+2. Run `git diff --name-only <boundary>..HEAD`, filter to `scope_files`.
+3. For each modified file F: `count[F] = prev_count[F] + 1` if F was in iter (N-1)'s counts, else `count[F] = 1`.
+4. Files NOT modified in this window are dropped (their streak is broken).
+
+Consumer: `review_swarm_pr` Stage 4.1.a builds `escalation_files = { F : count[F] >= 2 }`. Each R-task whose `files_owned ∩ escalation_files ≠ ∅` is tagged with `architectural-escalation`. Backwards-compatible — missing field is treated as empty map.
+
+### swarm-manifest.json.tasks[].architectural_escalation (per-task)
+
+Boolean flag on R-task entries (sibling to `monotonicity_violation`). Set by `review_swarm_pr` Stage 4.5 when Stage 4.1.a's predicate fires for the task. Companion field `architectural_escalation_files: [<file>]` lists which file(s) triggered escalation.
+
+Consumer: `orchestrate_swarm` worker spawn — when this flag is `true`, the spawn prompt prepends an ARCHITECTURAL ESCALATION REQUIRED constraint block (sibling to the P3-SWEEP CONSTRAINT block) requiring the worker to raise `[QUESTION] type: design_decision` before any production-code change. The leader's autonomous `design_decision` handler (orchestrate_swarm autonomous-mode rules) responds with one of: APPROVE INLINE (alternative bounded to files_owned), CONVERT TO SCOPE EXPANSION (alternative requires other files), or REQUEST REVISION (worker's alternatives weren't architectural). After two failed revisions the task is marked `failed` with reason `architectural_escalation_unresolved`.
+
+### swarm-manifest.json.pr_body_update_failed (per-iteration, best-effort failure log)
+
+Optional field set by `review_swarm_pr` Stage 7.1.5 when `gh pr view` or `gh pr edit` fails (network, auth, rate limit). Records the failure so the convergence loop can continue without blocking on PR cosmetics, and so observability tooling can detect persistent failures.
+
+```json
+"pr_body_update_failed": [
+  { "iteration": 2, "error": "gh: rate limit exceeded", "at": "<ISO 8601>" }
+]
+```
+
+Append-only. Absence means all PR-body refreshes succeeded (or the field has never been written for this epic). Consumers (e.g., a future observability dashboard) treat a non-empty array as a soft warning, not a failure of the epic itself.
+
+### Finding signature algorithm (v2)
+
+Used by `review_swarm_pr` Stage 2.1 step 1, `findings_history`, `review_convergence_state.json`, `review_discards.json`, and Stage 4.6 regression signatures. All artifacts agree iteration-for-iteration.
+
+```
+signature = sha1(f"{normalized_file_path}|{category}|{normalized_title}")
+```
+
+`normalized_file_path` — POSIX-style relative path, case preserved.
+
+`category` — lowercase short category (`security`, `data-integrity`, `test-quality`, `performance`, `type-safety`, ...).
+
+`normalized_title` (v2 algorithm, applied in order):
+1. `str.casefold()` (Unicode-safe lowercase).
+2. Strip leading/trailing whitespace; strip trailing `.,;:!?`.
+3. Collapse internal whitespace runs to a single space.
+4. Drop stopword tokens: `{is, are, was, were, be, the, a, an, of, for, in, on, at, to, with, without, missing, present}`.
+5. Re-join survivors with a single space. **Token order preserved** (no sort).
+
+`pipeline_state.json.swarm_execution.signature_version` records the algorithm version (defaults to `2`). Legacy state with `signature_version < 2` is migrated on next read in `SwarmExecution.from_dict` (`cli/models.py`): every distinct signature in `findings_history` is preserved in a flat `swarm_execution.legacy_signatures` array, and `signature_version` is bumped to `2`. Pre-v2 signatures CANNOT be re-normalized (raw `(file, category, title)` is not stored on legacy entries) and are kept verbatim. Migration is idempotent — re-loading state already at v2 is a no-op. The oscillation matcher MUST union `legacy_signatures` with the current iteration's v2 signatures when comparing across the migration boundary; otherwise pre-migration occurrences would silently fall out of the count.
+
+Why stopword strip but not token sort: paraphrases like "missing input validation" / "input validation missing" / "input validation is missing" all dedupe correctly under v2 (the stopwords disappear, token order is identical for the surviving content tokens "input validation"). Token-order changes that DO alter meaning (e.g., "auth deletion required" vs. "deletion auth required") remain distinct signatures, which is the safer default.
+
+### `finalize-iteration` CLI verb (atomic complete + status update)
+
+Combines `complete review_swarm_pr` + `mark-converged swarm_execution` (or `set-swarm-status iterating`) into a single CLI call that performs both mutations under one state lock and one `save_state` call. POSIX atomicity (tmp + fsync + rename in `save_state`) then guarantees that a SIGKILL between the legacy paired calls cannot leave half-written state on disk.
+
+```
+eigen-squared finalize-iteration \
+  --phase <phase> --epic <epic> \
+  --status <converged|iterating> \
+  [--reason <reason>]                # required when --status converged
+  [--report-path <path>] \
+  [--findings-summary '{"p1":x,"p2":y,"p3":z}'] \
+  [--findings-detail /tmp/eigen_findings_iter_<N>.json] \
+  [--pr-url <url>] [--pr-number <int>] \
+  [--manifest-path <path>] [--integration-branch <branch>]
+```
+
+`--pr-url`, `--pr-number`, `--manifest-path`, `--integration-branch` are parity flags with `set-swarm-status`; the atomic verb propagates them in the same `save_state` so callers needing to attach PR metadata at the iteration boundary (e.g. first iteration where the PR was just created) don't need a second non-atomic CLI call.
+
+On-disk effect is byte-equivalent to:
+- `--status converged` → `complete review_swarm_pr ...` + `mark-converged swarm_execution --reason ...`
+- `--status iterating` → `complete review_swarm_pr ...` + `set-swarm-status iterating ...`
+
+Used by `review_swarm_pr` Stage 7 in the convergence-loop hot path. Legacy verbs (`complete`, `mark-converged`, `set-swarm-status`) remain available for non-hot-path callers (e.g., `bootstrap_converge`, `plan_epic_converge`, manual recovery).
+
+The `--findings-detail` validation rules are identical to `complete review_swarm_pr` — iteration must match `swarm_execution.review_iteration - 1` after the bump. A failed validation aborts the entire verb (no partial state written) because the validation runs before any mutation is committed via `save_state`.
+
+### swarm-manifest.json.last_green_baseline (per-epic)
+
+Captured by `review_swarm_pr` Stage 7 when an iteration converges **genuinely clean** (Case 1.1 or Case 2.1) — NOT on degraded convergence (CAPPED_BY_OSCILLATION, P1_REGRESSION_PERSISTENT, DIVERGING_LOOP, sweep aborted), since those iterations may carry known-failing tests that would taint the next gate.
+
+```json
+"last_green_baseline": {
+  "commit_sha": "<merged commit on $EIGEN_BRANCH>",
+  "suite_result_hash": "<sha1 of sorted (test_name, status) pairs>",
+  "failing_tests": ["<test_path>::<test_name>", ...],
+  "captured_at": "<ISO 8601>"
+}
+```
+
+Consumer: `orchestrate_swarm` "Implementation Complete Message" step 2 (per-worker full-suite gate) and Stage 4.0 (pre-final-push integration gate). The gate computes `newly_failing = currently_failing - last_green_baseline.failing_tests` and only blocks on newly-failing tests.
+
+Backwards-compat: missing field disables the gate (skipped). New epics record their first baseline at iteration 0's clean convergence.
+
+### swarm-manifest.json.tasks[].full_suite_* (per-task)
+
+Set by `orchestrate_swarm` "Implementation Complete Message" step 2 when the per-worker full-suite gate fires.
+
+```json
+"tasks[]": {
+  "full_suite_regressions": ["<test_path>::<test_name>", ...],
+  "full_suite_resolution": "inline_fix" | "scope_expanded" | "reassigned" | "reverted" | "failed" | "skipped",
+  "full_suite_flakes": ["<test_path>::<test_name>", ...]
+}
+```
+
+`full_suite_resolution` values:
+- `inline_fix` — worker's change broke a test in `files_owned`; worker patched inline.
+- `scope_expanded` — leader extended `files_owned`; worker patched.
+- `reassigned` — leader created a fixup task for the actual owner; current task failed with reason `cross_worker_regression`.
+- `reverted` — leader chose REVERT; task aborted with `regression_unrecoverable`.
+- `failed` — circuit breaker tripped after 2 failed escalation rounds (`full_suite_regression_unresolved`).
+- `skipped` — gate did not run (iteration 0, doc-only task, or missing baseline).
+
+`full_suite_flakes` records tests that failed once but passed on retry. Non-blocking; surfaces suite-quality issues for observability.
+
+Consumer: `review_swarm_pr` Stage 2.1 reads these arrays and excludes the listed tests from M1's "new findings" count — they were caught and handled at worker time, not introduced to the reviewer.
+
+### swarm-manifest.json.iterations[].integration_regressions (per-iteration)
+
+Set by `orchestrate_swarm` Stage 4.0 (pre-final-push integration gate). Same shape and consumer semantics as `tasks[].full_suite_regressions`, but scoped to the wave-final integration phase where two workers' independently-passing changes interact.
+
+```json
+"iterations[]": {
+  "integration_regressions": ["<test_path>::<test_name>", ...],
+  "integration_resolution": "inline_fix" | "scope_expanded" | "reassigned" | "reverted" | "failed"
+}
+```
+
+### swarm-manifest.json.tasks[].ownership_audit (per-task)
+
+Records the outcome of the post-worker ownership audit run by `orchestrate_swarm` "Implementation Complete Message" step 1. Computed from `git diff --name-only` against the worker's commit range, with `task.files_owned ∪ task.test_files_owned` as the authoritative scope.
+
+```json
+"ownership_audit": {
+  "out_of_scope_modified": ["<file>", ...],
+  "out_of_scope_created": ["<file>", ...],
+  "resolution": "clean" | "scope_expanded" | "reverted_modified" | "deleted_created" | "reverted_worker" | "failed"
+}
+```
+
+`resolution` values:
+- `clean` — no out-of-scope edits; audit passed without intervention.
+- `scope_expanded` — leader approved INLINE via `mvf_scope_expansion`; `files_owned` was extended in the manifest.
+- `reverted_modified` — leader chose REVERT for one or more modified files; `git checkout HEAD~<n> -- <file>` restored them.
+- `deleted_created` — leader chose DELETE for newly-created out-of-scope files; `git rm` removed them.
+- `reverted_worker` — entire worker commit range was reverted via `git revert`; task continues but with no committed work.
+- `failed` — task is marked failed with reason `out_of_scope_unrecoverable`; review-iteration M1/oscillation logic handles re-attempt.
+
+Backwards-compat: missing field on legacy tasks is interpreted as `clean` (audit was not yet implemented when the task ran).
+
+### swarm-manifest.json.scope_files_snapshot + scope_expansion_log (per-epic)
+
+Decouples Tier-1's iter-0 ownership lock from Tier-2/3's mid-iteration expansion paths. Without this split, Stage 0.2's drift check would deadlock against any APPROVE INLINE / APPROVE EXPANSION / mvf_scope_expansion grant.
+
+```json
+"scope_files_snapshot": ["src/api/users.ts", "src/api/users.test.ts", "..."],
+"scope_expansion_log": [
+  {
+    "iteration": 1,
+    "file": "src/api/users_helper.ts",
+    "reason": "ownership_audit_inline" | "regression_gate_expansion" | "m1_design_decision" | "mvf_scope_expansion_override",
+    "decided_by": "leader_autonomous" | "user",
+    "decided_at": "<ISO 8601>"
+  }
+]
+```
+
+`scope_files_snapshot` is the **frozen** iter-0 union of T-task ownership ∪ shared_files ∪ e2e_test_dir. Written once on iteration 0 and never modified. `scope_expansion_log[]` is append-only — every leader-approved expansion gets one entry in the same atomic save as the corresponding `task.files_owned` mutation.
+
+Stage 0.2 drift check semantics: `recomputed scope_files ⊆ scope_files_snapshot ∪ {entry.file for entry in scope_expansion_log}` → OK. Anything else → STOP with drift error (signals an unauthorized ownership mutation that bypassed the leader's approval ladder).
+
+Backwards-compat: missing fields on legacy epics fall back to the pre-Tier-4 behavior (recompute and assert byte-equal to iter-0); legacy epics never had mid-iteration expansion so this is a strict superset.
+
+### eigen_lessons/compound_improve/cross_epic_patterns.json (initiative-wide)
+
+Cross-epic aggregation artifact written by `compound_improve` Stage 1.6. Lives at `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (sibling to the per-command lesson directories). Records patterns that recurred in **3 or more epics** across the initiative.
+
+Schema:
+
+```json
+{
+  "generated_at": "<ISO 8601>",
+  "eigen_root": "<absolute path>",
+  "threshold": 3,
+  "patterns": [
+    {
+      "kind": "oscillation" | "architectural_escalation" | "type_escape",
+      "category": "<category>",
+      "threat_class": "<threat_class or null>",
+      "path_basename": "<basename or null>",
+      "escape_pattern": "<pattern literal or null>",
+      "supporting_epics": ["phase_1/epic_3", "phase_2/epic_1", "phase_3/epic_2"],
+      "occurrences": 7,
+      "first_seen": "<ISO 8601>",
+      "last_seen": "<ISO 8601>",
+      "recommendation": "<one-sentence deterministic guidance>"
+    }
+  ]
+}
+```
+
+Sources walked by the aggregator (per epic):
+- `review_convergence_state.json.iterations[].file_iteration_counts` — for kind `oscillation` (streak ≥ 2)
+- `swarm-manifest.json.tasks[].architectural_escalation` + `monotonicity.m1_firings` + `pipeline_state.json.swarm_execution.convergence.reason` — for kind `architectural_escalation`
+- `pipeline_state.json.swarm_execution.findings_history` (filtered to `category == "type-safety"` with type-escape title patterns) — for kind `type_escape`
+
+Cross-epic equivalence is by `path_basename` (lowercased file basename) — full paths differ across initiatives but basenames carry semantic identity.
+
+Consumers:
+- `bootstrap_converge` Stage 2.1 — prepends a "Known oscillation-prone patterns from prior projects" advisory section to the bootstrapper prompt context, filtered to patterns whose category/path-basename plausibly applies to phase scaffolding.
+- `plan_epic_converge` Stage 2.1 — same, filtered to patterns relevant to the current epic's features.
+- `compound_improve` Stage 1.7 — promotes patterns with `occurrences >= 5 AND promoted_to_prompt != true` to **permanent prompt edits** in the plugin source repo. After approval and edit application, sets `promoted_to_prompt: true`, `promoted_at: <ISO 8601>`, `promoted_in_version: <bumped plugin version>` to prevent re-promotion.
+
+Missing artifact is non-fatal everywhere: consumers treat "file does not exist" as "no known patterns" and proceed normally.
+
+Per-pattern lifecycle fields added by Stage 1.7 promotion:
+```json
+{
+  "kind": "oscillation" | "architectural_escalation" | "type_escape",
+  ...,
+  "promoted_to_prompt": true,
+  "promoted_at": "<ISO 8601>",
+  "promoted_in_version": "<plugin semver>"
+}
+```
 
 ---
 

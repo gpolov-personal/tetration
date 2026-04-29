@@ -398,8 +398,9 @@ I must classify the task type. Instead of asking a human developer, I will prese
 
 1. **Classify Task Type**
 
-   Analyze `<task_description>` and `<plan_content>`:
+   Analyze `<task_description>`, `<plan_content>`, and the task's YAML front-matter:
 
+   - **REVIEW_FINDING**: A fixup for a finding raised by `review_swarm_pr` in a prior iteration. **Detection is mechanical, not heuristic**: the task's YAML front-matter has `labels` containing `"review-finding"` (these tasks are also named `task_R<K>.md`, with `id` matching `P<N>.E<M>.R<K>`). When this label is present, this classification **always wins** — do NOT route to NEW_FEATURE / ENHANCEMENT / REFACTORING / INTERFACE_ABSTRACTION based on the task description's surface wording, because review-fixup descriptions look syntactically like enhancements but require fundamentally different test design (threat-class generalization, adversarial variants, no mocks for security categories — see Stage 3D). Skip the leader [QUESTION] in step 3 below; classification is unambiguous.
    - **INTERFACE_ABSTRACTION**: Defines interfaces, abstract classes, protocols, factories, stubs, or scaffolding. Contains terms like "abstract class", "interface", "protocol", "factory", "base class", "contract", "stub", "scaffold". Focus is on contracts and structure, not business logic. Actual behavior will be implemented in separate follow-up tasks. Key indicator: the task references future tasks for "real" implementation.
    - **REFACTORING**: No changes to external behavior or API contracts. Focus on internal code improvements.
    - **NEW_FEATURE**: Introduces new endpoints, routes, services, or user-facing functionality. Key difference from INTERFACE_ABSTRACTION: implements actual behavior, not just defines contracts.
@@ -411,14 +412,17 @@ I must classify the task type. Instead of asking a human developer, I will prese
    - Do NOT classify as INTERFACE_ABSTRACTION (the stub already provides the interface)
    - Classify based on the REAL implementation work: typically NEW_FEATURE or ENHANCEMENT
    - Your tests should validate real business behavior, not interface structure
+   - Note: REVIEW_FINDING takes precedence over this rule too — a fixup task on an interface provider's file is still a REVIEW_FINDING.
 
 2. **Store Classification**
    - Store type in `<task_type>`
    - Store reasoning in `<classification_rationale>`
 
-3. **Consult Leader for Classification Approval**
+3. **Consult Leader for Classification Approval** *(skipped for REVIEW_FINDING — classification is mechanical via the `review-finding` label)*
 
-   Create a `[QUESTION]` task for the leader:
+   If `<task_type> == REVIEW_FINDING`: skip this step. Send the post-classification progress message directly and proceed to Stage 2.7. The label is the authoritative signal; a leader override would be wrong.
+
+   Otherwise, create a `[QUESTION]` task for the leader:
 
    ```javascript
    TaskCreate({
@@ -514,6 +518,7 @@ This ensures `<coverage_mapping>` survives compaction. Without it, a compacted t
 
 **Branch based on `<task_type>`:**
 
+- If `<task_type>` is **REVIEW_FINDING** → Go to **Stage 3D**
 - If `<task_type>` is **REFACTORING** → Go to **Stage 3B**
 - If `<task_type>` is **INTERFACE_ABSTRACTION** → Go to **Stage 3C**
 - If `<task_type>` is **NEW_FEATURE** or **ENHANCEMENT** → Go to **Stage 3A**
@@ -851,6 +856,137 @@ Use a specific marker for contract tests:
 **Checkpoint: post-test-batch** — Update working notes with tests created and Next Step.
 
 **After Stage 3C completion, proceed to Stage 4**
+
+### Stage 3D: Validation Test Creation (REVIEW_FINDING)
+
+<thinking>
+This path exists because review-fixup tasks have a different failure mode than feature tasks. A NEW_FEATURE worker writes tests against the AC strings as written and ships when those pass. That works for greenfield code. For a REVIEW_FINDING fixing a security or validation issue (e.g., "block bypass via CTE in read-only SQL"), testing only the AC string lets the worker patch the literal vector while leaving 6 sibling vectors unfixed. The next review iteration finds the next vector, files another fixup, the worker patches that one, and so on — the SQL whack-a-mole pattern that drove P2.E3 to 3 iterations of P1 oscillation.
+
+The fix is to make the test design **threat-class-generalized**, not vector-specific. Three discipline rules: enumerate the threat class up front, write adversarial variants for each AC (not just the literal example), and forbid mocks for security/validation/auth/data-integrity categories so the tests cannot pass on a stubbed-out check.
+</thinking>
+
+REVIEW_FINDING tasks must defeat the **threat class** the finding represents, not just the literal vector cited in the finding's title. The discipline below is what separates a single iteration of clean fixup from an oscillation that ships unsolved.
+
+**IMPORTANT**: For REVIEW_FINDING tasks, validation tests must:
+- Enumerate sibling vectors of the same threat class up front (≥ 5)
+- Cover ≥ 3 adversarial variants per acceptance criterion (boundary, encoding, syntax-twist)
+- Use REAL dependencies for security/validation/authorization/data-integrity categories — mocks defeat the test
+
+**Type-escape ban (test code, FORBIDDEN — same hard rule as Step B)**: do NOT use any of the following to make adversarial tests compile/pass — they defeat the type system the implementation will rely on, and a test passing because of a type-escape ships a fix that was never genuinely exercised. Needing one of these is a `[QUESTION] type: type_escape_needed` to team-lead, not a silent escape hatch.
+  - TypeScript: `as any`, `as unknown as <T>` (chained casts), `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, declaring a parameter as `any`
+  - Python: `typing.cast(Any, ...)` to satisfy a checker, `# type: ignore` (without an issue link / specific error code), `Any` parameter types when a real Protocol exists, reflective access via `getattr(obj, "_<dunder>")` to bypass encapsulation
+  - Go: `interface{}` parameter types when a typed alternative exists; `unsafe.Pointer` outside narrow approved low-level packages
+  - Any language: monkey-patching of typed interfaces in tests; mutating frozen / dataclass / record structures via `__dict__`; reflection into `_`/`__`-prefixed members of code you do not own
+
+**`[QUESTION] type: type_escape_needed` template** (use when an adversarial test legitimately requires touching internals of a typed structure):
+
+```javascript
+TaskCreate({
+  subject: "[QUESTION] type_escape_needed: <test name>",
+  description: "Task: <task_id>\nQuestion type: type_escape_needed\n\nTest: <test path>::<test name>\nThreat class: <one of THREAT_CLASS_ENUM>\nFinding signature: <sha1>\nWhy a type-escape is required: <one paragraph explaining what cannot be tested through the public type-checked interface>\nProposed escape: <specific construct, e.g. `cast(Any, frozen_record)._private_field` to inject a malformed value the regular API would reject>\nIs the production fix known? <yes/no — if yes, link the proposed implementation>\n\nI am STOPPED and waiting for your decision."
+})
+```
+
+The leader's autonomous-mode `type_escape_needed` policy will respond either "approve with comment marker `# type: ignore[<code>] -- <issue_id> -- <reason>`" or "rewrite the test to exercise via the public interface". Do not silently introduce the escape.
+
+#### REVIEW_FINDING Test Marker
+
+Use a specific marker so review_swarm_pr can identify these tests in subsequent iterations:
+
+| Test Type | Marker | When to Use |
+|-----------|--------|-------------|
+| Review-finding fixup (TDD) | `@pytest.mark.tdd_review_finding` | Tests for a fixup of a finding raised by review_swarm_pr |
+
+(Adapt the marker to your tech stack via the `language-profiles` skill — Go: `t.Run("tdd_review_finding/...")`, JS/TS: `describe.tdd_review_finding(...)`. The string `tdd_review_finding` must appear in the test name or annotation for downstream tooling.)
+
+1. **Read the Finding's Full Context**
+
+   **Prior context partition (Step A constraint).** As the test-design pass (Step A in the swarm), you read prior context with deliberately reduced fidelity to avoid biasing threat-class enumeration toward the vectors the prior worker already covered. Specifically:
+   - You consume the **HEADERS** subset from the spawn prompt's PRIOR REVIEW CONTEXT block (`severity`, `file`, `title`, `category`) and the current task's `task_description` / `acceptance_criteria`.
+   - You DO NOT read prior R-task implementation summaries, prior-fix recommendations, or DO-NOT-REGRESS narratives. Step B (the implementation pass) reads those.
+   - When looking at `review_convergence_state.json`, restrict your reads to the `(file, category, severity)` columns. Do NOT read the structured fix-recommendation fields if present.
+   - Reading prior-iteration `review_report_iteration_*.md` files is permitted ONLY for the same `(file, category)` pair as the current task, and only to surface SIBLING VECTORS (other angles on the same threat class), not to inherit the prior fix's structure. If the report contains explicit fix recommendations, skim — don't internalize them.
+
+   Rationale: Step A's job is to enumerate threat classes from acceptance criteria; if your tests merely cover the prior worker's surface fix, the reviewer will catch the same vector again and oscillation is more likely. Generalize.
+
+   Store finding metadata in `<finding_context>`:
+   - `finding_signature`, `finding_category`, `finding_severity`, `finding_iteration`, `affected_files`
+   - `prior_related_findings` — list of signatures with the same `(file, category)` pair from previous iterations (if any) — note: stored as headers only, not detail.
+
+2. **Threat-Class Enumeration (MANDATORY)**
+
+   Before writing ANY test, enumerate the threat class. The threat class is the **abstract category of bypass / failure** the finding represents, not the specific vector. Examples:
+
+   | Finding (specific vector) | Threat class | Sibling vectors (≥ 5) |
+   |---|---|---|
+   | "SELECT FOR UPDATE bypasses read-only enforcement" | PostgreSQL read-only enforcement | writable CTE, EXPLAIN options, COPY, CALL, DO blocks, advisory locks, INSERT...RETURNING, sequence next-val |
+   | "OFFSET parameter allows SQL injection" | SQL parameter injection | LIMIT, ORDER BY column ref, ILIKE escape, regex backrefs, JSON path operators, array indexing |
+   | "session token exposed in error log" | sensitive-data leakage in logs | stack traces, exception `__str__`, OpenTelemetry attributes, structured-log field bleed, debug headers, error-page render |
+   | "input validator skips unicode normalization" | input normalization | RTL override, full-width digits, zero-width joiners, NFC vs NFKC mismatch, percent-encoding double-decode, whitespace class |
+
+   Record the enumeration in a comment block at the **top of the test file** so future reviewers can verify coverage:
+
+   ```
+   # ─── Threat-class enumeration (Stage 3D) ─────────────────────────────────
+   # Finding: <finding_signature> — "<finding_title>"
+   # Category: <finding_category>
+   # Threat class: <threat_class_name>
+   # Sibling vectors covered by tests below:
+   #   1. <vector_1> → tests: test_<name>
+   #   2. <vector_2> → tests: test_<name>
+   #   3. <vector_3> → tests: test_<name>
+   #   4. <vector_4> → tests: test_<name>
+   #   5. <vector_5> → tests: test_<name>
+   #   N. <vector_N> → tests: test_<name>
+   # ───────────────────────────────────────────────────────────────────────
+   ```
+
+   If you cannot enumerate ≥ 5 sibling vectors for the threat class, that is a signal you do not understand the threat well enough to write a robust fix. **STOP and create a `[QUESTION]` task to team-lead** describing the threat class as you understand it, the vectors you found, and what research you tried. Do not proceed with a vector-specific patch.
+
+3. **Adversarial Variants per Acceptance Criterion**
+
+   For each acceptance criterion in the task file, write **at least 3 adversarial test cases**. Adversarial means: tries to make the system fail in ways the AC text does not literally enumerate.
+
+   Adversarial axes to consider (pick the ones relevant to the threat class):
+   - **Boundary values**: empty, single character, max-length, max-length + 1, integer overflow, negative zero
+   - **Encoding tricks**: UTF-8 vs UTF-16, percent-encoding, double-encoding, RTL overrides, zero-width chars, mixed scripts (Cyrillic A vs Latin A), homoglyphs
+   - **Syntax variants of the same logical operation**: alternate keywords (e.g., SQL `JOIN ... USING` vs `JOIN ... ON`), comment styles (`/**/` vs `--`), whitespace variants (tab, NBSP, line separator)
+   - **Concurrency / ordering**: stale read after write, write during read, lock release before commit, retry storm
+   - **Privilege escalation paths**: read endpoint that allows write via batch param, anonymous endpoint that exposes authenticated header echo
+   - **Resource exhaustion**: very deep nesting (recursion limit), very long input (memory), regex catastrophic backtracking
+
+   Each test must use **concrete real input** (the actual byte sequence, the actual SQL string) — not parameterized symbolic placeholders. Reviewers must be able to read the test and see exactly what attack it represents.
+
+4. **Mock Policy for Security-Relevant Categories**
+
+   If `<finding_category> ∈ {security, validation, authorization, data-integrity}`:
+
+   - **Mocks are FORBIDDEN** in any test that exercises the fixed code path. The test must use real dependencies — real database, real HTTP server, real auth provider, real file system. Mocks are the #1 way a security fix passes tests while still being broken: a stub `auth.is_admin()` returns whatever the mock says, regardless of whether the real check is correct.
+   - If the real dependency is genuinely unavailable in the test environment, **STOP and create a `[BLOCKER]` task to team-lead** explaining what's missing (e.g., "test needs a Postgres instance with `BYPASSRLS` role; CI only has SQLite"). The leader decides whether to provision the dependency or accept the residual risk.
+   - This rule overrides the general "mocks acceptable as last resort" guidance in Stage 3A.
+
+5. **File Ownership Check**
+
+   Same decision tree as Stage 3A — only write tests in files listed in `<my_test_files_owned>`. If the test needs to live elsewhere, raise a `[BLOCKER]`.
+
+6. **Run Tests to Confirm They Fail Appropriately**
+
+   All adversarial tests should fail initially against the current code (TDD). If a test passes immediately, that's a signal the threat is already handled there — note it in the test docstring and keep the test as a regression guard rather than removing it.
+
+7. **Send Progress Update**
+
+   ```javascript
+   SendMessage({
+     to: "team-lead",
+     type: "message",
+     content: "Progress on <task_id>: tests_created. Created N adversarial validation tests across <vector_count> sibling vectors of threat class '<threat_class_name>'. All tests FAIL as expected.",
+     summary: "Progress: <task_id> — <N> adversarial tests, threat class '<threat_class_name>'"
+   })
+   ```
+
+**Checkpoint: post-test-batch** — Update working notes with threat class, sibling vectors, tests created, and Next Step.
+
+**After Stage 3D completion, proceed to Stage 4**
 
 ### Stage 4: Tracker File Creation and Finalization
 
