@@ -113,6 +113,7 @@ Load the prior **convergence state ledger** at `eigen_initiative/phases/phase_<p
       "id": "F<n>",
       "sig": "<sha1 of normalized_file|category|normalized_title>",
       "file": "<path>",
+      "symbol": "<symbol or '<file-level>'>",
       "category": "<category>",
       "severity": "P1|P2|P3",
       "title": "<finding title>"
@@ -120,6 +121,8 @@ Load the prior **convergence state ledger** at `eigen_initiative/phases/phase_<p
   ]
 }
 ```
+
+The `sig` formula does NOT include `symbol`. Sig stability across iterations is load-bearing for Stage 2.2's set operations (Persistent / Regressed / New) and Stage 4.6's regression-signature list — adding `symbol` to the sig would invalidate every cross-iteration comparison. `symbol` is a separate grouping field, used only by the oscillation circuit-breaker (below).
 
 This ledger is the source of truth for cross-iteration finding tracking. Stage 2.2's set operations and the oscillation circuit-breaker (below) read from it; Stage 2.4 appends to it.
 
@@ -625,7 +628,7 @@ After Stage 2.2 has computed buckets, compute `file_iteration_counts` for the cu
     "server/ai/tool-dispatcher.ts": 1
   },
   "findings": [
-    { "id": "F<n>", "sig": "<sha1>", "file": "<path>", "category": "<category>", "severity": "P1|P2|P3", "title": "<title>" }
+    { "id": "F<n>", "sig": "<sha1>", "file": "<path>", "symbol": "<symbol or '<file-level>'>", "category": "<category>", "severity": "P1|P2|P3", "title": "<title>" }
   ]
 }
 ```
