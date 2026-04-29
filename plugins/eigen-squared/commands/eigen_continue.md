@@ -87,7 +87,7 @@ Before presenting the summary, classify each epic's `convergence.reason` into **
 | `Maximum review iterations` (residual = 0) | clean | Cap reached AND `findings_history[-1].p1 + p2 + p3 == 0`. Final iteration was genuinely empty. |
 | `Maximum review iterations` (residual > 0) → `CAP_REACHED_WITH_RESIDUAL` | **degraded** | Cap reached BEFORE any rule converged AND `findings_history[-1].p1 + p2 + p3 > 0`. Findings remain in code. **Reclassify the reason internally to `CAP_REACHED_WITH_RESIDUAL`** and treat exactly like the other degraded reasons (re-show in the Degraded Epics section, require typed APPROVE-DEGRADED in Mode 2 confirmation, always promote findings to lessons via Stage 6.1). The PR Stage 7.2 auto-merge SHOULD NOT have fired here in the first place; if it did (legacy state from before this rule), surface a `cap_with_residual_post_merge: true` warning so the user knows to manually inspect the merged PR. |
 | `P3 sweep introduced` (SWEEP_ABORTED) | **degraded** | Sweep introduced new P1/P2; commits auto-reverted. Epic ships at the pre-sweep state with the original residual P3 list. |
-| `CAPPED_BY_OSCILLATION` | **degraded** | Same `(file, category)` pair appeared in ≥ 3 iterations; loop accepted to break the cycle. Findings remain in code. |
+| `CAPPED_BY_OSCILLATION` | **degraded** | Same `(file, symbol, category)` triple appeared in ≥ 3 iterations; loop accepted to break the cycle. Findings remain in code. |
 | `P1_REGRESSION_PERSISTENT` | **degraded** | M1 fired three times; architectural escalation could not stabilize the fix. P1 finding(s) remain in code. |
 | `DIVERGING_LOOP` | **degraded** | M2 fired; `p3` rose while `p1+p2` did not improve. Findings remain in code. |
 
@@ -138,7 +138,7 @@ Do NOT approve this phase until you have manually verified each degraded epic.
     Structured detail: <path to review_convergence_state.json>
     Review reports: eigen_initiative/phases/phase_<N>/epic_<M>/review_report_iteration_*.md
     Recommended check:
-      <if CAPPED_BY_OSCILLATION:>      Inspect the oscillating (file, category) pairs and decide whether the architectural alternative is worth a follow-up epic.
+      <if CAPPED_BY_OSCILLATION:>      Inspect the oscillating (file, symbol, category) triples and decide whether the architectural alternative is worth a follow-up epic.
       <if P1_REGRESSION_PERSISTENT:>   Read the M1 trajectory in review_convergence_state.json.monotonicity (per-iteration prev_p1/current_p1) AND the m1_firings counter in swarm-manifest.json.monotonicity (the firing count that triggered the cap); assess whether the residual P1 should block phase approval.
       <if DIVERGING_LOOP:>             Read the trajectory; the loop did not converge — confirm the residual findings are acceptable for production.
       <if SWEEP_ABORTED:>              Inspect swarm-manifest.json.p3_sweep.regression_signatures to understand which P3 fix attempts introduced regressions.
