@@ -418,7 +418,9 @@ The agent roster is **locked at iteration 0** for the lifetime of the epic's PR.
 
 ### 1.2 Spawn All in Parallel
 
-Each agent receives the scope context and scoped diff. Each returns findings with: severity, category, in-scope justification, location, proposed fix, effort.
+Each agent receives the scope context and scoped diff. Each returns findings with: severity, category, **symbol** (the specific declaration the finding targets — the type / function / class / method / route name; for findings that span the whole file or target non-code artifacts like `eslint.config.mjs`, JSON config, package.json, or markdown, use the literal string `"<file-level>"`; never omit this field, never emit `null`), in-scope justification, location, proposed fix, effort.
+
+**Symbol convention**: use the bare declaration name (`SchemaEnum`, `executeSql`); for methods, use `Class.method` (`BackendProvider.executeSql`); never include parameter lists, signatures, or modifiers; if a finding genuinely spans multiple declarations, pick the most specific one and mention the others in `title`.
 
 **Testing philosophy for agents:** Flag tests that use mocks where real dependencies could be used. Real dependencies preferred, minimal mocks always.
 
@@ -494,6 +496,7 @@ For each unauthorized match, synthesize a finding with the existing scope-contex
 {
   "file": "<path>",
   "line": <post-image line number>,
+  "symbol": "<file-level>",
   "category": "type-safety",
   "severity": "P1",
   "agent": "type-escape-detector",
@@ -503,6 +506,8 @@ For each unauthorized match, synthesize a finding with the existing scope-contex
   "effort": "minutes-to-hours"
 }
 ```
+
+The detector emits `symbol: "<file-level>"` because the regex operates on diff lines without AST context — it has no access to the enclosing declaration's name. File-level grouping is the strongest signal it can justify; a re-introduced same-line escape on a different declaration of the same file is still the same file-level oscillation signal.
 
 Append the synthesized findings to the agent results pool **before** Stage 2.1 begins. Stage 2.1's scope filter, signature computation, prior-discard match, and dedup apply unchanged — the detector's findings are just one more "agent's" input. The signature scheme produces deterministic IDs across iterations, so a re-introduced same-line escape is a Persistent finding (and contributes to the oscillation cap on its third iteration).
 
