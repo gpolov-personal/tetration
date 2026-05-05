@@ -193,6 +193,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--extra-prompt", default="", help="Extra text appended to the task prompt")
 
     # ── validate ──
+    p = sub.add_parser(
+        "show-task",
+        help="Show the TaskRequest payload that would be sent for a command (D7 debug)",
+    )
+    p.add_argument("target_command", help="Command name (e.g. time_split, orchestrate_swarm)")
+    p.add_argument("--initiative", default="", help="Override EIGEN_ROOT (initiative directory)")
+    p.add_argument("--extra-prompt", default="", help="Optional extra_prompt that would be appended/sent")
+    p.add_argument("--json", dest="as_json", action="store_true", help="Output payload as JSON")
+
     p = sub.add_parser("validate", help="Validate pipeline_state.json")
     p.add_argument("--fix", action="store_true", help="Fix missing fields with defaults")
 

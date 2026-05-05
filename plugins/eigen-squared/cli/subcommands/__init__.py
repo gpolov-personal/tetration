@@ -204,6 +204,7 @@ def dispatch(args: Namespace) -> int:
         "resolve-branch": cmd_resolve_branch,
         "checkout-branch": cmd_checkout_branch,
         "schedule-next": cmd_schedule_next,
+        "show-task": cmd_show_task,
         "validate": _with_state_lock(cmd_validate),
         "install": cmd_install,
         "write-env": cmd_write_env,
@@ -1633,6 +1634,77 @@ def cmd_schedule_next(args: Namespace) -> int:
         discord_webhook=os.environ.get("EIGEN_DISCORD_WEBHOOK", ""),
     )
     return 0 if success else 1
+
+
+def cmd_show_task(args: Namespace) -> int:
+    """Read-only: print the TaskRequest payload that would be sent for ``<command>``.
+
+    D7 acceptance gate. Reuses ``eigen_core.cli.scheduler.build_payload`` so what
+    operators inspect matches what ``schedule_command`` POSTs. Also surfaces the
+    profile resolution chain (which YAML files were consulted, what was resolved).
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from eigen_core.cli import profiles
+    from eigen_core.cli.scheduler import SCHEDULE_DELAY_MINUTES, build_payload
+
+    command = args.target_command
+    skill = COMMAND_TO_SKILL.get(command, "")
+    if not skill:
+        print(
+            f"ERROR: unknown command '{command}'. Known: {sorted(COMMAND_TO_SKILL)}",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    eigen_root = args.initiative or _eigen_root()
+    if not eigen_root:
+        print(
+            "ERROR: --initiative not provided and EIGEN_ROOT not set",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    runners_path = Path(eigen_root) / profiles.DOT_DIR / profiles.RUNNERS_FILENAME
+    profiles_path = profiles.PROFILES_PATH
+
+    resolved_profile = profiles.resolve_profile(command, eigen_root)
+    resolved_runner = profiles.runner_for(resolved_profile)
+
+    chain = {
+        "runners_yaml": str(runners_path),
+        "runners_yaml_exists": runners_path.exists(),
+        "profiles_yaml": str(profiles_path),
+        "profiles_yaml_exists": profiles_path.exists(),
+        "resolved_profile": resolved_profile,
+        "resolved_runner": resolved_runner,
+    }
+
+    scheduled_at = (
+        datetime.now(timezone.utc) + timedelta(minutes=SCHEDULE_DELAY_MINUTES)
+    ).isoformat()
+
+    payload = build_payload(
+        command,
+        skill=skill,
+        task_name=f"eigen: {command} (show-task)",
+        eigen_root=eigen_root,
+        scheduled_at=scheduled_at,
+        extra_prompt=getattr(args, "extra_prompt", "") or "",
+    )
+
+    if getattr(args, "as_json", False):
+        print(json.dumps({"resolution": chain, "payload": payload}, indent=2))
+        return 0
+
+    print("Profile resolution:")
+    for k, v in chain.items():
+        print(f"  {k}: {v}")
+    print()
+    print("Payload (would POST to /api/v1/tasks):")
+    for k, v in payload.items():
+        print(f"  {k}: {v}")
+    return 0
 
 
 def cmd_validate(args: Namespace) -> int:
