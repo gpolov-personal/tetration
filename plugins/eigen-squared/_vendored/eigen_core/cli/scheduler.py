@@ -183,16 +183,23 @@ def _compose_prompt(
     For ``runner == "claude"``: returns the skill-invocation text plus the
     optional ``extra_prompt`` (current behaviour, preserved verbatim).
 
-    For ``runner == "opencode"``: returns ``json.dumps(args)`` if provided,
-    otherwise ``extra_prompt`` (which the daemon will pass via
-    ``opencode run --command X --message <text>``). Empty string is legal
-    when ``--command`` is set, so zero-arg commands work without
-    transmitting anything in the prompt body.
+    For ``runner == "opencode"``: combines ``json.dumps(args)`` (when
+    provided) with ``extra_prompt`` (when non-empty), separated by a blank
+    line. The combined form is required because ``extra_prompt`` carries
+    the safety re-run warning written by ``eigen-watchdog.sh`` (RE-RUN
+    notice that tells the model to re-read state before mutating); silently
+    dropping it on opencode runs while keeping it on claude runs would
+    diverge the safety contract by runtime. Empty string is still legal
+    when ``--command`` is set and neither ``args`` nor ``extra_prompt`` are
+    provided, so zero-arg commands keep working.
     """
     runner = profiles.runner_for(profile)
     if runner == "opencode":
         if args:
-            return json.dumps(args)
+            payload = json.dumps(args)
+            if extra_prompt:
+                return f"{payload}\n\n{extra_prompt}"
+            return payload
         return extra_prompt
     prompt = (
         f'Use the Skill tool to invoke Skill("{skill}"). '

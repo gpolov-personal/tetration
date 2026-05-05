@@ -183,6 +183,20 @@ class TestComposePrompt:
         out = _compose_prompt("orchestrate-swarms", "opencode-codex", args={"phase": 3})
         assert json.loads(out) == {"phase": 3}
 
+    def test_opencode_with_args_and_extra_prompt_combines_both(self, claude_profile):
+        # Pins must-fix #1 from PR #33 review: the watchdog's RE-RUN
+        # safety warning rides on extra_prompt; it must NOT be silently
+        # dropped just because args is also set on the opencode runner.
+        out = _compose_prompt(
+            "orchestrate-swarms",
+            "opencode-codex",
+            extra_prompt="RE-RUN: re-read state before mutating",
+            args={"phase": 3, "epic": 1},
+        )
+        head, _, tail = out.partition("\n\n")
+        assert json.loads(head) == {"phase": 3, "epic": 1}
+        assert tail == "RE-RUN: re-read state before mutating"
+
     def test_unknown_profile_treated_as_claude(self, claude_profile):
         out = _compose_prompt("orchestrate-swarms", "missing", extra_prompt="x")
         assert 'Skill("orchestrate-swarms")' in out
