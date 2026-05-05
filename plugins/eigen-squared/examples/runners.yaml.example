@@ -1,0 +1,21 @@
+# `.eigen/runners.yaml` — per-initiative runtime selection
+#
+# Place this file at `<initiative_root>/.eigen/runners.yaml` to control which
+# runtime + model each command uses. Profile names refer to entries in
+# `~/.claude-tasks/profiles.yaml` (the global catalogue).
+#
+# Resolution order for any command:
+#   1. overrides[<command>]            ← per-command pin
+#   2. default_profile                  ← initiative-wide default
+#   3. hardcoded fallback "claude-opus" ← if neither set
+
+# Default runner+model for every command in this initiative.
+default_profile: claude-opus
+
+# Per-command overrides. Use this to push specific commands onto a faster /
+# cheaper runner — e.g. `orchestrate_swarm` under opencode + GPT-5.3 Codex
+# for execution-heavy phases, while planning stays on Claude + Opus.
+overrides:
+  orchestrate_swarm: opencode-codex
+  # code_from_validation_tests_swarm: opencode-codex
+  # review_swarm_pr: claude-sonnet
