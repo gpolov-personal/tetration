@@ -187,6 +187,20 @@ These are places where `team_*` tools behave differently from their Claude Code 
 
 ---
 
+## Permissions / autonomous-mode contract
+
+OpenCode unconditionally denies the `question`, `plan_enter`, and `plan_exit` tools when the leader runs under the eigen-squared profile (`run.ts:359-375`). This is **separate** from `--dangerously-skip-permissions`: the skip flag does not override deny rules, and deny rules win. There is no flag combination that re-enables `question` for the lead.
+
+Practical consequence: **the lead cannot prompt the user for input mid-orchestration**. There is no "ask the operator before proceeding" branch on opencode runner. This is consistent with `orchestrate_swarm`'s existing autonomous-execution contract on Claude Code — team members report to the lead, the lead decides, the operator only sees the final summary. End state matches Claude Code + skip (which auto-approves `question` once); the failure shape differs because on OpenCode the call simply errors instead of being silently auto-approved.
+
+Implications for command authors and skill code:
+
+- Treat any prose that says "ask the user…", "confirm with the operator…", or "wait for approval" as a **bug** when running on opencode. Re-route the decision to the lead's own judgement (the autonomous-mode default) or to a teammate.
+- Do not call `EnterPlanMode` / `ExitPlanMode` from within a swarm. Empirically (audit, 2026-05-04): zero such references exist across the 15 eigen-squared commands and the 12 sub-agents. If they appear in the future, the daemon will reject the run with a typed permission error before the model spawns.
+- If the lead receives such an instruction at runtime anyway (regression in a command body), fail loudly the same way the "Slash-command vs Read distinction" section prescribes: one diagnostic tool call, no silent workaround.
+
+---
+
 ## Single-turn polling pattern (critical on `opencode run`)
 
 `opencode run` is a **single-turn** invocation: the lead session terminates the instant its turn ends with prose. When the lead terminates, **all teammates spawned during that turn are killed mid-work** — their processes die, their `busy` status goes stale in the DB, and pending file writes are lost.
