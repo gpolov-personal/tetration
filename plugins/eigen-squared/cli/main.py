@@ -213,6 +213,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--telegram", help="Telegram chat ID")
     p.add_argument("--slack", help="Slack webhook URL")
     p.add_argument("--discord", help="Discord webhook URL")
+    p.add_argument(
+        "--skip-compat-check",
+        action="store_true",
+        help="Skip the C5 daemon /api/v1/version compatibility check",
+    )
 
     # ── write-env ──
     sub.add_parser("write-env", help="Regenerate .eigen/env from .claude/settings.json")

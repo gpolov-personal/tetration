@@ -1758,6 +1758,28 @@ def cmd_write_env(args: Namespace) -> int:
 
 
 def cmd_install(args: Namespace) -> int:
+    # C5 daemon compat check: refuse to install against a daemon that doesn't
+    # advertise the multi-runtime fields we intend to send. Skipped when the
+    # operator passes --skip-compat-check (e.g. provisioning a host whose
+    # daemon will be upgraded immediately after).
+    if not getattr(args, "skip_compat_check", False):
+        from eigen_core.cli.compat import check_daemon_compat
+
+        compat_result = check_daemon_compat(args.tasks_api)
+        if not compat_result.ok:
+            print(
+                f"ERROR: claude-tasks daemon at {args.tasks_api} is not "
+                f"compatible with this eigen-squared build.\n  {compat_result.reason}",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        print(
+            f"claude-tasks daemon: version={compat_result.version} "
+            f"schema_version={compat_result.schema_version} "
+            f"profiles={compat_result.profiles}",
+            file=sys.stderr,
+        )
+
     root = Path(args.root)
     eigen_dir = root / ".eigen"
     eigen_dir.mkdir(parents=True, exist_ok=True)
