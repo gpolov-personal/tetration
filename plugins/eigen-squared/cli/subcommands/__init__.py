@@ -205,6 +205,7 @@ def dispatch(args: Namespace) -> int:
         "checkout-branch": cmd_checkout_branch,
         "schedule-next": cmd_schedule_next,
         "show-task": cmd_show_task,
+        "sync-opencode": cmd_sync_opencode,
         "validate": _with_state_lock(cmd_validate),
         "install": cmd_install,
         "write-env": cmd_write_env,
@@ -1634,6 +1635,97 @@ def cmd_schedule_next(args: Namespace) -> int:
         discord_webhook=os.environ.get("EIGEN_DISCORD_WEBHOOK", ""),
     )
     return 0 if success else 1
+
+
+def cmd_sync_opencode(args: Namespace) -> int:
+    """Sync plugin assets into ``<eigen_root>/.opencode/``.
+
+    Pipeline (fail-fast at each step):
+
+    1. Pre-flight: ``shutil.which("opencode")`` and a non-fatal warning
+       if ``opencode auth login`` has not been run.
+    2. **C8** — query daemon for active opencode runs; refuse if any.
+    3. Copy ``commands/``, ``skills/``, ``agents/`` from the plugin
+       source into ``.opencode/`` (with **B5** symlink-escape rejection).
+    4. **C2** — regenerate ``.opencode/ensemble.json`` from
+       ``runners.yaml`` (single source of truth).
+    5. **C7 + D10** — drop ``.sync_ok`` sentinel manifest.
+    """
+    import shutil as _shutil
+    from urllib import error as urlerror, request as urlrequest
+
+    from ..sync import (
+        SyncError,
+        copy_assets,
+        generate_ensemble_json,
+        opencode_auth_ok,
+        plugin_root,
+        write_sync_sentinel,
+    )
+    from eigen_core.cli import profiles as profiles_mod
+
+    root = Path(args.root or _eigen_root())
+    if not root or not root.exists():
+        print("ERROR: --root not provided and EIGEN_ROOT not set or invalid",
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    target = root / ".opencode"
+
+    # Pre-flight 1: opencode CLI on PATH.
+    if not _shutil.which("opencode"):
+        print("ERROR: 'opencode' CLI not found on PATH. Install it before "
+              "running sync-opencode.", file=sys.stderr)
+        return EXIT_ERROR
+
+    # Pre-flight 2: warn (not abort) when auth.json is missing.
+    if not opencode_auth_ok():
+        print(
+            "WARNING: ~/.local/share/opencode/auth.json missing or empty. "
+            "Run `opencode auth login` before scheduling opencode tasks.",
+            file=sys.stderr,
+        )
+
+    # C8: refuse if any opencode-profile run is in flight.
+    api = args.tasks_api or os.environ.get("CLAUDE_TASKS_API", "")
+    if api and not getattr(args, "skip_active_check", False):
+        try:
+            url = api.rstrip("/") + "/api/v1/runs/active?profile_prefix=opencode-"
+            with urlrequest.urlopen(url, timeout=5) as resp:
+                data = json.loads(resp.read())
+            if (data.get("total") or 0) > 0:
+                print(
+                    f"ERROR: refusing to sync — {data['total']} opencode "
+                    f"task_run(s) still active. Wait for them to finish or "
+                    f"pass --skip-active-check.",
+                    file=sys.stderr,
+                )
+                return EXIT_ERROR
+        except (urlerror.URLError, TimeoutError, OSError) as e:
+            print(
+                f"WARNING: could not query active runs at {api}: {e}. "
+                "Proceeding without C8 check.", file=sys.stderr,
+            )
+
+    plugin_source = plugin_root()
+    profiles_path = profiles_mod.PROFILES_PATH
+
+    try:
+        file_counts = copy_assets(plugin_source, target)
+        ensemble = generate_ensemble_json(root, target, profiles_path)
+        sentinel_path = write_sync_sentinel(target, plugin_source, file_counts, ensemble)
+    except SyncError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(json.dumps({
+        "status": "synced",
+        "target": str(target),
+        "files": file_counts,
+        "ensemble": ensemble,
+        "sentinel": str(sentinel_path),
+    }))
+    return 0
 
 
 def cmd_show_task(args: Namespace) -> int:

@@ -194,6 +194,18 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── validate ──
     p = sub.add_parser(
+        "sync-opencode",
+        help="Sync plugin assets into <eigen_root>/.opencode/ (Fase 3 sync cluster)",
+    )
+    p.add_argument("--root", default="", help="Initiative root (defaults to EIGEN_ROOT)")
+    p.add_argument("--tasks-api", default="", help="claude-tasks API URL (defaults to CLAUDE_TASKS_API)")
+    p.add_argument(
+        "--skip-active-check",
+        action="store_true",
+        help="Skip the C8 GET /api/v1/runs/active refuse-if-running gate",
+    )
+
+    p = sub.add_parser(
         "show-task",
         help="Show the TaskRequest payload that would be sent for a command (D7 debug)",
     )
