@@ -1687,26 +1687,33 @@ def cmd_sync_opencode(args: Namespace) -> int:
             file=sys.stderr,
         )
 
-    # C8: refuse if any opencode-profile run is in flight.
+    # C8: refuse if any opencode-profile run is in flight. Fail CLOSED on
+    # transport / parse errors — the alternative ("warn and proceed") was
+    # the original implementation, but it lets a daemon outage silently
+    # disable the gate. With C7's `.opencode/` rmtree+rebuild flow that
+    # window is exactly when sync would corrupt a live task. Operators
+    # who want to bypass have --skip-active-check.
     api = args.tasks_api or os.environ.get("CLAUDE_TASKS_API", "")
     if api and not getattr(args, "skip_active_check", False):
         try:
             url = api.rstrip("/") + "/api/v1/runs/active?profile_prefix=opencode-"
             with urlrequest.urlopen(url, timeout=5) as resp:
                 data = json.loads(resp.read())
-            if (data.get("total") or 0) > 0:
-                print(
-                    f"ERROR: refusing to sync — {data['total']} opencode "
-                    f"task_run(s) still active. Wait for them to finish or "
-                    f"pass --skip-active-check.",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-        except (urlerror.URLError, TimeoutError, OSError) as e:
+        except (urlerror.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
             print(
-                f"WARNING: could not query active runs at {api}: {e}. "
-                "Proceeding without C8 check.", file=sys.stderr,
+                f"ERROR: could not query active runs at {api}: {e}. "
+                "Pass --skip-active-check to override.",
+                file=sys.stderr,
             )
+            return EXIT_ERROR
+        if (data.get("total") or 0) > 0:
+            print(
+                f"ERROR: refusing to sync — {data['total']} opencode "
+                f"task_run(s) still active. Wait for them to finish or "
+                f"pass --skip-active-check.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
 
     plugin_source = plugin_root()
     profiles_path = profiles_mod.PROFILES_PATH
