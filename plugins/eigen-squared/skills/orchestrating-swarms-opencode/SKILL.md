@@ -146,6 +146,20 @@ If a `team_spawn` fails with `agent not found`, the cause is almost always a mis
 
 ---
 
+## Agent pool — keep all 12
+
+Three of the 12 sub-agents shipped with eigen-squared do not appear as static references in any `commands/*.md`:
+
+- `framework-docs-researcher`
+- `git-history-analyzer`
+- `repo-research-analyst`
+
+They are **not** orphans. The `orchestrating-swarms` skill (and this skill, by extension) invokes them dynamically via `team_spawn({ agent: "<id>" })` when the swarm leader determines a task needs them — typically during exploratory or research-heavy phases (e.g. "before changing the auth path, spawn `framework-docs-researcher` to confirm the Pydantic v2 migration semantics").
+
+The eigen-squared `cmd_sync_opencode` reflects this by copying the entire `agents/` directory verbatim, **without filtering** by command-side static references. If a future contributor adds a "we only need the agents the commands actually use" pruning step, dynamic spawning silently breaks. Keep all 12. The sentinel manifest's `files.agents` count is the operator-visible canary that nothing was filtered.
+
+---
+
 ## Argument rename cheat sheet
 
 When translating call sites, adjust arg names too:
