@@ -211,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("target_command", help="Command name (e.g. time_split, orchestrate_swarm)")
     p.add_argument("--initiative", default="", help="Override EIGEN_ROOT (initiative directory)")
+    p.add_argument("--phase", type=int, help="Phase number (matches schedule_command scope)")
+    p.add_argument("--epic", type=int, help="Epic number (matches schedule_command scope)")
     p.add_argument("--extra-prompt", default="", help="Optional extra_prompt that would be appended/sent")
     p.add_argument("--json", dest="as_json", action="store_true", help="Output payload as JSON")
 

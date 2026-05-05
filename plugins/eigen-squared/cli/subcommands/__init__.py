@@ -1750,11 +1750,19 @@ def cmd_show_task(args: Namespace) -> int:
     D7 acceptance gate. Reuses ``eigen_core.cli.scheduler.build_payload`` so what
     operators inspect matches what ``schedule_command`` POSTs. Also surfaces the
     profile resolution chain (which YAML files were consulted, what was resolved).
+
+    The task_name is formatted via ``_format_task_name`` exactly like the
+    production scheduling path so debugging "why does my run get this name?"
+    against a stuck task in the daemon DB matches what show-task previewed.
+    --phase / --epic determine the scope (initiative → phase → epic) the
+    same way schedule_command's caller does.
     """
     from datetime import datetime, timedelta, timezone
 
     from eigen_core.cli import profiles
     from eigen_core.cli.scheduler import SCHEDULE_DELAY_MINUTES, build_payload
+
+    from ..scheduler import _format_task_name
 
     command = args.target_command
     skill = COMMAND_TO_SKILL.get(command, "")
@@ -1772,6 +1780,28 @@ def cmd_show_task(args: Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_ERROR
+
+    # Build the context dict that schedule_command expects so the
+    # task_name we format matches the production format. Three scopes,
+    # selected by which of {--phase, --epic} were passed:
+    #   neither → initiative-scope     ("eigen: <cmd>")
+    #   phase only → phase-scope       ("eigen: <cmd> P<n>")
+    #   phase + epic → epic-scope      ("eigen: <cmd> P<n>.E<n>")
+    phase = getattr(args, "phase", None)
+    epic = getattr(args, "epic", None)
+    if epic is not None and phase is None:
+        print(
+            "ERROR: --epic requires --phase (epics are scoped within phases)",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    if epic is not None:
+        scope = "epic"
+    elif phase is not None:
+        scope = "phase"
+    else:
+        scope = "initiative"
+    context = {"scope": scope, "phase": phase, "epic": epic}
 
     runners_path = Path(eigen_root) / profiles.DOT_DIR / profiles.RUNNERS_FILENAME
     profiles_path = profiles.PROFILES_PATH
@@ -1795,7 +1825,7 @@ def cmd_show_task(args: Namespace) -> int:
     payload = build_payload(
         command,
         skill=skill,
-        task_name=f"eigen: {command} (show-task)",
+        task_name=_format_task_name(command, context),
         eigen_root=eigen_root,
         scheduled_at=scheduled_at,
         extra_prompt=getattr(args, "extra_prompt", "") or "",
