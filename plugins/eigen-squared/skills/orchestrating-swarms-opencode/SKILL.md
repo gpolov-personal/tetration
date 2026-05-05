@@ -101,6 +101,51 @@ The bridge skills (`design_validation_tests_swarm` and `code_from_validation_tes
 
 ---
 
+## Slash-command vs Read distinction
+
+If the daemon-injected prompt instructs the **lead** session to read a command file (e.g. "Read `.opencode/commands/orchestrate_swarm.md` and execute it"), that is a bug in the prompt-composition layer, not a workflow you should follow. The daemon is supposed to invoke commands via `opencode run --command <name>`, which lets OpenCode handle frontmatter, hooks, and `$ARGUMENTS` substitution natively. Inlining the command body via `Read` produces neither.
+
+When you see this on the lead, do **not** silently work around it by reading the file. Fail loudly with a single tool call (e.g. a `Bash` echoing the diagnosis) so the operator notices the daemon-side regression and re-runs `eigen-squared sync-opencode` / upgrades claude-tasks.
+
+**Note**: this rule is for the **lead** session under `opencode run --command …`. Teammates spawned via the bridge skills (`design_validation_tests_swarm`, `code_from_validation_tests_swarm`) intentionally `read` the target command file inline because they cannot invoke `opencode run` from inside their own session — that path is documented in the "Skill(...) invocations" section above.
+
+---
+
+## Model selection rule for team_spawn
+
+Eigen-squared command prose often instructs the lead to spawn a teammate "using model **X**". On Claude Code that maps to `Agent({ model: X })` and inheritance from the lead is also possible. **On OpenCode + ensemble there is no inheritance from the lead.** `team_spawn` resolves the worker model via:
+
+```
+explicit `model` arg
+  → ensemble.json `modelsByAgent[<agent>]`
+  → ensemble.json `modelAssignment` pool (rotate / random)
+  → ensemble.json `defaultModel`
+  → undefined (hard fail at spawn time)
+```
+
+The lead's own model is never consulted. Two rules to translate the prose correctly:
+
+1. **Literal model names** (e.g. "using model `opus`", `sonnet`, `haiku`, `gpt-5`): **omit** the `model` param in `team_spawn`. The eigen-squared sync (`sync-opencode`) writes `.opencode/ensemble.json` with `defaultModel = <profile-model>` matching whatever runner the daemon chose. Inheritance happens through `defaultModel`, not through the lead. Per-agent overrides go in `runners.yaml.models_by_agent` → `ensemble.json.modelsByAgent`, not in the spawn call.
+
+2. **Variable model names** (e.g. `<worker_model>`, `${WORKER_MODEL}`, anything wrapped in `<…>` or `${…}`): **respect** the variable as an explicit selection and pass it through: `team_spawn({ …, model: "<worker_model_value>" })`. The variable was filled in by the daemon at spawn time precisely because that decision is intentional, not boilerplate.
+
+If a `team_spawn` fails with `spawn:model:invalid`, the most common cause is `defaultModel` lacking a `provider/` prefix in `ensemble.json` — see Troubleshooting.
+
+---
+
+## Agent ID resolution
+
+On Claude Code, agent definitions live under `<plugin>/agents/<id>.md` and are resolved via the plugin loader. On OpenCode, `team_spawn({ agent: "<id>" })` requires the definition to be visible at one of:
+
+- `.opencode/agent/<id>.md`
+- `.opencode/agents/<id>.md`
+
+Both paths are first-class — the OpenCode loader globs `{agent,agents}/**/*.md`. The eigen-squared sync writes the **plural** form (`.opencode/agents/`) for consistency with `commands/` and `skills/`.
+
+If a `team_spawn` fails with `agent not found`, the cause is almost always a missing or stale sync. Escalate via `team_message({ to: "lead", text: "FAIL: agent <id> not found — run \`eigen-squared sync-opencode\` from the project root" })` rather than substituting a different agent.
+
+---
+
 ## Argument rename cheat sheet
 
 When translating call sites, adjust arg names too:
