@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+from eigen_core.cli import profiles
+
 
 MAX_COMMAND_RETRIES = 4
 MAX_SCHEDULE_FAILURES = 10
@@ -170,6 +172,81 @@ def check_retry(
     return True, 1
 
 
+def _compose_prompt(
+    skill: str,
+    profile: str,
+    extra_prompt: str = "",
+    args: Optional[dict] = None,
+) -> str:
+    """Compose the ``prompt`` field of TaskRequest, runtime-aware.
+
+    For ``runner == "claude"``: returns the skill-invocation text plus the
+    optional ``extra_prompt`` (current behaviour, preserved verbatim).
+
+    For ``runner == "opencode"``: returns ``json.dumps(args)`` if provided,
+    otherwise ``extra_prompt`` (which the daemon will pass via
+    ``opencode run --command X --message <text>``). Empty string is legal
+    when ``--command`` is set, so zero-arg commands work without
+    transmitting anything in the prompt body.
+    """
+    runner = profiles.runner_for(profile)
+    if runner == "opencode":
+        if args:
+            return json.dumps(args)
+        return extra_prompt
+    prompt = (
+        f'Use the Skill tool to invoke Skill("{skill}"). '
+        f"Follow all its instructions completely."
+    )
+    if extra_prompt:
+        prompt += f"\n\n{extra_prompt}"
+    return prompt
+
+
+def build_payload(
+    command: str,
+    *,
+    skill: str,
+    task_name: str,
+    eigen_root: str,
+    scheduled_at: str,
+    extra_prompt: str = "",
+    telegram_chat_id: str = "",
+    slack_webhook: str = "",
+    discord_webhook: str = "",
+    profile: str = "",
+    args: Optional[dict] = None,
+) -> dict:
+    """Build the TaskRequest body sent to ``POST /api/v1/tasks``.
+
+    Shared by :func:`schedule_command` (production) and
+    ``eigen-squared show-task`` (D7 read-only debug helper) so what the
+    operator inspects matches what actually gets POSTed.
+
+    ``profile`` is resolved via :func:`profiles.resolve_profile` when the
+    caller does not supply one explicitly.
+    """
+    resolved_profile = profile or profiles.resolve_profile(command, eigen_root)
+
+    payload: dict = {
+        "name": task_name,
+        "prompt": _compose_prompt(skill, resolved_profile, extra_prompt, args),
+        "command_name": profiles.command_name_for(command, resolved_profile),
+        "profile": resolved_profile,
+        "cron_expr": "",
+        "scheduled_at": scheduled_at,
+        "working_dir": eigen_root,
+        "enabled": True,
+    }
+    if telegram_chat_id:
+        payload["telegram_webhook"] = telegram_chat_id
+    if slack_webhook:
+        payload["slack_webhook"] = slack_webhook
+    if discord_webhook:
+        payload["discord_webhook"] = discord_webhook
+    return payload
+
+
 def schedule_command(
     command: str,
     *,
@@ -185,6 +262,8 @@ def schedule_command(
     slack_webhook: str = "",
     discord_webhook: str = "",
     attempt: int = 1,
+    profile: str = "",
+    args: Optional[dict] = None,
 ) -> bool:
     """Schedule a command via the claude-tasks API.
 
@@ -199,27 +278,19 @@ def schedule_command(
         datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
     ).isoformat()
 
-    prompt = (
-        f'Use the Skill tool to invoke Skill("{skill}"). '
-        f"Follow all its instructions completely."
+    payload = build_payload(
+        command,
+        skill=skill,
+        task_name=task_name,
+        eigen_root=eigen_root,
+        scheduled_at=scheduled_at,
+        extra_prompt=extra_prompt,
+        telegram_chat_id=telegram_chat_id,
+        slack_webhook=slack_webhook,
+        discord_webhook=discord_webhook,
+        profile=profile,
+        args=args,
     )
-    if extra_prompt:
-        prompt += f"\n\n{extra_prompt}"
-
-    payload: dict = {
-        "name": task_name,
-        "prompt": prompt,
-        "cron_expr": "",
-        "scheduled_at": scheduled_at,
-        "working_dir": eigen_root,
-        "enabled": True,
-    }
-    if telegram_chat_id:
-        payload["telegram_webhook"] = telegram_chat_id
-    if slack_webhook:
-        payload["slack_webhook"] = slack_webhook
-    if discord_webhook:
-        payload["discord_webhook"] = discord_webhook
 
     log_entry(
         hook_log,
