@@ -91,7 +91,26 @@ def check_daemon_compat(
             reason=f"daemon at {url} returned non-object response: {type(data).__name__}",
         )
 
-    supports = data.get("supports") or []
+    # Type-check supports/profiles fields explicitly. ``data.get("supports")``
+    # is whatever the daemon serialised — if it's a string ("profile"
+    # instead of ["profile"]) the membership check below would silently
+    # do substring matching, and ``list("profile")`` would explode into
+    # characters. Defensive isinstance saves a class of confusing
+    # failures when a daemon ships with a bad shape.
+    supports_raw = data.get("supports") or []
+    profiles_raw = data.get("profiles") or []
+    if not isinstance(supports_raw, list) or not isinstance(profiles_raw, list):
+        return CompatResult(
+            ok=False,
+            reason=(
+                f"daemon at {url} returned malformed shape: "
+                f"supports={type(supports_raw).__name__}, "
+                f"profiles={type(profiles_raw).__name__} (expected list, list)"
+            ),
+        )
+    supports = [str(s) for s in supports_raw]
+    profiles = [str(p) for p in profiles_raw]
+
     missing = [c for c in required_supports if c not in supports]
     if missing:
         return CompatResult(
@@ -103,14 +122,14 @@ def check_daemon_compat(
             ),
             version=data.get("version", ""),
             schema_version=int(data.get("schema_version") or 0),
-            supports=list(supports),
-            profiles=list(data.get("profiles") or []),
+            supports=supports,
+            profiles=profiles,
         )
 
     return CompatResult(
         ok=True,
         version=data.get("version", ""),
         schema_version=int(data.get("schema_version") or 0),
-        supports=list(supports),
-        profiles=list(data.get("profiles") or []),
+        supports=supports,
+        profiles=profiles,
     )

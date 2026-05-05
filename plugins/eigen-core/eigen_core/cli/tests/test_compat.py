@@ -114,3 +114,34 @@ def test_non_object_response():
         result = compat.check_daemon_compat(url)
     assert result.ok is False
     assert "non-object" in result.reason
+
+
+def test_malformed_supports_field_rejected():
+    """A daemon that ships with supports='profile' (string instead of
+    list) would silently pass the membership check via substring match.
+    Force a typed error instead."""
+    payload = {
+        "version": "buggy",
+        "schema_version": 2,
+        "supports": "profile",  # WRONG: should be a list
+        "profiles": [],
+    }
+    with fake_daemon(payload) as url:
+        result = compat.check_daemon_compat(url)
+    assert result.ok is False
+    assert "malformed shape" in result.reason
+    assert "supports=str" in result.reason
+
+
+def test_malformed_profiles_field_rejected():
+    payload = {
+        "version": "buggy",
+        "schema_version": 2,
+        "supports": list(compat.DEFAULT_REQUIRED_SUPPORTS),
+        "profiles": "claude-opus",  # WRONG: should be a list
+    }
+    with fake_daemon(payload) as url:
+        result = compat.check_daemon_compat(url)
+    assert result.ok is False
+    assert "malformed shape" in result.reason
+    assert "profiles=str" in result.reason
