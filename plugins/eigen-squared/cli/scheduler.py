@@ -65,8 +65,16 @@ def schedule_command(
     telegram_chat_id: str = "",
     slack_webhook: str = "",
     discord_webhook: str = "",
+    profile: str = "",
+    args: dict | None = None,
 ) -> bool:
-    """Resolve squared-specific skill + task name, then delegate to core."""
+    """Resolve squared-specific skill + task name, then delegate to core.
+
+    ``profile`` is optional: when omitted, the core resolves it from
+    ``<eigen_root>/.eigen/runners.yaml`` (overrides → default_profile →
+    hardcoded ``claude-opus``). ``args`` is reserved for future arg-taking
+    opencode commands; passed through verbatim today.
+    """
     skill = COMMAND_TO_SKILL.get(command, "")
     if not skill:
         return False
@@ -87,4 +95,6 @@ def schedule_command(
         slack_webhook=slack_webhook,
         discord_webhook=discord_webhook,
         attempt=context.get("_attempt", 1),
+        profile=profile,
+        args=args,
     )
