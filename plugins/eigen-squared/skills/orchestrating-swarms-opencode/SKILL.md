@@ -101,6 +101,65 @@ The bridge skills (`design_validation_tests_swarm` and `code_from_validation_tes
 
 ---
 
+## Slash-command vs Read distinction
+
+If the daemon-injected prompt instructs the **lead** session to read a command file (e.g. "Read `.opencode/commands/orchestrate_swarm.md` and execute it"), that is a bug in the prompt-composition layer, not a workflow you should follow. The daemon is supposed to invoke commands via `opencode run --command <name>`, which lets OpenCode handle frontmatter, hooks, and `$ARGUMENTS` substitution natively. Inlining the command body via `Read` produces neither.
+
+When you see this on the lead, do **not** silently work around it by reading the file. Fail loudly with a single tool call (e.g. a `Bash` echoing the diagnosis) so the operator notices the daemon-side regression and re-runs `eigen-squared sync-opencode` / upgrades claude-tasks.
+
+**Note**: this rule is for the **lead** session under `opencode run --command …`. Teammates spawned via the bridge skills (`design_validation_tests_swarm`, `code_from_validation_tests_swarm`) intentionally `read` the target command file inline because they cannot invoke `opencode run` from inside their own session — that path is documented in the "Skill(...) invocations" section above.
+
+---
+
+## Model selection rule for team_spawn
+
+Eigen-squared command prose often instructs the lead to spawn a teammate "using model **X**". On Claude Code that maps to `Agent({ model: X })` and inheritance from the lead is also possible. **On OpenCode + ensemble there is no inheritance from the lead.** `team_spawn` resolves the worker model via:
+
+```
+explicit `model` arg
+  → ensemble.json `modelsByAgent[<agent>]`
+  → ensemble.json `modelAssignment` pool (rotate / random)
+  → ensemble.json `defaultModel`
+  → undefined (hard fail at spawn time)
+```
+
+The lead's own model is never consulted. Two rules to translate the prose correctly:
+
+1. **Literal model names** (e.g. "using model `opus`", `sonnet`, `haiku`, `gpt-5`): **omit** the `model` param in `team_spawn`. The eigen-squared sync (`sync-opencode`) writes `.opencode/ensemble.json` with `defaultModel = <profile-model>` matching whatever runner the daemon chose. Inheritance happens through `defaultModel`, not through the lead. Per-agent overrides go in `runners.yaml.models_by_agent` → `ensemble.json.modelsByAgent`, not in the spawn call.
+
+2. **Variable model names** (e.g. `<worker_model>`, `${WORKER_MODEL}`, anything wrapped in `<…>` or `${…}`): **respect** the variable as an explicit selection and pass it through: `team_spawn({ …, model: "<worker_model_value>" })`. The variable was filled in by the daemon at spawn time precisely because that decision is intentional, not boilerplate.
+
+If a `team_spawn` fails with `spawn:model:invalid`, the most common cause is `defaultModel` lacking a `provider/` prefix in `ensemble.json` — see Troubleshooting.
+
+---
+
+## Agent ID resolution
+
+On Claude Code, agent definitions live under `<plugin>/agents/<id>.md` and are resolved via the plugin loader. On OpenCode, `team_spawn({ agent: "<id>" })` requires the definition to be visible at one of:
+
+- `.opencode/agent/<id>.md`
+- `.opencode/agents/<id>.md`
+
+Both paths are first-class — the OpenCode loader globs `{agent,agents}/**/*.md`. The eigen-squared sync writes the **plural** form (`.opencode/agents/`) for consistency with `commands/` and `skills/`.
+
+If a `team_spawn` fails with `agent not found`, the cause is almost always a missing or stale sync. Escalate via `team_message({ to: "lead", text: "FAIL: agent <id> not found — run \`eigen-squared sync-opencode\` from the project root" })` rather than substituting a different agent.
+
+---
+
+## Agent pool — keep all 12
+
+Three of the 12 sub-agents shipped with eigen-squared do not appear as static references in any `commands/*.md`:
+
+- `framework-docs-researcher`
+- `git-history-analyzer`
+- `repo-research-analyst`
+
+They are **not** orphans. The `orchestrating-swarms` skill (and this skill, by extension) invokes them dynamically via `team_spawn({ agent: "<id>" })` when the swarm leader determines a task needs them — typically during exploratory or research-heavy phases (e.g. "before changing the auth path, spawn `framework-docs-researcher` to confirm the Pydantic v2 migration semantics").
+
+The eigen-squared `cmd_sync_opencode` reflects this by copying the entire `agents/` directory verbatim, **without filtering** by command-side static references. If a future contributor adds a "we only need the agents the commands actually use" pruning step, dynamic spawning silently breaks. Keep all 12. The sentinel manifest's `files.agents` count is the operator-visible canary that nothing was filtered.
+
+---
+
 ## Argument rename cheat sheet
 
 When translating call sites, adjust arg names too:
@@ -139,6 +198,20 @@ These are places where `team_*` tools behave differently from their Claude Code 
 8. **No auto-restart after crash**: if OpenCode restarts mid-swarm, stale busy members are marked as errored, orphaned sessions aborted, undelivered messages re-delivered. Teammates themselves do **not** auto-restart. The lead must re-spawn them if the swarm should continue.
 
 9. **Shell env vars injected into teammates**: each teammate's shell gets `ENSEMBLE_TEAM`, `ENSEMBLE_MEMBER`, `ENSEMBLE_ROLE`, `ENSEMBLE_BRANCH`. Useful for identifying self in bash commands.
+
+---
+
+## Permissions / autonomous-mode contract
+
+OpenCode unconditionally denies the `question`, `plan_enter`, and `plan_exit` tools when the leader runs under the eigen-squared profile (`run.ts:359-375`). This is **separate** from `--dangerously-skip-permissions`: the skip flag does not override deny rules, and deny rules win. There is no flag combination that re-enables `question` for the lead.
+
+Practical consequence: **the lead cannot prompt the user for input mid-orchestration**. There is no "ask the operator before proceeding" branch on opencode runner. This is consistent with `orchestrate_swarm`'s existing autonomous-execution contract on Claude Code — team members report to the lead, the lead decides, the operator only sees the final summary. End state matches Claude Code + skip (which auto-approves `question` once); the failure shape differs because on OpenCode the call simply errors instead of being silently auto-approved.
+
+Implications for command authors and skill code:
+
+- Treat any prose that says "ask the user…", "confirm with the operator…", or "wait for approval" as a **bug** when running on opencode. Re-route the decision to the lead's own judgement (the autonomous-mode default) or to a teammate.
+- Do not call `EnterPlanMode` / `ExitPlanMode` from within a swarm. Empirically (audit, 2026-05-04): zero such references exist across the 15 eigen-squared commands and the 12 sub-agents. If they appear in the future, the daemon will reject the run with a typed permission error before the model spawns.
+- If the lead receives such an instruction at runtime anyway (regression in a command body), fail loudly the same way the "Slash-command vs Read distinction" section prescribes: one diagnostic tool call, no silent workaround.
 
 ---
 

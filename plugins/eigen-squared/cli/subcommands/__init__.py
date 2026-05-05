@@ -204,6 +204,8 @@ def dispatch(args: Namespace) -> int:
         "resolve-branch": cmd_resolve_branch,
         "checkout-branch": cmd_checkout_branch,
         "schedule-next": cmd_schedule_next,
+        "show-task": cmd_show_task,
+        "sync-opencode": cmd_sync_opencode,
         "validate": _with_state_lock(cmd_validate),
         "install": cmd_install,
         "write-env": cmd_write_env,
@@ -1635,6 +1637,239 @@ def cmd_schedule_next(args: Namespace) -> int:
     return 0 if success else 1
 
 
+def cmd_sync_opencode(args: Namespace) -> int:
+    """Sync plugin assets into ``<eigen_root>/.opencode/``.
+
+    Pipeline (fail-fast at each step):
+
+    1. Pre-flight: ``shutil.which("opencode")`` and a non-fatal warning
+       if ``opencode auth login`` has not been run.
+    2. **C8** — query daemon for active opencode runs; refuse if any.
+    3. Copy ``commands/``, ``skills/``, ``agents/`` from the plugin
+       source into ``.opencode/`` (with **B5** symlink-escape rejection).
+    4. **C2** — regenerate ``.opencode/ensemble.json`` from
+       ``runners.yaml`` (single source of truth).
+    5. **C7 + D10** — drop ``.sync_ok`` sentinel manifest.
+    """
+    import shutil as _shutil
+
+    from ..sync import (
+        SyncError,
+        copy_assets,
+        generate_ensemble_json,
+        invalidate_sync_sentinel,
+        opencode_auth_ok,
+        plugin_root,
+        write_sync_sentinel,
+    )
+    from eigen_core.cli import compat as _compat
+    from eigen_core.cli import profiles as profiles_mod
+
+    root = Path(args.root or _eigen_root())
+    if not root or not root.exists():
+        print("ERROR: --root not provided and EIGEN_ROOT not set or invalid",
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    target = root / ".opencode"
+
+    # Pre-flight 1: opencode CLI on PATH.
+    if not _shutil.which("opencode"):
+        print("ERROR: 'opencode' CLI not found on PATH. Install it before "
+              "running sync-opencode.", file=sys.stderr)
+        return EXIT_ERROR
+
+    # Pre-flight 2: warn (not abort) when auth.json is missing.
+    if not opencode_auth_ok():
+        print(
+            "WARNING: ~/.local/share/opencode/auth.json missing or empty. "
+            "Run `opencode auth login` before scheduling opencode tasks.",
+            file=sys.stderr,
+        )
+
+    # C8: refuse if any opencode-profile run is in flight. Fail CLOSED on
+    # transport / parse errors — the alternative ("warn and proceed") was
+    # the original implementation, but it lets a daemon outage silently
+    # disable the gate. With C7's `.opencode/` rmtree+rebuild flow that
+    # window is exactly when sync would corrupt a live task. Operators
+    # who want to bypass have --skip-active-check.
+    api = args.tasks_api or os.environ.get("CLAUDE_TASKS_API", "")
+    if api and not getattr(args, "skip_active_check", False):
+        result = _compat.check_active_runs(api, profile_prefix="opencode-")
+        if not result.ok:
+            print(
+                f"ERROR: {result.reason}. Pass --skip-active-check to override.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        if result.total > 0:
+            print(
+                f"ERROR: refusing to sync — {result.total} opencode "
+                f"task_run(s) still active. Wait for them to finish or "
+                f"pass --skip-active-check.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
+    plugin_source = plugin_root()
+    profiles_path = profiles_mod.PROFILES_PATH
+
+    target.mkdir(parents=True, exist_ok=True)
+
+    # Serialize concurrent sync-opencode invocations on the same
+    # initiative root. Without this lock, two operators (or a script +
+    # cron) running sync at the same time would race on rmtree +
+    # copytree and could corrupt asset trees mid-rebuild — leaving
+    # neither the old nor the new state but a torn merge of both.
+    # Non-blocking exclusive flock on .opencode/.sync.lock: the second
+    # caller refuses immediately rather than queueing (queueing would
+    # invite long-tail latency hangs and surprise on Ctrl-C).
+    import fcntl
+    lock_path = target / ".sync.lock"
+    lock_fd = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(
+            f"ERROR: another `eigen-squared sync-opencode` already "
+            f"holds {lock_path}. Wait for it to finish.",
+            file=sys.stderr,
+        )
+        lock_fd.close()
+        return EXIT_ERROR
+
+    try:
+        # Invalidate the previous sentinel BEFORE touching any asset trees.
+        # If the sync crashes/SIGKILLs partway through, the absence of
+        # .sync_ok keeps the executor's pre-spawn check fail-closed; the
+        # alternative (leaving the old sentinel in place) would falsely
+        # advertise readiness for a half-rebuilt .opencode/.
+        invalidate_sync_sentinel(target)
+
+        try:
+            file_counts = copy_assets(
+                plugin_source, target, force=getattr(args, "force", False),
+            )
+            ensemble = generate_ensemble_json(root, target, profiles_path)
+            sentinel_path = write_sync_sentinel(target, plugin_source, file_counts, ensemble)
+        except SyncError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return EXIT_ERROR
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+
+    print(json.dumps({
+        "status": "synced",
+        "target": str(target),
+        "files": file_counts,
+        "ensemble": ensemble,
+        "sentinel": str(sentinel_path),
+    }))
+    return 0
+
+
+def cmd_show_task(args: Namespace) -> int:
+    """Read-only: print the TaskRequest payload that would be sent for ``<command>``.
+
+    D7 acceptance gate. Reuses ``eigen_core.cli.scheduler.build_payload`` so what
+    operators inspect matches what ``schedule_command`` POSTs. Also surfaces the
+    profile resolution chain (which YAML files were consulted, what was resolved).
+
+    The task_name is formatted via ``_format_task_name`` exactly like the
+    production scheduling path so debugging "why does my run get this name?"
+    against a stuck task in the daemon DB matches what show-task previewed.
+    --phase / --epic determine the scope (initiative → phase → epic) the
+    same way schedule_command's caller does.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from eigen_core.cli import profiles
+    from eigen_core.cli.scheduler import SCHEDULE_DELAY_MINUTES, build_payload
+
+    from ..scheduler import _format_task_name
+
+    command = args.target_command
+    skill = COMMAND_TO_SKILL.get(command, "")
+    if not skill:
+        print(
+            f"ERROR: unknown command '{command}'. Known: {sorted(COMMAND_TO_SKILL)}",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    eigen_root = args.initiative or _eigen_root()
+    if not eigen_root:
+        print(
+            "ERROR: --initiative not provided and EIGEN_ROOT not set",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    # Build the context dict that schedule_command expects so the
+    # task_name we format matches the production format. Three scopes,
+    # selected by which of {--phase, --epic} were passed:
+    #   neither → initiative-scope     ("eigen: <cmd>")
+    #   phase only → phase-scope       ("eigen: <cmd> P<n>")
+    #   phase + epic → epic-scope      ("eigen: <cmd> P<n>.E<n>")
+    phase = getattr(args, "phase", None)
+    epic = getattr(args, "epic", None)
+    if epic is not None and phase is None:
+        print(
+            "ERROR: --epic requires --phase (epics are scoped within phases)",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    if epic is not None:
+        scope = "epic"
+    elif phase is not None:
+        scope = "phase"
+    else:
+        scope = "initiative"
+    context = {"scope": scope, "phase": phase, "epic": epic}
+
+    runners_path = Path(eigen_root) / profiles.DOT_DIR / profiles.RUNNERS_FILENAME
+    profiles_path = profiles.PROFILES_PATH
+
+    resolved_profile = profiles.resolve_profile(command, eigen_root)
+    resolved_runner = profiles.runner_for(resolved_profile)
+
+    chain = {
+        "runners_yaml": str(runners_path),
+        "runners_yaml_exists": runners_path.exists(),
+        "profiles_yaml": str(profiles_path),
+        "profiles_yaml_exists": profiles_path.exists(),
+        "resolved_profile": resolved_profile,
+        "resolved_runner": resolved_runner,
+    }
+
+    scheduled_at = (
+        datetime.now(timezone.utc) + timedelta(minutes=SCHEDULE_DELAY_MINUTES)
+    ).isoformat()
+
+    payload = build_payload(
+        command,
+        skill=skill,
+        task_name=_format_task_name(command, context),
+        eigen_root=eigen_root,
+        scheduled_at=scheduled_at,
+        extra_prompt=getattr(args, "extra_prompt", "") or "",
+    )
+
+    if getattr(args, "as_json", False):
+        print(json.dumps({"resolution": chain, "payload": payload}, indent=2))
+        return 0
+
+    print("Profile resolution:")
+    for k, v in chain.items():
+        print(f"  {k}: {v}")
+    print()
+    print("Payload (would POST to /api/v1/tasks):")
+    for k, v in payload.items():
+        print(f"  {k}: {v}")
+    return 0
+
+
 def cmd_validate(args: Namespace) -> int:
     state, sf = _load_or_die(args)
     errors = validate_state(state)
@@ -1686,6 +1921,28 @@ def cmd_write_env(args: Namespace) -> int:
 
 
 def cmd_install(args: Namespace) -> int:
+    # C5 daemon compat check: refuse to install against a daemon that doesn't
+    # advertise the multi-runtime fields we intend to send. Skipped when the
+    # operator passes --skip-compat-check (e.g. provisioning a host whose
+    # daemon will be upgraded immediately after).
+    if not getattr(args, "skip_compat_check", False):
+        from eigen_core.cli.compat import check_daemon_compat
+
+        compat_result = check_daemon_compat(args.tasks_api)
+        if not compat_result.ok:
+            print(
+                f"ERROR: claude-tasks daemon at {args.tasks_api} is not "
+                f"compatible with this eigen-squared build.\n  {compat_result.reason}",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        print(
+            f"claude-tasks daemon: version={compat_result.version} "
+            f"schema_version={compat_result.schema_version} "
+            f"profiles={compat_result.profiles}",
+            file=sys.stderr,
+        )
+
     root = Path(args.root)
     eigen_dir = root / ".eigen"
     eigen_dir.mkdir(parents=True, exist_ok=True)

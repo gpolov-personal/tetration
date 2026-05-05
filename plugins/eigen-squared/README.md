@@ -109,6 +109,77 @@ In manual mode, run `/time_split` to begin, then check `eigen-squared status` af
 - The orchestrate_swarm can escalate ambiguous decisions to you interactively
 - Check what's next: `eigen-squared status`
 
+## Multi-runtime configuration
+
+eigen-squared can run pipeline commands on either Claude Code (`claude`) or OpenCode (`opencode`) — different commands can use different runtimes and different models. Typical use case: planning steps on Claude Opus, code-writing swarm on OpenCode + GPT-5.3-Codex.
+
+### Setup checklist
+
+1. **Install `opencode`** (only needed if you'll route any command to it). One-line install: `curl -fsSL https://opencode.ai/install | bash`. Verify with `opencode --version`.
+
+2. **Authenticate `opencode`** with at least one provider:
+   ```bash
+   opencode auth login
+   ```
+   This writes `~/.local/share/opencode/auth.json`. The eigen-squared sync warns if this file is missing.
+
+3. **Create the global profiles catalogue** at `~/.claude-tasks/profiles.yaml`. This maps logical profile names to concrete runner+model pairs. Minimal example:
+   ```yaml
+   profiles:
+     claude-opus:
+       runner: claude
+       model: claude-opus-4-7
+       supports_append_system_prompt: true
+     opencode-codex:
+       runner: opencode
+       model: openai/gpt-5.3-codex
+       supports_append_system_prompt: false
+   ```
+   See `examples/profiles.yaml.example` in this plugin for the annotated full version.
+
+4. **Create the per-initiative runtime selector** at `<initiative-root>/.eigen/runners.yaml`. This decides which profile each command uses for *this* initiative. Example pinning the swarm step to Codex while keeping planning on Opus:
+   ```yaml
+   default_profile: claude-opus
+   opencode_default_profile: opencode-codex   # used as ensemble.json defaultModel
+
+   overrides:
+     orchestrate_swarm: opencode-codex
+
+   models_by_agent:    # optional per-agent overrides for ensemble.json
+     security-sentinel: openai/gpt-5.3-codex
+   ```
+   See `examples/runners.yaml.example` for the annotated full version.
+
+5. **Sync the plugin assets into the initiative**:
+   ```bash
+   eigen-squared sync-opencode --root <initiative-root>
+   ```
+   This copies `commands/`, `skills/`, and `agents/` into `<root>/.opencode/`, regenerates `ensemble.json` from `runners.yaml` (single source of truth — hand-edits to `ensemble.json` are clobbered on every sync), and drops a `.sync_ok` sentinel that the executor checks before spawning opencode runners. Re-run after changing `runners.yaml` or upgrading the plugin.
+
+6. **Verify the daemon supports your config**:
+   ```bash
+   curl -s http://localhost:8080/api/v1/version | jq
+   ```
+   Expect `schema_version: 2` and the `supports` array to include `profile`, `command_name`, `resolved_runner`, and `resolved_model`. `eigen-squared install` runs this check automatically; pass `--skip-compat-check` to bypass at your own risk.
+
+### Operational hygiene
+
+OpenCode accumulates session SQLite rows + per-project worktree/snapshot directories without bound. Run the cleanup script periodically (manual or weekly cron — **not** automated by the daemon):
+
+```bash
+# Dry-run first to see what would be deleted
+~/Projects/misc/claude-tasks/tools/cleanup-opencode-sessions.py --age-days 30
+
+# Actually delete + reclaim disk
+~/Projects/misc/claude-tasks/tools/cleanup-opencode-sessions.py \
+  --age-days 30 --apply --prune-empty-projects
+
+# Suggested weekly cron entry
+0 3 * * 0 /path/to/cleanup-opencode-sessions.py --apply --prune-empty-projects
+```
+
+The script lives in the claude-tasks repo under `tools/`. It deletes `session` rows older than `--age-days` (cascading to `message` + `part`), removes their `session_diff/<id>.json` files, and with `--prune-empty-projects` also wipes `worktree/<project_id>/` and `snapshot/<project_id>/` for projects whose only sessions were the stale ones.
+
 ## Pipeline state management
 
 ### The eigen-squared CLI

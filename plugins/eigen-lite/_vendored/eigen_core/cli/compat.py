@@ -1,0 +1,212 @@
+"""Daemon compatibility check (C5).
+
+Before scheduling or installing, the eigen-squared client should confirm
+the claude-tasks daemon understands the fields it intends to send. The
+daemon advertises capabilities at ``GET /api/v1/version``:
+
+    {
+      "version":         "<build>",
+      "schema_version":  2,
+      "supports":        ["profile", "command_name", ...],
+      "profiles":        ["claude-opus", "opencode-codex", ...]
+    }
+
+`check_daemon_compat` returns a small result struct so callers can decide
+whether to abort with an actionable error. The check is intentionally
+permissive on transport-level failures — when the daemon is unreachable
+the operator sees a clear "could not reach" message rather than a panic
+deep inside the install pipeline.
+
+Stdlib-only: depends on `urllib.request` and `json`.
+"""
+
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+# Capabilities the eigen-squared client expects when scheduling
+# multi-runtime tasks. Bump together with the Go-side `supports[]`.
+DEFAULT_REQUIRED_SUPPORTS = ("profile", "command_name", "resolved_runner", "resolved_model")
+DEFAULT_TIMEOUT_SECONDS = 5.0
+
+
+@dataclass
+class CompatResult:
+    ok: bool
+    reason: str = ""
+    version: str = ""
+    schema_version: int = 0
+    supports: List[str] = field(default_factory=list)
+    profiles: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ActiveRunsResult:
+    """Result of the C8 active-runs probe used as a sync gate.
+
+    ``ok`` is True iff the daemon answered with a parseable response.
+    ``total`` is the count of in-flight runs the daemon reported (zero
+    when the gate should let the caller proceed).
+    """
+
+    ok: bool
+    reason: str = ""
+    total: int = 0
+
+
+def _normalise_url(api_url: str) -> str:
+    """Strip trailing slashes so we can blindly append a path."""
+    return api_url.rstrip("/")
+
+
+def check_daemon_compat(
+    api_url: str,
+    required_supports: Optional[List[str]] = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> CompatResult:
+    """GET ``/api/v1/version`` and validate ``supports[]``.
+
+    Returns a :class:`CompatResult`. ``ok`` is True iff every entry in
+    ``required_supports`` is present in the daemon's ``supports`` array.
+    Network/parse errors yield ``ok=False`` with an actionable ``reason``.
+    """
+    if required_supports is None:
+        required_supports = list(DEFAULT_REQUIRED_SUPPORTS)
+
+    url = _normalise_url(api_url) + "/api/v1/version"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            body = resp.read()
+    except urllib.error.URLError as e:
+        return CompatResult(
+            ok=False,
+            reason=f"could not reach claude-tasks daemon at {url}: {e.reason}",
+        )
+    except (TimeoutError, OSError) as e:
+        return CompatResult(
+            ok=False,
+            reason=f"could not reach claude-tasks daemon at {url}: {e}",
+        )
+
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as e:
+        return CompatResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-JSON response: {e}",
+        )
+    if not isinstance(data, dict):
+        return CompatResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-object response: {type(data).__name__}",
+        )
+
+    # Type-check supports/profiles fields explicitly. ``data.get("supports")``
+    # is whatever the daemon serialised — if it's a string ("profile"
+    # instead of ["profile"]) the membership check below would silently
+    # do substring matching, and ``list("profile")`` would explode into
+    # characters. Defensive isinstance saves a class of confusing
+    # failures when a daemon ships with a bad shape.
+    supports_raw = data.get("supports") or []
+    profiles_raw = data.get("profiles") or []
+    if not isinstance(supports_raw, list) or not isinstance(profiles_raw, list):
+        return CompatResult(
+            ok=False,
+            reason=(
+                f"daemon at {url} returned malformed shape: "
+                f"supports={type(supports_raw).__name__}, "
+                f"profiles={type(profiles_raw).__name__} (expected list, list)"
+            ),
+        )
+    supports = [str(s) for s in supports_raw]
+    profiles = [str(p) for p in profiles_raw]
+
+    missing = [c for c in required_supports if c not in supports]
+    if missing:
+        return CompatResult(
+            ok=False,
+            reason=(
+                f"claude-tasks daemon at {url} is missing required capabilities: "
+                f"{missing}. Daemon supports={supports}. "
+                f"Upgrade claude-tasks before installing eigen-squared with multi-runtime profiles."
+            ),
+            version=data.get("version", ""),
+            schema_version=int(data.get("schema_version") or 0),
+            supports=supports,
+            profiles=profiles,
+        )
+
+    return CompatResult(
+        ok=True,
+        version=data.get("version", ""),
+        schema_version=int(data.get("schema_version") or 0),
+        supports=supports,
+        profiles=profiles,
+    )
+
+
+def check_active_runs(
+    api_url: str,
+    profile_prefix: str = "",
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> ActiveRunsResult:
+    """GET ``/api/v1/runs/active`` and return the in-flight run count (C8).
+
+    Used as the sync gate for ``eigen-squared sync-opencode``: when
+    ``profile_prefix='opencode-'`` returns >0, refuse to sync because
+    a live opencode task is reading the very ``.opencode/`` tree we
+    would rebuild.
+
+    Sibling of :func:`check_daemon_compat` — same transport, same
+    error envelope. Fail-closed by design: any transport / parse
+    error returns ``ok=False`` so the caller refuses rather than
+    proceeds, matching the must-fix #3 fail-closed contract from
+    PR #33.
+    """
+    url = _normalise_url(api_url) + "/api/v1/runs/active"
+    if profile_prefix:
+        # urllib.parse.quote would also work but we want exact bytes;
+        # profile prefixes are restricted to [A-Za-z0-9_-] by config.
+        url += f"?profile_prefix={profile_prefix}"
+
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            body = resp.read()
+    except urllib.error.URLError as e:
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"could not query active runs at {url}: {e.reason}",
+        )
+    except (TimeoutError, OSError) as e:
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"could not query active runs at {url}: {e}",
+        )
+
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as e:
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-JSON response: {e}",
+        )
+    if not isinstance(data, dict):
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-object response: {type(data).__name__}",
+        )
+
+    total_raw = data.get("total")
+    try:
+        total = int(total_raw) if total_raw is not None else 0
+    except (TypeError, ValueError):
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-integer total: {total_raw!r}",
+        )
+
+    return ActiveRunsResult(ok=True, total=total)

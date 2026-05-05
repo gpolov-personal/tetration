@@ -1,0 +1,32 @@
+# `~/.claude-tasks/profiles.yaml` — global runner+model catalogue
+#
+# Place this file at `~/.claude-tasks/profiles.yaml`. Each profile maps a
+# logical name (e.g. "claude-opus") to a concrete runner binary + model id.
+#
+# The eigen-squared client only reads the `runner` field (to pick the prompt
+# shape). The claude-tasks daemon reads the rest (model id, runner-specific
+# flags, env injection) when it actually invokes the runner.
+#
+# IMPORTANT: pin the full model id, not aliases like "opus" or "sonnet" —
+# aliases auto-upgrade silently as new versions land.
+
+profiles:
+  claude-opus:
+    runner: claude
+    model: claude-opus-4-7
+    supports_append_system_prompt: true
+
+  claude-sonnet:
+    runner: claude
+    model: claude-sonnet-4-6
+    supports_append_system_prompt: true
+
+  opencode-codex:
+    runner: opencode
+    model: openai/gpt-5.3-codex
+    supports_append_system_prompt: false
+
+  # opencode-minimax:
+  #   runner: opencode
+  #   model: minimax/minimax-m2
+  #   supports_append_system_prompt: false

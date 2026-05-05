@@ -193,6 +193,38 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--extra-prompt", default="", help="Extra text appended to the task prompt")
 
     # ── validate ──
+    p = sub.add_parser(
+        "sync-opencode",
+        help="Sync plugin assets into <eigen_root>/.opencode/ (Fase 3 sync cluster)",
+    )
+    p.add_argument("--root", default="", help="Initiative root (defaults to EIGEN_ROOT)")
+    p.add_argument("--tasks-api", default="", help="claude-tasks API URL (defaults to CLAUDE_TASKS_API)")
+    p.add_argument(
+        "--skip-active-check",
+        action="store_true",
+        help="Skip the C8 GET /api/v1/runs/active refuse-if-running gate",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Allow sync to delete files in <root>/.opencode/{commands,skills,agents}/ "
+            "that are not present in the plugin source. Without this, sync refuses "
+            "rather than risk wiping operator customizations."
+        ),
+    )
+
+    p = sub.add_parser(
+        "show-task",
+        help="Show the TaskRequest payload that would be sent for a command (D7 debug)",
+    )
+    p.add_argument("target_command", help="Command name (e.g. time_split, orchestrate_swarm)")
+    p.add_argument("--initiative", default="", help="Override EIGEN_ROOT (initiative directory)")
+    p.add_argument("--phase", type=int, help="Phase number (matches schedule_command scope)")
+    p.add_argument("--epic", type=int, help="Epic number (matches schedule_command scope)")
+    p.add_argument("--extra-prompt", default="", help="Optional extra_prompt that would be appended/sent")
+    p.add_argument("--json", dest="as_json", action="store_true", help="Output payload as JSON")
+
     p = sub.add_parser("validate", help="Validate pipeline_state.json")
     p.add_argument("--fix", action="store_true", help="Fix missing fields with defaults")
 
@@ -204,6 +236,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--telegram", help="Telegram chat ID")
     p.add_argument("--slack", help="Slack webhook URL")
     p.add_argument("--discord", help="Discord webhook URL")
+    p.add_argument(
+        "--skip-compat-check",
+        action="store_true",
+        help="Skip the C5 daemon /api/v1/version compatibility check",
+    )
 
     # ── write-env ──
     sub.add_parser("write-env", help="Regenerate .eigen/env from .claude/settings.json")
