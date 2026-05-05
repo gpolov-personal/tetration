@@ -142,11 +142,19 @@ def copy_assets(
     return counts
 
 
-def _read_runners_yaml(eigen_root: Path) -> dict:
-    """Read ``<eigen_root>/.eigen/runners.yaml``. Empty file or missing
-    yields ``{}``. Malformed YAML raises ``SyncError`` so the operator
-    sees the failure (E5 negative path)."""
-    path = eigen_root / ".eigen" / "runners.yaml"
+def _read_yaml_strict(path: Path) -> dict:
+    """Read a YAML mapping. Returns ``{}`` for missing/empty files;
+    raises :class:`SyncError` on malformed YAML or non-mapping top level.
+
+    Strict in the "operator-action" sense: this helper is for sync-time
+    reads where degrading silently to ``{}`` would mask a typo in
+    ``runners.yaml`` / ``profiles.yaml`` and cause the wrong runtime to
+    be selected. That's distinct from
+    ``eigen_core.cli.profiles._read_yaml`` which is intentionally
+    lenient because it runs in the runtime hot path (resolve_profile)
+    and must keep schedules running before the profile system is fully
+    bootstrapped.
+    """
     if not path.exists():
         return {}
     try:
@@ -157,6 +165,11 @@ def _read_runners_yaml(eigen_root: Path) -> dict:
     if not isinstance(data, dict):
         raise SyncError(f"{path} must be a YAML mapping at the top level")
     return data
+
+
+def _read_runners_yaml(eigen_root: Path) -> dict:
+    """Read ``<eigen_root>/.eigen/runners.yaml`` strictly (E5 negative path)."""
+    return _read_yaml_strict(eigen_root / ".eigen" / "runners.yaml")
 
 
 def generate_ensemble_json(
@@ -176,15 +189,7 @@ def generate_ensemble_json(
     Returns the dict written to disk so callers can log changes.
     """
     runners = _read_runners_yaml(eigen_root)
-
-    profiles_doc: dict = {}
-    if profiles_path.exists():
-        try:
-            with open(profiles_path) as f:
-                profiles_doc = yaml.safe_load(f) or {}
-        except yaml.YAMLError as e:
-            raise SyncError(f"malformed YAML at {profiles_path}: {e}") from e
-    profiles = profiles_doc.get("profiles") or {}
+    profiles = _read_yaml_strict(profiles_path).get("profiles") or {}
 
     # Pick the opencode-runtime profile to use for ensemble.defaultModel.
     chosen_profile = runners.get("opencode_default_profile")
