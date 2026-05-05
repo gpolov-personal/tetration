@@ -1714,23 +1714,50 @@ def cmd_sync_opencode(args: Namespace) -> int:
     plugin_source = plugin_root()
     profiles_path = profiles_mod.PROFILES_PATH
 
-    # Invalidate the previous sentinel BEFORE touching any asset trees.
-    # If the sync crashes/SIGKILLs partway through, the absence of
-    # .sync_ok keeps the executor's pre-spawn check fail-closed; the
-    # alternative (leaving the old sentinel in place) would falsely
-    # advertise readiness for a half-rebuilt .opencode/.
     target.mkdir(parents=True, exist_ok=True)
-    invalidate_sync_sentinel(target)
+
+    # Serialize concurrent sync-opencode invocations on the same
+    # initiative root. Without this lock, two operators (or a script +
+    # cron) running sync at the same time would race on rmtree +
+    # copytree and could corrupt asset trees mid-rebuild — leaving
+    # neither the old nor the new state but a torn merge of both.
+    # Non-blocking exclusive flock on .opencode/.sync.lock: the second
+    # caller refuses immediately rather than queueing (queueing would
+    # invite long-tail latency hangs and surprise on Ctrl-C).
+    import fcntl
+    lock_path = target / ".sync.lock"
+    lock_fd = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(
+            f"ERROR: another `eigen-squared sync-opencode` already "
+            f"holds {lock_path}. Wait for it to finish.",
+            file=sys.stderr,
+        )
+        lock_fd.close()
+        return EXIT_ERROR
 
     try:
-        file_counts = copy_assets(
-            plugin_source, target, force=getattr(args, "force", False),
-        )
-        ensemble = generate_ensemble_json(root, target, profiles_path)
-        sentinel_path = write_sync_sentinel(target, plugin_source, file_counts, ensemble)
-    except SyncError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return EXIT_ERROR
+        # Invalidate the previous sentinel BEFORE touching any asset trees.
+        # If the sync crashes/SIGKILLs partway through, the absence of
+        # .sync_ok keeps the executor's pre-spawn check fail-closed; the
+        # alternative (leaving the old sentinel in place) would falsely
+        # advertise readiness for a half-rebuilt .opencode/.
+        invalidate_sync_sentinel(target)
+
+        try:
+            file_counts = copy_assets(
+                plugin_source, target, force=getattr(args, "force", False),
+            )
+            ensemble = generate_ensemble_json(root, target, profiles_path)
+            sentinel_path = write_sync_sentinel(target, plugin_source, file_counts, ensemble)
+        except SyncError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return EXIT_ERROR
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
 
     print(json.dumps({
         "status": "synced",

@@ -129,3 +129,46 @@ def test_cmd_sync_opencode_skip_active_check_bypasses_gate(
     cmd_sync_opencode(args)
     err = capsys.readouterr().err
     assert "could not query active runs" not in err
+
+
+def test_cmd_sync_opencode_refuses_when_lock_held(
+    tmp_path, monkeypatch, capsys
+):
+    """Two concurrent sync-opencode invocations would race on
+    rmtree+copytree of the same .opencode/ tree — non-blocking flock
+    on .opencode/.sync.lock causes the second caller to refuse cleanly
+    instead of corrupting asset trees mid-rebuild.
+
+    Simulated by acquiring the lock from the test process before
+    invoking cmd_sync_opencode.
+    """
+    import fcntl
+
+    root = tmp_path / "init"
+    root.mkdir()
+    (root / ".eigen").mkdir()
+    target = root / ".opencode"
+    target.mkdir()
+
+    _stub_opencode_on_path(tmp_path, monkeypatch)
+
+    # Pre-hold the lock as if a peer sync were already running.
+    lock_path = target / ".sync.lock"
+    holder = open(lock_path, "w")
+    try:
+        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        args = Namespace(
+            root=str(root),
+            tasks_api="",  # skip C8 (empty api short-circuits the gate)
+            skip_active_check=True,
+        )
+        rc = cmd_sync_opencode(args)
+        assert rc == 1, "expected EXIT_ERROR when peer sync holds lock"
+        err = capsys.readouterr().err
+        assert "already" in err and ".sync.lock" in err
+        # Critically: the second sync did NOT touch the asset trees.
+        assert not (target / "commands").exists()
+    finally:
+        fcntl.flock(holder, fcntl.LOCK_UN)
+        holder.close()
