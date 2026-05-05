@@ -179,3 +179,50 @@ def test_sentinel_shape(tmp_path):
     assert "synced_at" in body
     # plugin_commit is best-effort; either populated or empty string
     assert "plugin_commit" in body
+
+
+def test_invalidate_sync_sentinel_removes_existing(tmp_path):
+    target = tmp_path / ".opencode"
+    target.mkdir()
+    sentinel = target / ".sync_ok"
+    sentinel.write_text("stale-content")
+    assert sentinel.exists()
+
+    sync.invalidate_sync_sentinel(target)
+    assert not sentinel.exists()
+
+
+def test_invalidate_sync_sentinel_idempotent_when_missing(tmp_path):
+    target = tmp_path / ".opencode"
+    target.mkdir()
+    # No .sync_ok — must not raise.
+    sync.invalidate_sync_sentinel(target)
+
+
+def test_write_sentinel_uses_atomic_replace_no_tmp_left(tmp_path):
+    """Pins must-fix #2: torn-write protection.
+
+    The previous implementation called ``Path.write_text`` directly on the
+    final ``.sync_ok``; SIGKILL between the open(O_TRUNC) and the close
+    would leave a torn JSON. The new implementation writes to
+    ``.sync_ok.tmp`` and ``os.replace``s into place. Two assertions:
+    (a) the final sentinel is valid JSON, and (b) no ``.sync_ok.tmp`` is
+    left behind on success.
+    """
+    target = tmp_path / ".opencode"
+    target.mkdir()
+    plugin = tmp_path / "plugin"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "eigen-squared", "version": "1.0.0"})
+    )
+
+    out = sync.write_sync_sentinel(
+        target, plugin,
+        {"commands": 1, "skills": 1, "agents": 1},
+        {"dashboardPort": 0, "defaultModel": ""},
+    )
+
+    assert out.exists()
+    json.loads(out.read_text())  # must parse
+    assert not (target / ".sync_ok.tmp").exists()

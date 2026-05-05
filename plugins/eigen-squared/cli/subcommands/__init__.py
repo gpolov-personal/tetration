@@ -1658,6 +1658,7 @@ def cmd_sync_opencode(args: Namespace) -> int:
         SyncError,
         copy_assets,
         generate_ensemble_json,
+        invalidate_sync_sentinel,
         opencode_auth_ok,
         plugin_root,
         write_sync_sentinel,
@@ -1709,6 +1710,14 @@ def cmd_sync_opencode(args: Namespace) -> int:
 
     plugin_source = plugin_root()
     profiles_path = profiles_mod.PROFILES_PATH
+
+    # Invalidate the previous sentinel BEFORE touching any asset trees.
+    # If the sync crashes/SIGKILLs partway through, the absence of
+    # .sync_ok keeps the executor's pre-spawn check fail-closed; the
+    # alternative (leaving the old sentinel in place) would falsely
+    # advertise readiness for a half-rebuilt .opencode/.
+    target.mkdir(parents=True, exist_ok=True)
+    invalidate_sync_sentinel(target)
 
     try:
         file_counts = copy_assets(plugin_source, target)

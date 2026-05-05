@@ -207,6 +207,18 @@ def _plugin_commit(plugin_source: Path) -> str:
     return ""
 
 
+def invalidate_sync_sentinel(target_dot_opencode: Path) -> None:
+    """Remove ``.opencode/.sync_ok`` if present (idempotent).
+
+    Called at the START of a sync so a SIGKILL/OOM/exception mid-sync
+    cannot leave the previous (now-stale) sentinel pointing at a
+    half-rebuilt ``.opencode/`` tree. The executor's pre-spawn check
+    treats "no sentinel" as "do not run" — fail-closed by absence.
+    """
+    out_path = target_dot_opencode / ".sync_ok"
+    out_path.unlink(missing_ok=True)
+
+
 def write_sync_sentinel(
     target_dot_opencode: Path,
     plugin_source: Path,
@@ -219,6 +231,14 @@ def write_sync_sentinel(
     executor checks before spawning an opencode runner: a half-completed
     sync leaves no sentinel and the runner refuses to start. The manifest
     fields also serve as the audit record requested by D10.
+
+    Atomicity: write to ``.sync_ok.tmp`` then ``os.replace`` onto the
+    final name. ``Path.write_text`` opens-truncates-writes-closes and
+    a SIGKILL between truncate and close would leave a torn sentinel
+    (presence check passes, JSON parse fails). ``os.replace`` is an
+    atomic rename on POSIX same-filesystem and on Windows, so the
+    consumer either sees the previous sentinel (or none, after
+    :func:`invalidate_sync_sentinel`) or the fully-written new one.
     """
     sentinel = {
         "synced_at": datetime.now(timezone.utc).isoformat(),
@@ -228,7 +248,9 @@ def write_sync_sentinel(
         "ensemble": ensemble,
     }
     out_path = target_dot_opencode / ".sync_ok"
-    out_path.write_text(json.dumps(sentinel, indent=2) + "\n")
+    tmp_path = target_dot_opencode / ".sync_ok.tmp"
+    tmp_path.write_text(json.dumps(sentinel, indent=2) + "\n")
+    os.replace(tmp_path, out_path)
     return out_path
 
 
