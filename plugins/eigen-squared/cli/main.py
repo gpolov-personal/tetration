@@ -204,6 +204,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip the C8 GET /api/v1/runs/active refuse-if-running gate",
     )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Allow sync to delete files in <root>/.opencode/{commands,skills,agents}/ "
+            "that are not present in the plugin source. Without this, sync refuses "
+            "rather than risk wiping operator customizations."
+        ),
+    )
 
     p = sub.add_parser(
         "show-task",

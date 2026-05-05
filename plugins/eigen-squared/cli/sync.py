@@ -86,12 +86,32 @@ def _reject_escaping_symlinks(source: str, names: Iterable[str]) -> set:
     return skipped
 
 
-def copy_assets(source_plugin: Path, target_dot_opencode: Path) -> dict[str, int]:
+def _files_relative_to(root: Path) -> set[str]:
+    """Set of forward-slash POSIX-style paths of every file under ``root``."""
+    if not root.is_dir():
+        return set()
+    out = set()
+    for p in root.rglob("*"):
+        if p.is_file():
+            out.add(p.relative_to(root).as_posix())
+    return out
+
+
+def copy_assets(
+    source_plugin: Path,
+    target_dot_opencode: Path,
+    *,
+    force: bool = False,
+) -> dict[str, int]:
     """Copy ``commands/``, ``skills/``, ``agents/`` from plugin → target.
 
     Returns a per-directory file count so the sentinel manifest can record
-    what was synced. Existing destinations are removed first so the sync
-    is idempotent.
+    what was synced. Existing destinations are normally removed first so
+    the sync is idempotent — but when the destination contains files NOT
+    present in the plugin source, the sync would silently delete operator
+    customizations (e.g. hand-added ``commands/local-spike.md``). Default
+    behaviour is to refuse with a ``SyncError`` listing the surprises;
+    pass ``force=True`` to skip the check and accept the data loss.
     """
     counts: dict[str, int] = {}
     for asset in ASSET_DIRS:
@@ -103,6 +123,19 @@ def copy_assets(source_plugin: Path, target_dot_opencode: Path) -> dict[str, int
             )
         dst = target_dot_opencode / asset
         if dst.exists():
+            if not force:
+                src_files = _files_relative_to(src)
+                dst_files = _files_relative_to(dst)
+                unknown = sorted(dst_files - src_files)
+                if unknown:
+                    sample = unknown[:5]
+                    suffix = ", ..." if len(unknown) > len(sample) else ""
+                    raise SyncError(
+                        f"{dst} contains {len(unknown)} file(s) not present in the "
+                        f"plugin source ({asset}/) — refusing to overwrite. "
+                        f"Files: {sample}{suffix}. "
+                        f"Move them aside, or pass --force to delete them."
+                    )
             shutil.rmtree(dst)
         shutil.copytree(src, dst, ignore=_reject_escaping_symlinks, symlinks=False)
         counts[asset] = sum(1 for _ in dst.rglob("*") if _.is_file())

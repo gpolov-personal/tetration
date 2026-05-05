@@ -67,6 +67,71 @@ def test_copy_assets_fails_on_missing_dir(tmp_path):
         sync.copy_assets(plugin, tmp_path / "out")
 
 
+def _build_minimal_plugin(plugin: Path) -> None:
+    for d in sync.ASSET_DIRS:
+        (plugin / d).mkdir(parents=True)
+    (plugin / "commands" / "ship_a.md").write_text("plugin a")
+    (plugin / "commands" / "ship_b.md").write_text("plugin b")
+    (plugin / "skills" / "skill_a.md").write_text("plugin skill")
+    (plugin / "agents" / "agent_a.md").write_text("plugin agent")
+
+
+def test_copy_assets_refuses_to_clobber_user_files_without_force(tmp_path):
+    """Pins must-fix #5 from PR #33 review.
+
+    Pre-fix copy_assets did `if dst.exists(): rmtree(dst)` and silently
+    deleted any operator-customized files in the .opencode/ asset trees.
+    Default behaviour must now refuse with an actionable SyncError.
+    """
+    plugin = tmp_path / "plugin"
+    _build_minimal_plugin(plugin)
+    target = tmp_path / "out" / ".opencode"
+    (target / "commands").mkdir(parents=True)
+    user_file = target / "commands" / "user_local_spike.md"
+    user_file.write_text("HAND-EDITED — DO NOT WIPE")
+
+    with pytest.raises(sync.SyncError, match="user_local_spike.md"):
+        sync.copy_assets(plugin, target)
+
+    # User file must still be on disk.
+    assert user_file.exists()
+    assert user_file.read_text() == "HAND-EDITED — DO NOT WIPE"
+
+
+def test_copy_assets_force_overwrites_user_files(tmp_path):
+    """``--force`` is the documented escape hatch — tests it actually works."""
+    plugin = tmp_path / "plugin"
+    _build_minimal_plugin(plugin)
+    target = tmp_path / "out" / ".opencode"
+    (target / "commands").mkdir(parents=True)
+    user_file = target / "commands" / "user_local_spike.md"
+    user_file.write_text("ABOUT TO BE WIPED ON PURPOSE")
+
+    counts = sync.copy_assets(plugin, target, force=True)
+
+    # Plugin files copied, user file gone.
+    assert (target / "commands" / "ship_a.md").exists()
+    assert not user_file.exists()
+    assert counts["commands"] == 2  # ship_a + ship_b
+
+
+def test_copy_assets_no_user_files_no_force_needed(tmp_path):
+    """If dst exists but contains only files that ARE in source, sync
+    proceeds without --force (the "second sync of an unchanged install"
+    case must remain frictionless)."""
+    plugin = tmp_path / "plugin"
+    _build_minimal_plugin(plugin)
+    target = tmp_path / "out" / ".opencode"
+
+    # First sync — fresh, no clobber concern.
+    counts1 = sync.copy_assets(plugin, target)
+    assert counts1["commands"] == 2
+
+    # Second sync — dst now mirrors src exactly, no unknown files.
+    counts2 = sync.copy_assets(plugin, target)
+    assert counts2["commands"] == 2
+
+
 # ── C2 — ensemble.json regeneration ─────────────────────────────────────
 
 

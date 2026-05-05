@@ -1727,7 +1727,9 @@ def cmd_sync_opencode(args: Namespace) -> int:
     invalidate_sync_sentinel(target)
 
     try:
-        file_counts = copy_assets(plugin_source, target)
+        file_counts = copy_assets(
+            plugin_source, target, force=getattr(args, "force", False),
+        )
         ensemble = generate_ensemble_json(root, target, profiles_path)
         sentinel_path = write_sync_sentinel(target, plugin_source, file_counts, ensemble)
     except SyncError as e:
