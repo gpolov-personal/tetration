@@ -44,8 +44,22 @@ class CompatResult:
     profiles: List[str] = field(default_factory=list)
 
 
+@dataclass
+class ActiveRunsResult:
+    """Result of the C8 active-runs probe used as a sync gate.
+
+    ``ok`` is True iff the daemon answered with a parseable response.
+    ``total`` is the count of in-flight runs the daemon reported (zero
+    when the gate should let the caller proceed).
+    """
+
+    ok: bool
+    reason: str = ""
+    total: int = 0
+
+
 def _normalise_url(api_url: str) -> str:
-    """Strip trailing slashes so we can blindly append `/api/v1/version`."""
+    """Strip trailing slashes so we can blindly append a path."""
     return api_url.rstrip("/")
 
 
@@ -133,3 +147,66 @@ def check_daemon_compat(
         supports=supports,
         profiles=profiles,
     )
+
+
+def check_active_runs(
+    api_url: str,
+    profile_prefix: str = "",
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> ActiveRunsResult:
+    """GET ``/api/v1/runs/active`` and return the in-flight run count (C8).
+
+    Used as the sync gate for ``eigen-squared sync-opencode``: when
+    ``profile_prefix='opencode-'`` returns >0, refuse to sync because
+    a live opencode task is reading the very ``.opencode/`` tree we
+    would rebuild.
+
+    Sibling of :func:`check_daemon_compat` — same transport, same
+    error envelope. Fail-closed by design: any transport / parse
+    error returns ``ok=False`` so the caller refuses rather than
+    proceeds, matching the must-fix #3 fail-closed contract from
+    PR #33.
+    """
+    url = _normalise_url(api_url) + "/api/v1/runs/active"
+    if profile_prefix:
+        # urllib.parse.quote would also work but we want exact bytes;
+        # profile prefixes are restricted to [A-Za-z0-9_-] by config.
+        url += f"?profile_prefix={profile_prefix}"
+
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            body = resp.read()
+    except urllib.error.URLError as e:
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"could not query active runs at {url}: {e.reason}",
+        )
+    except (TimeoutError, OSError) as e:
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"could not query active runs at {url}: {e}",
+        )
+
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as e:
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-JSON response: {e}",
+        )
+    if not isinstance(data, dict):
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-object response: {type(data).__name__}",
+        )
+
+    total_raw = data.get("total")
+    try:
+        total = int(total_raw) if total_raw is not None else 0
+    except (TypeError, ValueError):
+        return ActiveRunsResult(
+            ok=False,
+            reason=f"daemon at {url} returned non-integer total: {total_raw!r}",
+        )
+
+    return ActiveRunsResult(ok=True, total=total)

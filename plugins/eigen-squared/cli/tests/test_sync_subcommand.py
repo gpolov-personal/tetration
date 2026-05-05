@@ -95,7 +95,10 @@ def test_cmd_sync_opencode_fails_closed_on_invalid_json(
         rc = cmd_sync_opencode(args)
         assert rc == 1
         err = capsys.readouterr().err
-        assert "could not query active runs" in err
+        # check_active_runs reports parse errors distinctly from
+        # transport errors — both still trip the fail-closed gate.
+        assert "non-JSON response" in err
+        assert "--skip-active-check" in err
     finally:
         httpd.shutdown()
 

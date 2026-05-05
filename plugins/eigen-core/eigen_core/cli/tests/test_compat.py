@@ -145,3 +145,76 @@ def test_malformed_profiles_field_rejected():
     assert result.ok is False
     assert "malformed shape" in result.reason
     assert "profiles=str" in result.reason
+
+
+# ── check_active_runs (C8 sync gate) ────────────────────────────────────
+
+
+@contextmanager
+def fake_active_runs_endpoint(payload, *, raw: bytes | None = None):
+    """One-shot HTTP server for ``GET /api/v1/runs/active``."""
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            if raw is not None:
+                self.wfile.write(raw)
+            else:
+                self.wfile.write(json.dumps(payload).encode())
+
+        def log_message(self, *_a, **_k):
+            return
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), H)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=2)
+
+
+def test_active_runs_zero_passes_gate():
+    with fake_active_runs_endpoint({"total": 0}) as url:
+        result = compat.check_active_runs(url, profile_prefix="opencode-")
+    assert result.ok is True
+    assert result.total == 0
+    assert result.reason == ""
+
+
+def test_active_runs_nonzero_reports_count():
+    with fake_active_runs_endpoint({"total": 3}) as url:
+        result = compat.check_active_runs(url, profile_prefix="opencode-")
+    assert result.ok is True
+    assert result.total == 3
+
+
+def test_active_runs_unreachable_fails_closed():
+    """Sibling of test_unreachable_daemon — same fail-closed contract."""
+    result = compat.check_active_runs("http://127.0.0.1:1", timeout=0.5)
+    assert result.ok is False
+    assert "could not query active runs" in result.reason
+
+
+def test_active_runs_non_json_fails_closed():
+    with fake_active_runs_endpoint({}, raw=b"not json") as url:
+        result = compat.check_active_runs(url)
+    assert result.ok is False
+    assert "non-JSON response" in result.reason
+
+
+def test_active_runs_non_object_fails_closed():
+    with fake_active_runs_endpoint([], raw=b"[]") as url:
+        result = compat.check_active_runs(url)
+    assert result.ok is False
+    assert "non-object" in result.reason
+
+
+def test_active_runs_non_integer_total_fails_closed():
+    with fake_active_runs_endpoint({"total": "many"}) as url:
+        result = compat.check_active_runs(url)
+    assert result.ok is False
+    assert "non-integer total" in result.reason

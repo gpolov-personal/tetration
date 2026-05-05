@@ -1652,7 +1652,6 @@ def cmd_sync_opencode(args: Namespace) -> int:
     5. **C7 + D10** — drop ``.sync_ok`` sentinel manifest.
     """
     import shutil as _shutil
-    from urllib import error as urlerror, request as urlrequest
 
     from ..sync import (
         SyncError,
@@ -1663,6 +1662,7 @@ def cmd_sync_opencode(args: Namespace) -> int:
         plugin_root,
         write_sync_sentinel,
     )
+    from eigen_core.cli import compat as _compat
     from eigen_core.cli import profiles as profiles_mod
 
     root = Path(args.root or _eigen_root())
@@ -1695,20 +1695,16 @@ def cmd_sync_opencode(args: Namespace) -> int:
     # who want to bypass have --skip-active-check.
     api = args.tasks_api or os.environ.get("CLAUDE_TASKS_API", "")
     if api and not getattr(args, "skip_active_check", False):
-        try:
-            url = api.rstrip("/") + "/api/v1/runs/active?profile_prefix=opencode-"
-            with urlrequest.urlopen(url, timeout=5) as resp:
-                data = json.loads(resp.read())
-        except (urlerror.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        result = _compat.check_active_runs(api, profile_prefix="opencode-")
+        if not result.ok:
             print(
-                f"ERROR: could not query active runs at {api}: {e}. "
-                "Pass --skip-active-check to override.",
+                f"ERROR: {result.reason}. Pass --skip-active-check to override.",
                 file=sys.stderr,
             )
             return EXIT_ERROR
-        if (data.get("total") or 0) > 0:
+        if result.total > 0:
             print(
-                f"ERROR: refusing to sync — {data['total']} opencode "
+                f"ERROR: refusing to sync — {result.total} opencode "
                 f"task_run(s) still active. Wait for them to finish or "
                 f"pass --skip-active-check.",
                 file=sys.stderr,
