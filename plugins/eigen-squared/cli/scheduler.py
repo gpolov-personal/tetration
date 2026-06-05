@@ -38,6 +38,20 @@ COMMAND_TO_SKILL = {
 }
 
 
+# Per-command reasoning effort for `claude -p --effort`. Unmapped commands send
+# no effort, so Claude Code falls back to the global effortLevel at runtime.
+EFFORT_BY_COMMAND = {
+    "time_split": "high",
+    "deepen_time_split": "high",
+    "bootstrap_converge": "high",
+    "space_split_converge": "high",
+    "plan_epic_converge": "xhigh",
+    "create_issues_from_plan_swarm": "medium",
+    "orchestrate_swarm": "medium",
+    "review_swarm_pr": "high",
+}
+
+
 def resolve_hook_log(eigen_root: str) -> Path:
     return _core_resolve_hook_log(eigen_root, dot_dir=".eigen")
 
@@ -86,5 +100,6 @@ def schedule_command(
         telegram_chat_id=telegram_chat_id,
         slack_webhook=slack_webhook,
         discord_webhook=discord_webhook,
+        effort=EFFORT_BY_COMMAND.get(command, ""),
         attempt=context.get("_attempt", 1),
     )

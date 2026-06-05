@@ -287,3 +287,70 @@ class TestLogEntry:
         log_entry(hook_log, {"action": "second"})
         lines = hook_log.read_text().strip().split("\n")
         assert len(lines) == 2
+
+
+class _FakeResult:
+    returncode = 0
+    stdout = ""
+    stderr = ""
+
+
+def _payload_capturer(captured: dict):
+    """Return a fake subprocess.run that records the curl -d JSON payload."""
+    def fake_run(cmd, **kwargs):
+        if "-d" in cmd:
+            captured["payload"] = json.loads(cmd[cmd.index("-d") + 1])
+        return _FakeResult()
+    return fake_run
+
+
+class TestEffortRouting:
+    """Per-command effort routing: EFFORT_BY_COMMAND -> payload['effort']."""
+
+    def _run(self, command, tmp_path, monkeypatch):
+        import cli.scheduler as sched
+        import eigen_core.cli.scheduler as core
+
+        captured: dict = {}
+        monkeypatch.setattr(core.subprocess, "run", _payload_capturer(captured))
+        sched.schedule_command(
+            command,
+            {"scope": "phase_epic", "phase": 1, "epic": 1},
+            eigen_root=str(tmp_path),
+            claude_tasks_api="http://localhost:8080",
+            hook_log=tmp_path / "hook_log.jsonl",
+        )
+        return captured.get("payload", {})
+
+    def test_planning_routes_xhigh(self, tmp_path, monkeypatch):
+        assert self._run("plan_epic_converge", tmp_path, monkeypatch).get("effort") == "xhigh"
+
+    def test_swarm_routes_medium(self, tmp_path, monkeypatch):
+        assert self._run("orchestrate_swarm", tmp_path, monkeypatch).get("effort") == "medium"
+
+    def test_review_routes_high(self, tmp_path, monkeypatch):
+        assert self._run("review_swarm_pr", tmp_path, monkeypatch).get("effort") == "high"
+
+    def test_every_routed_command_has_effort(self):
+        """Every command the squared scheduler can route must carry an effort."""
+        from cli.scheduler import COMMAND_TO_SKILL, EFFORT_BY_COMMAND
+        missing = [c for c in COMMAND_TO_SKILL if c not in EFFORT_BY_COMMAND]
+        assert not missing, f"commands missing an effort mapping: {missing}"
+
+    def test_core_omits_effort_when_empty(self, tmp_path, monkeypatch):
+        """Core must not send an effort field when effort is empty (daemon falls back to global)."""
+        import eigen_core.cli.scheduler as core
+
+        captured: dict = {}
+        monkeypatch.setattr(core.subprocess, "run", _payload_capturer(captured))
+        core.schedule_command(
+            "anything",
+            skill="eigen-squared:x",
+            task_name="t",
+            context_key="k",
+            eigen_root=str(tmp_path),
+            claude_tasks_api="http://localhost:8080",
+            hook_log=tmp_path / "hook_log.jsonl",
+            effort="",
+        )
+        assert "effort" not in captured["payload"]
