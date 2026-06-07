@@ -319,6 +319,38 @@ Install Docker: https://docs.docker.com/get-docker/
 
 ---
 
+## Step 2.6: Check CodeGraph Availability (optional)
+
+CodeGraph is an **optional, external** code-intelligence tool (a local tree-sitter knowledge graph over MCP + CLI). When present, pipeline agents query it instead of grep/Read to explore existing code, trace call flows, and compute change impact — cheaper and more accurate, especially in `plan_epic_converge` and `review_swarm_pr`. It is **never required**; every command degrades silently to grep/Read when it is absent (see `skills/codegraph/SKILL.md`).
+
+```bash
+command -v codegraph >/dev/null 2>&1 && codegraph --version 2>/dev/null
+test -d "$EIGEN_ROOT/.codegraph" && echo ".codegraph present"
+```
+
+**If the CLI is present and `$EIGEN_ROOT/.codegraph/` exists** → Print `CodeGraph: available` and continue.
+
+**If the CLI is present but `$EIGEN_ROOT/.codegraph/` is missing** → Recommend initializing the project index (one-time), then continue:
+```
+CodeGraph CLI is installed but this project is not indexed yet.
+To let pipeline agents use it, run once:  codegraph init -i
+(Optional — the pipeline works without it.)
+```
+
+**If the CLI is missing** → Print recommendation and continue (do NOT stop):
+```
+CodeGraph is not installed (optional).
+It speeds up code exploration and review and runs 100% locally.
+
+Install:  curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh
+   or:    npm i -g @colbymchenry/codegraph
+Then index this project:  codegraph init -i
+
+The pipeline works without it — agents fall back to grep/Read.
+```
+
+---
+
 ## Step 3: Verify Initiative Documents
 
 Check `$EIGEN_ROOT/eigen_initiative/` exists and has the required files:

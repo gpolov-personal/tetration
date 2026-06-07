@@ -141,6 +141,8 @@ Check if `$EIGEN_ROOT` has useful context:
 - Scan it for architecture patterns, tech stack, DB schema, API structure
 - This becomes input for the whitebox guide
 
+**Optional — CodeGraph for scanning existing/reference code** (see `skills/codegraph/SKILL.md`): when scanning an existing `$EIGEN_ROOT` or a reference project that is CodeGraph-indexed (`codegraph` on PATH and a `.codegraph/` index at that project's root), prefer `codegraph_context`/`codegraph_files` to map structure and routes and `codegraph_search`/`codegraph_callers` to trace data models and auth patterns, instead of a manual grep/Read sweep. A reference project at a different path needs its own one-time `codegraph init -i`. If CodeGraph is absent or the path is not indexed, scan with grep/Read as above — never STOP. (Greenfield interviews with no codebase get no value here.)
+
 ### 0.4 Determine Mode
 
 Based on what was found:

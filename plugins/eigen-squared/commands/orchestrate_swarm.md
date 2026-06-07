@@ -170,7 +170,8 @@ Detect the project's tech stack and discover relevant skills:
 1. **Detect languages**: Follow the `language-profiles` skill detection table. A project may have multiple languages.
 2. **Detect framework**: Check manifest files for framework signals.
 3. **Look up relevant skills** from the `language-profiles` skill's Stack-Specific Skills table.
-4. Store detected stack and skills — pass to ALL worker spawn prompts.
+4. **Detect CodeGraph** (optional, external — see `skills/codegraph/SKILL.md`): set `<codegraph_available>` true iff `codegraph` is on PATH and `$EIGEN_ROOT/.codegraph/` exists (`codegraph status -j` → `"initialized": true`). Best-effort; if absent, set false and continue. Never required.
+5. Store detected stack, skills, and `<codegraph_available>` — pass to ALL worker spawn prompts.
 
 ### 0.5 Initialize Leader State
 
@@ -289,6 +290,9 @@ YOUR ASSIGNMENT:
 - Detected tech stack: <detected_tech_stack>
 - Relevant skills (load SKILL.md for guidance):
   <for each skill: skill_name: skills/skill_name/SKILL.md>
+- CodeGraph: <codegraph_available ? 'available' : 'absent'>
+  <if available> When exploring existing code (dependency context, stub interfaces, integration points, the rest of the repo), prefer the `codegraph_*` tools (context/search/callers/callees/impact/node) over grep/Read; treat returned source as already read. See skills/codegraph/SKILL.md. Do NOT run `codegraph sync` — a shared watcher keeps the index fresh. If a call fails, fall back to grep/Read.
+  <if absent> Use grep/Glob/Read for code exploration.
 
 TESTING PHILOSOPHY — NON-NEGOTIABLE:
 - Write tests that use REAL dependencies whenever possible
@@ -1079,6 +1083,8 @@ Continue reacting to messages while the integrator works. When it signals comple
 ```
 Ask integrator to shut down.
 ```
+
+**CodeGraph freshness before review (optional):** if `<codegraph_available>`, the integration branch now holds the final merged code that `review_swarm_pr` will query for impact/caller analysis. Normally no action is needed — `review_swarm_pr` runs as a fresh session and CodeGraph's connect-time catch-up reconciles the index before its first query. Only when the watcher is off (headless / `CODEGRAPH_NO_DAEMON` / WSL2 `/mnt`) run one `codegraph sync "$EIGEN_ROOT"` here so the review sees the merged code. Do not sync otherwise. See `skills/codegraph/SKILL.md`.
 
 ### 4.7 Post-Integration Failure Attribution
 
