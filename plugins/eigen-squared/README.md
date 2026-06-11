@@ -39,11 +39,18 @@ Epics within a phase execute **sequentially** (E1 fully done, then E2, then E3..
 
 ### claude-tasks (autonomous mode only)
 
-The autonomous pipeline requires [claude-tasks](https://github.com/anthropics/claude-code) — a task scheduling server that runs Claude Code sessions on a schedule or in response to events.
+The autonomous pipeline requires [claude-tasks](https://github.com/kylemclaren/claude-tasks) — a task scheduling server that runs Claude Code sessions on a schedule or in response to events.
 
 ```bash
-# Start the server (keep running in a separate terminal)
+# Install the prebuilt binary into ~/.local/bin...
+curl -fsSL https://raw.githubusercontent.com/kylemclaren/claude-tasks/main/install.sh | bash
+# ...or build from source (Go 1.24+): go build -o claude-tasks ./cmd/claude-tasks
+
+# Start the server (keep running in a separate terminal; requires an authenticated Claude CLI)
 claude-tasks serve
+
+# Verify it's reachable (eigen_start checks this in autonomous mode)
+curl http://localhost:8080/api/v1/health
 ```
 
 A cron-based watchdog (`eigen-watchdog`) polls every N minutes, checks if anything is running, and schedules the next command via claude-tasks. Commands do NOT schedule their successors — the watchdog handles all scheduling.
@@ -64,6 +71,23 @@ Agent teams must be enabled for swarm execution:
 }
 ```
 
+`eigen_start` writes these for you during setup — this block just shows what it configures.
+
+### CodeGraph (optional)
+
+[CodeGraph](https://github.com/colbymchenry/codegraph) is an optional, external code-intelligence tool: a 100%-local tree-sitter knowledge graph (symbols, call edges, files) exposed over MCP + CLI. When present and the project is indexed, pipeline agents query it instead of grep/Read to explore existing code, trace call flows, and compute change impact — cheaper and more accurate. It is **never required**: every command existence-checks it and degrades silently to grep/Read when it is absent (see `skills/codegraph/SKILL.md`).
+
+```bash
+# Install (bundles its own runtime)
+curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh
+#   or: npm i -g @colbymchenry/codegraph
+
+# Index this project once (init + full index)
+codegraph init -i
+```
+
+`eigen_start` recommends it during setup, and `bootstrap_converge` indexes the foundation after creating it. Where it helps most: `plan_epic_converge` (verify against the real codebase), the swarm workers (explore existing code), and `review_swarm_pr` (blast-radius / caller analysis for scope-aware review). The index auto-syncs while an agent session is running, so manual `codegraph sync` is needed only when the file-watcher is off (headless runs / `CODEGRAPH_NO_DAEMON` / WSL2 `/mnt`).
+
 ### Initiative documents
 
 Place these in `$EIGEN_ROOT/eigen_initiative/`:
@@ -80,14 +104,24 @@ claude
 /eigen_start
 ```
 
-`eigen_start` is interactive. It:
-1. Configures environment variables in `.claude/settings.json`
-2. Asks for pipeline mode (autonomous or manual)
-3. If autonomous: verifies claude-tasks, asks for watchdog interval
-4. Checks initiative documents exist
-5. Installs the `eigen-squared` CLI globally (`~/.local/bin/eigen-squared`)
-6. If autonomous: installs `eigen-watchdog` and the cron job
-7. Initializes pipeline state
+`eigen_start` is interactive. On a fresh project it runs in **two passes**, with a Claude Code restart in between.
+
+**Pass 1 — configure.** It collects your settings and writes them to `.claude/settings.json` (`EIGEN_ROOT`, `EIGEN_BRANCH`, the pipeline mode, and — in autonomous mode — `CLAUDE_TASKS_API` and `WATCHDOG_INTERVAL`; optionally `WORKERS_MODEL` and `EIGEN_TELEGRAM_CHAT_ID`). It also sets `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and `teammateMode=tmux`. Then it **stops and asks you to restart Claude Code** so the harness picks up the new environment variables.
+
+> **Environment variables must live in `.claude/settings.json`, not be exported in your shell.** `eigen_start` aborts if it finds them only in the shell — this prevents one project's config from leaking into another. If you have them exported, clear them first:
+> ```bash
+> unset EIGEN_ROOT EIGEN_BRANCH CLAUDE_TASKS_API CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+> ```
+
+**Restart.** Exit and reopen Claude Code in the project: `exit`, then `cd /path/to/your/project && claude`.
+
+**Pass 2 — install.** Run `/eigen_start` again. Now that the variables are loaded, it:
+1. Verifies the environment (env vars, claude-tasks health in autonomous mode, Docker, initiative documents present, and that no `pipeline_state.json` exists yet)
+2. Installs the `eigen-squared` CLI globally (`~/.local/bin/eigen-squared`)
+3. In autonomous mode: installs `eigen-watchdog`, writes `.eigen/env`, and installs the cron job
+4. Initializes pipeline state (`eigen-squared init`)
+
+On later runs, when the variables already exist, `eigen_start` skips the configure pass and goes straight to install. Use `/eigen_start --reinstall-cli-only` to only refresh the CLI wrapper after a plugin version bump.
 
 In autonomous mode, the watchdog detects the pending `time_split` and schedules it within the configured interval. From there, the pipeline runs itself until a phase completes.
 
@@ -207,6 +241,8 @@ The swarm leader. Spawns parallel agent teammates (workers), each implementing a
 ### Stage 7: review_swarm_pr (per epic)
 
 Scope-aware code review with parallel review agents (security, architecture, simplicity, performance, testing). Creates fixup tasks if needed, iterates with orchestrate_swarm until all findings (P1, P2, P3) are resolved. On convergence, auto-merges the PR.
+
+When the scoped diff touches frontend surfaces (`.tsx/.jsx/.vue/.svelte/.html/.css`) **and** the optional external [`impeccable`](https://impeccable.style) design skill is installed, an extra `design-critique` reviewer joins the iter-0 roster. It runs only impeccable's deterministic anti-pattern detector (`detect.mjs --json`, no network/browser/interactive setup) and reports objective, location-anchored findings (accessibility, contrast, semantic HTML, broken images, documented anti-patterns) at P2/P3 — never subjective polish. impeccable is never required: if absent at iteration 0 it is simply skipped, and the review behaves exactly as before.
 
 ### Human checkpoint: eigen_continue
 

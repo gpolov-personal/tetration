@@ -359,11 +359,18 @@ Validate:
 
 1. Detect project languages using the `language-profiles` skill.
 2. Look up relevant review skills from the Stack-Specific Skills table.
+3. Set `<frontend_in_scope>` — true iff `scope_files` (§0.2) contains any `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.astro`, `*.html`, or `*.css` file, or any `*.ts`/`*.js` file under a `components/`, `pages/`, `views/`, or `ui/` directory. False otherwise.
+4. Set `<impeccable_available>` and `<impeccable_detect_path>` — best-effort probe for the **optional, external** impeccable design skill. It is available only if its detector entry script resolves at one of `~/.claude/skills/impeccable/scripts/detect.mjs` or `.claude/skills/impeccable/scripts/detect.mjs` (or the path reported for an installed `impeccable` skill) AND `node` is on PATH. If it does not resolve, set `<impeccable_available>` false and continue. **impeccable is never required — never STOP on its absence, and never reference its non-detector (interactive) flows.**
+5. Set `<codegraph_available>` — best-effort probe for the **optional, external** CodeGraph index (code-intelligence; see `skills/codegraph/SKILL.md`). True iff `codegraph` is on PATH and `$EIGEN_ROOT/.codegraph/` exists (`codegraph status -j` → `"initialized": true`). If it does not resolve, set false and continue. **Never required — never STOP on its absence.**
 
 ### 0.5 Fetch PR Diff
 
 1. Fetch: `gh pr diff <pr_number> --color never`
 2. Filter to scope files only. If scoped diff is empty → **STOP.**
+
+### 0.5.5 Refresh CodeGraph Index (optional)
+
+Skip entirely if `<codegraph_available>` is false. Otherwise ensure the index reflects the merged code now on the integration branch before §0.6 / §1.2 query it for impact analysis. This command runs as a fresh session, so CodeGraph's connect-time catch-up normally reconciles the index automatically — just run `codegraph status "$EIGEN_ROOT"` and, **only if** it reports a `Pending sync` section (the watcher was off during the swarm — headless / `CODEGRAPH_NO_DAEMON` / WSL2 `/mnt`), run `codegraph sync "$EIGEN_ROOT"`. Do not sync otherwise — over-syncing is wasted work. See `skills/codegraph/SKILL.md`.
 
 ### 0.6 Build Scope Context Document
 
@@ -373,6 +380,7 @@ Assemble for all review agents:
 - Files in scope, shared files
 - PR metadata
 - **CRITICAL: What is OUT OF SCOPE** — files not listed, missing functionality not in acceptance criteria
+- **CodeGraph blast-radius summary (only if `<codegraph_available>`):** for the symbols changed in the scoped diff, precompute a dependency summary with `codegraph_impact` (blast radius) and `codegraph_callers`/`codegraph_callees` (out-of-diff dependents), and include it here once so every reviewer sees who the change can break without re-deriving it via grep. Omit this bullet entirely when CodeGraph is absent. See `skills/codegraph/SKILL.md`.
 - **Previously-raised findings — DO NOT re-raise unless the fix is demonstrably wrong** (iteration ≥ 1 only). Populate from `review_convergence_state.json`. **Bounded inline list** — without a cap, this section grew linearly with iteration count (~20 findings/iter × 5 iterations = 100+ bullets in every reviewer prompt by iter 5). Apply two caps in order:
 
   1. **Per-signature cap of K=2 entries**: for each unique signature, include only the most-recent 2 occurrences. Older occurrences are still in `review_convergence_state.json` and reachable via the read-the-ledger fallback below.
@@ -424,6 +432,7 @@ The agent roster is **locked at iteration 0** for the lifetime of the epic's PR.
   - Matched language/domain skills
   - `performance-oracle` — if acceptance criteria mention performance or diff > 500 lines
   - `pattern-recognition-specialist` — if diff > 500 lines
+  - `design-critique` — **only if `<frontend_in_scope>` AND `<impeccable_available>` (both from §0.4)**. A detector-backed UI reviewer (mechanism in §1.2 "Design / UI checks") that runs impeccable's anti-pattern detector over the in-scope frontend files. If either gate is false, omit it silently — it is an optional enhancement, never required, and its absence must not change any other behavior. Because the roster is locked at iteration 0, this decision is frozen for the epic: absent at iteration 0 → never added later; present → reused verbatim even if impeccable later disappears (the §1.2 checklist makes that case a no-op).
 
   Persist the resolved roster to the iteration-0 review report's YAML front-matter (Stage 5.2) under the `agents_used` key so subsequent iterations can read it back verbatim.
 
@@ -464,6 +473,18 @@ In addition to scope-aware code review, each agent type has specific checks:
 **CI and configuration checks** (for agents reviewing CI/config changes):
 - Every file referenced by CI workflows must be tracked in version control. Run `git ls-files --error-unmatch <file>` mentally for each CI-referenced config. Untracked CI deps break builds in CI but work locally. [R4]
 - Test runner include/exclude patterns must not cause overlap or gaps across CI steps. If CI has separate "unit" and "integration" steps, verify their test patterns are disjoint. [R9]
+
+**Design / UI checks** (only the gated `design-critique` reviewer, when present in the roster):
+- Mechanism is **deterministic and non-interactive**: run impeccable's detector over the in-scope frontend files only — `node <impeccable_detect_path> --json <frontend scope_files>` (source mode: no network, no dev server, no browser). Do **NOT** invoke impeccable's interactive flows (`init`, the `PRODUCT.md` setup gate, `live` mode) — they stall headless swarm runs. [D1]
+- Report **only detector-anchored, objective findings**: accessibility and WCAG contrast failures, missing semantic HTML / skipped heading levels, broken or placeholder images, and the detector's documented anti-patterns — each with a concrete `file:line`. Map each hit to the standard finding schema (§1.2); use the offending element/selector as `symbol`, or `"<file-level>"` when the hit spans the file. [D2]
+- Severity mapping (conservative, so design findings never block on taste): accessibility / contrast / broken-image hits → **P2**; all other anti-pattern (slop/quality) hits → **P3**. Never emit P1 from this reviewer. [D3]
+- **Do NOT raise subjective polish** ("too bland", "make it bolder", "add personality"). Subjective findings have no stable pass condition and would trip the `(file, symbol, category)` oscillation breaker (Convergence Protocol), thrashing the epic. Objective, location-anchored findings only. [D4]
+- If the detector is missing at spawn time, errors, or returns no hits, contribute **zero findings** and do not block — the reviewer degrades cleanly to a no-op. [D5]
+
+**Impact & dependency checks** (all reviewers, only when `<codegraph_available>` — augments, never replaces, normal review):
+- For each symbol changed in the scoped diff, use `codegraph_impact` (blast radius) and `codegraph_callers` to find **out-of-diff** dependents the change could break, instead of reasoning about ripple effects from grep alone. This is most valuable for `security-sentinel`, `architecture-strategist`, and `data-integrity-guardian`. The §0.6 scope doc already carries a precomputed summary — deepen it per finding rather than re-deriving it. [C1]
+- Trust CodeGraph results (full AST parse) — do not re-verify them with grep. Treat returned source as already read. Do NOT run `codegraph sync` (handled in §0.5.5). [C2]
+- If `<codegraph_available>` is false, this block is a **no-op** — review proceeds exactly as before with grep/Read. [C3]
 
 Wait for ALL agents.
 
@@ -760,6 +781,7 @@ The escalation predicate is **independent** of M1 — a task may carry both `mon
 ### 4.2 Build Dependency Graph and Assign Waves
 
 - Serialize findings that need the same file
+- **If `<codegraph_available>`**: also serialize findings whose files sit in each other's blast radius (caller↔callee per `codegraph_impact`/`codegraph_callees`), not just findings touching the identical file — this catches cross-file fixup collisions the file-overlap heuristic misses. Fall back to file-overlap only when CodeGraph is absent. See `skills/codegraph/SKILL.md`.
 - Continue wave numbering from manifest's last wave
 - Integration findings in final wave
 

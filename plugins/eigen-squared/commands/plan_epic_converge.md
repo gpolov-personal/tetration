@@ -48,6 +48,7 @@ By the time this command runs, bootstrap has already created entity stubs, contr
 - **Read the actual code in `$EIGEN_ROOT`** — not just the blackbox specs or epic.md. If bootstrap used different field names, or a previous phase changed the schema, trust the code.
 - **Grep for actual imports and SDK usage** before choosing approaches. Do not assume which methods are available — check what is actually imported.
 - **Read actual test files** before claiming coverage gaps. Do not inherit gap claims from upstream docs — they may be stale.
+- **Prefer CodeGraph for these lookups when available** (optional, external — see `skills/codegraph/SKILL.md`). Existence-check once: `codegraph` on PATH and `$EIGEN_ROOT/.codegraph/` present (`codegraph status -j` → `"initialized": true`). When available, use `codegraph_context`/`codegraph_explore` to read the actual code, `codegraph_search`+`codegraph_callees` instead of grep for first-party imports/usage, and `codegraph_impact`/`codegraph_callers` to find which existing files a change fans out to (sharper shared-file identification). Note: third-party SDK source is NOT indexed — keep installed-SDK lookups on Read. If CodeGraph is absent, use grep/Read as above — never STOP.
 
 ## Environment
 
@@ -167,6 +168,7 @@ VERIFY AGAINST THE ACTUAL CODEBASE:
 - Read the actual code in $EIGEN_ROOT — not just the blackbox specs or epic.md
 - Grep for actual imports and SDK usage before choosing approaches
 - Read actual test files before claiming coverage gaps
+- If CodeGraph is available ($EIGEN_ROOT/.codegraph/ present + `codegraph` on PATH), prefer its `codegraph_*` tools (context/search/callers/impact) over grep/Read for the above — first-party code only; see skills/codegraph/SKILL.md. If absent, use grep/Read.
 
 COMMUNICATION:
 - Your coordinator's name is 'coordinator' (the team leader)

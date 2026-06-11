@@ -350,6 +350,7 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
    - Understand current architecture and patterns
    - Review domain-driven design structure
    - Identify integration points
+   - **If `<codegraph_available>`** (from your spawn prompt / working notes): prefer the `codegraph_*` tools over grep/Read for this exploration — `codegraph_context` to map the area in one call, `codegraph_callers`/`codegraph_callees`/`codegraph_impact` for integration points and the blast radius of stub interfaces you depend on, `codegraph_node` to read a symbol's signature/source. Treat returned source as already read. Do NOT run `codegraph sync` (the shared watcher keeps the index fresh). If CodeGraph is absent or a call fails, use grep/Glob/Read. See `skills/codegraph/SKILL.md`.
 
 7. **Validate File Ownership**
 
@@ -388,11 +389,11 @@ If resuming: <specific instruction, e.g., "Read tracker at <path>. Run validatio
 
 9. **Load Relevant Skills**
 
-   Read `<detected_tech_stack>` and `<relevant_skills>` from:
+   Read `<detected_tech_stack>`, `<relevant_skills>`, and `<codegraph_available>` from:
    1. Your spawn prompt context above (normal flow)
    2. Your working notes `## Detected Tech Stack` and `## Loaded Skills` sections
-      (if spawn prompt was compacted — resume flow)
-   3. If neither is present: standalone fallback below
+      (if spawn prompt was compacted — resume flow); persist `<codegraph_available>` here too
+   3. If neither is present: standalone fallback below (also re-probe CodeGraph per `skills/codegraph/SKILL.md`: `codegraph` on PATH + `$EIGEN_ROOT/.codegraph/` present)
 
    If `<relevant_skills>` is present and non-empty:
 

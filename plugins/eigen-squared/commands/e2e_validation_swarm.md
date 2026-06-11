@@ -259,11 +259,13 @@ Read the `MODE` and `ITERATION` from your spawn prompt:
 
 9. **Discover E2E-Relevant Skills**
 
-   Read `<detected_tech_stack>` and `<relevant_skills>` from:
+   Read `<detected_tech_stack>`, `<relevant_skills>`, and `<codegraph_available>` from:
    1. Your spawn prompt context above (normal flow)
    2. Your working notes `## Detected Tech Stack` and `## Loaded Skills` sections
       (if spawn prompt was compacted — resume flow)
-   3. If neither is present: standalone fallback below
+   3. If neither is present: standalone fallback below (re-probe CodeGraph per `skills/codegraph/SKILL.md`)
+
+   **If `<codegraph_available>`**: because E2E exercises features across component boundaries, prefer `codegraph_trace` (one call returns the whole call path from entry to exit, bridging dynamic/callback/framework hops grep cannot follow) and `codegraph_context` to understand the merged feature when designing tests (Stage 2), and `codegraph_trace`/`codegraph_impact` over a failure's stack-trace symbols to write the root-cause narrative (Stage 3). Note: infra/config (docker-compose, conftest YAML, live services) is NOT indexed — keep that on Read. Treat returned source as already read; do NOT run `codegraph sync`. Fall back to grep/Read when absent.
 
    If `<relevant_skills>` is present:
 

@@ -38,6 +38,27 @@ COMMAND_TO_SKILL = {
 }
 
 
+# Per-command execution profile: (model, effort) for `claude -p --model
+# --effort`. One row per command so the model and reasoning effort each step
+# runs on are visible at a glance. Edit a row to retune a step (e.g. a cheaper
+# model for mechanical steps). An empty string in either slot omits that flag,
+# so claude-tasks / Claude Code falls back to the global default. Pinning the
+# model here prevents unsupervised runs from silently using whatever
+# interactive default happens to be set.
+DEFAULT_MODEL = "claude-opus-4-8[1m]"
+EXECUTION_BY_COMMAND = {
+    # command                          (model,         effort)
+    "time_split":                      (DEFAULT_MODEL, "xhigh"),
+    "deepen_time_split":               (DEFAULT_MODEL, "high"),
+    "bootstrap_converge":              (DEFAULT_MODEL, "high"),
+    "space_split_converge":            (DEFAULT_MODEL, "medium"),
+    "plan_epic_converge":              (DEFAULT_MODEL, "medium"),
+    "create_issues_from_plan_swarm":   (DEFAULT_MODEL, "low"),
+    "orchestrate_swarm":               (DEFAULT_MODEL, "low"),
+    "review_swarm_pr":                 (DEFAULT_MODEL, "low"),
+}
+
+
 def resolve_hook_log(eigen_root: str) -> Path:
     return _core_resolve_hook_log(eigen_root, dot_dir=".eigen")
 
@@ -73,6 +94,8 @@ def schedule_command(
 
     from .transitions import make_context_key
 
+    model, effort = EXECUTION_BY_COMMAND.get(command, ("", ""))
+
     return _core_schedule_command(
         command,
         skill=skill,
@@ -86,5 +109,7 @@ def schedule_command(
         telegram_chat_id=telegram_chat_id,
         slack_webhook=slack_webhook,
         discord_webhook=discord_webhook,
+        effort=effort,
+        model=model,
         attempt=context.get("_attempt", 1),
     )

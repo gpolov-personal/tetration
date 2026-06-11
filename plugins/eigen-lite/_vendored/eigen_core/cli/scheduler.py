@@ -184,6 +184,8 @@ def schedule_command(
     telegram_chat_id: str = "",
     slack_webhook: str = "",
     discord_webhook: str = "",
+    effort: str = "",
+    model: str = "",
     attempt: int = 1,
 ) -> bool:
     """Schedule a command via the claude-tasks API.
@@ -220,6 +222,10 @@ def schedule_command(
         payload["slack_webhook"] = slack_webhook
     if discord_webhook:
         payload["discord_webhook"] = discord_webhook
+    if effort:
+        payload["effort"] = effort
+    if model:
+        payload["model"] = model
 
     log_entry(
         hook_log,

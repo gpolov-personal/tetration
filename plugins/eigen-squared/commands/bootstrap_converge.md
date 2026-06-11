@@ -983,6 +983,23 @@ Next steps:
   2. Run /compound_improve to apply accumulated lessons to bootstrap_converge.md.
 ```
 
+### 7.7 Index the Foundation for CodeGraph (optional)
+
+CodeGraph is the **optional, external** code-intelligence tool (see `skills/codegraph/SKILL.md`). This is the natural producer point: the foundation now exists and is committed, so downstream consumers (`plan_epic_converge`, swarm workers, `review_swarm_pr`) can query its structure instead of grep/Read. Best-effort, never blocking:
+
+```bash
+if command -v codegraph >/dev/null 2>&1; then
+  if [ ! -d "$EIGEN_ROOT/.codegraph" ]; then
+    codegraph init -i "$EIGEN_ROOT"   # init + full index (first time only)
+  fi
+  # If already initialized, do NOT sync here: a running MCP watcher (or the next
+  # session's connect-time catch-up) keeps the index fresh. Only sync when the
+  # watcher is off (headless/CODEGRAPH_NO_DAEMON / WSL2 /mnt) — see skills/codegraph/SKILL.md.
+fi
+```
+
+If `codegraph` is not installed, skip silently — the pipeline works without it.
+
 ---
 
 ## Pre-Submission Checklist

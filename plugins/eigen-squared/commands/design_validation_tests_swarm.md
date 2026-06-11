@@ -307,10 +307,10 @@ Execute research to understand the testing strategies for `<task_description>`:
 
 **Stack-Adaptive Research Enhancement**
 
-Read `<detected_tech_stack>` from:
+Read `<detected_tech_stack>` and `<codegraph_available>` from:
 1. Your spawn prompt context above (normal flow)
 2. Your working notes `## Detected Tech Stack` section (if spawn prompt was compacted)
-3. If neither is present, the researcher will detect the stack independently
+3. If neither is present, the researcher will detect the stack independently (and re-probe CodeGraph per `skills/codegraph/SKILL.md`)
 
 If `<detected_tech_stack>` is present, pass it to the researcher as part of its arguments
 so it can search for stack-specific testing skills:
@@ -472,6 +472,7 @@ I must classify the task type. Instead of asking a human developer, I will prese
    - Catalog existing test modules with their purposes
    - Store mapping in `<module_to_test_file_mapping>`
    - **Cross-reference with `<my_test_files_owned>`** — only consider test files in your ownership
+   - **If `<codegraph_available>`**: prefer `codegraph_search`/`codegraph_files` to locate test modules and `codegraph_callers` on the unit under test to find which tests exercise it, instead of grep/glob; also `codegraph_impact`/`codegraph_context` to identify affected modules in step 1. Treat returned source as already read; do NOT run `codegraph sync`. Fall back to grep/Read when absent. See `skills/codegraph/SKILL.md`.
 
 3. **Discover Existing Test Cases**
 

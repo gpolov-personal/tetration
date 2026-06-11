@@ -746,3 +746,7 @@ Skills organized by tech stack. The orchestrator uses this table instead of scan
 3. Match plan/issue keywords against the "By Domain" table
 4. Return all matched skill names as `<relevant_skills>`
 5. For each skill, the path is `skills/<skill_name>/SKILL.md` relative to the plugin root
+
+### Cross-Cutting Tooling (not stack-routed)
+
+`codegraph` is an **optional, external** code-intelligence tool (local tree-sitter graph over MCP + CLI), not a bundled skill — do NOT add it to the tables above (its lookup would resolve a non-existent `skills/codegraph` bundled path, and it is used regardless of stack). It is documented in `skills/codegraph/SKILL.md`. Commands that explore existing code, trace call flows, or compute change impact should existence-check it per that reference and degrade silently to grep/Read when absent.
