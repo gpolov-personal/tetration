@@ -52,6 +52,25 @@ EFFORT_BY_COMMAND = {
 }
 
 
+# Per-command model for `claude -p --model`. Mirrors EFFORT_BY_COMMAND.
+# Unmapped commands send no model, so claude-tasks falls back to the global
+# default model at runtime. Edit these values to route a different model per
+# step (e.g. a cheaper model for mechanical steps). Empty string = inherit
+# the global default. Pinning a model here prevents unsupervised runs from
+# silently using whatever interactive default happens to be set.
+DEFAULT_MODEL = "claude-opus-4-8[1m]"
+MODEL_BY_COMMAND = {
+    "time_split": DEFAULT_MODEL,
+    "deepen_time_split": DEFAULT_MODEL,
+    "bootstrap_converge": DEFAULT_MODEL,
+    "space_split_converge": DEFAULT_MODEL,
+    "plan_epic_converge": DEFAULT_MODEL,
+    "create_issues_from_plan_swarm": DEFAULT_MODEL,
+    "orchestrate_swarm": DEFAULT_MODEL,
+    "review_swarm_pr": DEFAULT_MODEL,
+}
+
+
 def resolve_hook_log(eigen_root: str) -> Path:
     return _core_resolve_hook_log(eigen_root, dot_dir=".eigen")
 
@@ -101,5 +120,6 @@ def schedule_command(
         slack_webhook=slack_webhook,
         discord_webhook=discord_webhook,
         effort=EFFORT_BY_COMMAND.get(command, ""),
+        model=MODEL_BY_COMMAND.get(command, ""),
         attempt=context.get("_attempt", 1),
     )

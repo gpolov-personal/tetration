@@ -354,3 +354,53 @@ class TestEffortRouting:
             effort="",
         )
         assert "effort" not in captured["payload"]
+
+
+class TestModelRouting:
+    """Per-command model routing: MODEL_BY_COMMAND -> payload['model']."""
+
+    def _run(self, command, tmp_path, monkeypatch):
+        import cli.scheduler as sched
+        import eigen_core.cli.scheduler as core
+
+        captured: dict = {}
+        monkeypatch.setattr(core.subprocess, "run", _payload_capturer(captured))
+        sched.schedule_command(
+            command,
+            {"scope": "phase_epic", "phase": 1, "epic": 1},
+            eigen_root=str(tmp_path),
+            claude_tasks_api="http://localhost:8080",
+            hook_log=tmp_path / "hook_log.jsonl",
+        )
+        return captured.get("payload", {})
+
+    def test_command_routes_pinned_model(self, tmp_path, monkeypatch):
+        from cli.scheduler import MODEL_BY_COMMAND
+
+        payload = self._run("plan_epic_converge", tmp_path, monkeypatch)
+        assert payload.get("model") == MODEL_BY_COMMAND["plan_epic_converge"]
+
+    def test_every_routed_command_has_model(self):
+        """Every routable command must pin a model so unsupervised runs never
+        fall back to whatever interactive default happens to be set."""
+        from cli.scheduler import COMMAND_TO_SKILL, MODEL_BY_COMMAND
+        missing = [c for c in COMMAND_TO_SKILL if not MODEL_BY_COMMAND.get(c)]
+        assert not missing, f"commands missing a model mapping: {missing}"
+
+    def test_core_omits_model_when_empty(self, tmp_path, monkeypatch):
+        """Core must not send a model field when model is empty (daemon falls back to global)."""
+        import eigen_core.cli.scheduler as core
+
+        captured: dict = {}
+        monkeypatch.setattr(core.subprocess, "run", _payload_capturer(captured))
+        core.schedule_command(
+            "anything",
+            skill="eigen-squared:x",
+            task_name="t",
+            context_key="k",
+            eigen_root=str(tmp_path),
+            claude_tasks_api="http://localhost:8080",
+            hook_log=tmp_path / "hook_log.jsonl",
+            model="",
+        )
+        assert "model" not in captured["payload"]
