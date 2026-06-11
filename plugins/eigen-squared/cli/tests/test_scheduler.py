@@ -305,7 +305,7 @@ def _payload_capturer(captured: dict):
 
 
 class TestEffortRouting:
-    """Per-command effort routing: EFFORT_BY_COMMAND -> payload['effort']."""
+    """Per-command effort routing: EXECUTION_BY_COMMAND -> payload['effort']."""
 
     def _run(self, command, tmp_path, monkeypatch):
         import cli.scheduler as sched
@@ -322,19 +322,22 @@ class TestEffortRouting:
         )
         return captured.get("payload", {})
 
-    def test_planning_routes_xhigh(self, tmp_path, monkeypatch):
-        assert self._run("plan_epic_converge", tmp_path, monkeypatch).get("effort") == "xhigh"
+    def test_time_split_routes_xhigh(self, tmp_path, monkeypatch):
+        assert self._run("time_split", tmp_path, monkeypatch).get("effort") == "xhigh"
 
-    def test_swarm_routes_medium(self, tmp_path, monkeypatch):
-        assert self._run("orchestrate_swarm", tmp_path, monkeypatch).get("effort") == "medium"
+    def test_planning_routes_medium(self, tmp_path, monkeypatch):
+        assert self._run("plan_epic_converge", tmp_path, monkeypatch).get("effort") == "medium"
 
-    def test_review_routes_high(self, tmp_path, monkeypatch):
-        assert self._run("review_swarm_pr", tmp_path, monkeypatch).get("effort") == "high"
+    def test_swarm_routes_low(self, tmp_path, monkeypatch):
+        assert self._run("orchestrate_swarm", tmp_path, monkeypatch).get("effort") == "low"
+
+    def test_review_routes_low(self, tmp_path, monkeypatch):
+        assert self._run("review_swarm_pr", tmp_path, monkeypatch).get("effort") == "low"
 
     def test_every_routed_command_has_effort(self):
         """Every command the squared scheduler can route must carry an effort."""
-        from cli.scheduler import COMMAND_TO_SKILL, EFFORT_BY_COMMAND
-        missing = [c for c in COMMAND_TO_SKILL if c not in EFFORT_BY_COMMAND]
+        from cli.scheduler import COMMAND_TO_SKILL, EXECUTION_BY_COMMAND
+        missing = [c for c in COMMAND_TO_SKILL if not EXECUTION_BY_COMMAND.get(c, ("", ""))[1]]
         assert not missing, f"commands missing an effort mapping: {missing}"
 
     def test_core_omits_effort_when_empty(self, tmp_path, monkeypatch):
@@ -357,7 +360,7 @@ class TestEffortRouting:
 
 
 class TestModelRouting:
-    """Per-command model routing: MODEL_BY_COMMAND -> payload['model']."""
+    """Per-command model routing: EXECUTION_BY_COMMAND -> payload['model']."""
 
     def _run(self, command, tmp_path, monkeypatch):
         import cli.scheduler as sched
@@ -375,16 +378,16 @@ class TestModelRouting:
         return captured.get("payload", {})
 
     def test_command_routes_pinned_model(self, tmp_path, monkeypatch):
-        from cli.scheduler import MODEL_BY_COMMAND
+        from cli.scheduler import EXECUTION_BY_COMMAND
 
         payload = self._run("plan_epic_converge", tmp_path, monkeypatch)
-        assert payload.get("model") == MODEL_BY_COMMAND["plan_epic_converge"]
+        assert payload.get("model") == EXECUTION_BY_COMMAND["plan_epic_converge"][0]
 
     def test_every_routed_command_has_model(self):
         """Every routable command must pin a model so unsupervised runs never
         fall back to whatever interactive default happens to be set."""
-        from cli.scheduler import COMMAND_TO_SKILL, MODEL_BY_COMMAND
-        missing = [c for c in COMMAND_TO_SKILL if not MODEL_BY_COMMAND.get(c)]
+        from cli.scheduler import COMMAND_TO_SKILL, EXECUTION_BY_COMMAND
+        missing = [c for c in COMMAND_TO_SKILL if not EXECUTION_BY_COMMAND.get(c, ("", ""))[0]]
         assert not missing, f"commands missing a model mapping: {missing}"
 
     def test_core_omits_model_when_empty(self, tmp_path, monkeypatch):

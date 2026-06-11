@@ -38,36 +38,24 @@ COMMAND_TO_SKILL = {
 }
 
 
-# Per-command reasoning effort for `claude -p --effort`. Unmapped commands send
-# no effort, so Claude Code falls back to the global effortLevel at runtime.
-EFFORT_BY_COMMAND = {
-    "time_split": "high",
-    "deepen_time_split": "high",
-    "bootstrap_converge": "high",
-    "space_split_converge": "high",
-    "plan_epic_converge": "xhigh",
-    "create_issues_from_plan_swarm": "medium",
-    "orchestrate_swarm": "medium",
-    "review_swarm_pr": "high",
-}
-
-
-# Per-command model for `claude -p --model`. Mirrors EFFORT_BY_COMMAND.
-# Unmapped commands send no model, so claude-tasks falls back to the global
-# default model at runtime. Edit these values to route a different model per
-# step (e.g. a cheaper model for mechanical steps). Empty string = inherit
-# the global default. Pinning a model here prevents unsupervised runs from
-# silently using whatever interactive default happens to be set.
+# Per-command execution profile: (model, effort) for `claude -p --model
+# --effort`. One row per command so the model and reasoning effort each step
+# runs on are visible at a glance. Edit a row to retune a step (e.g. a cheaper
+# model for mechanical steps). An empty string in either slot omits that flag,
+# so claude-tasks / Claude Code falls back to the global default. Pinning the
+# model here prevents unsupervised runs from silently using whatever
+# interactive default happens to be set.
 DEFAULT_MODEL = "claude-opus-4-8[1m]"
-MODEL_BY_COMMAND = {
-    "time_split": DEFAULT_MODEL,
-    "deepen_time_split": DEFAULT_MODEL,
-    "bootstrap_converge": DEFAULT_MODEL,
-    "space_split_converge": DEFAULT_MODEL,
-    "plan_epic_converge": DEFAULT_MODEL,
-    "create_issues_from_plan_swarm": DEFAULT_MODEL,
-    "orchestrate_swarm": DEFAULT_MODEL,
-    "review_swarm_pr": DEFAULT_MODEL,
+EXECUTION_BY_COMMAND = {
+    # command                          (model,         effort)
+    "time_split":                      (DEFAULT_MODEL, "xhigh"),
+    "deepen_time_split":               (DEFAULT_MODEL, "high"),
+    "bootstrap_converge":              (DEFAULT_MODEL, "high"),
+    "space_split_converge":            (DEFAULT_MODEL, "medium"),
+    "plan_epic_converge":              (DEFAULT_MODEL, "medium"),
+    "create_issues_from_plan_swarm":   (DEFAULT_MODEL, "low"),
+    "orchestrate_swarm":               (DEFAULT_MODEL, "low"),
+    "review_swarm_pr":                 (DEFAULT_MODEL, "low"),
 }
 
 
@@ -106,6 +94,8 @@ def schedule_command(
 
     from .transitions import make_context_key
 
+    model, effort = EXECUTION_BY_COMMAND.get(command, ("", ""))
+
     return _core_schedule_command(
         command,
         skill=skill,
@@ -119,7 +109,7 @@ def schedule_command(
         telegram_chat_id=telegram_chat_id,
         slack_webhook=slack_webhook,
         discord_webhook=discord_webhook,
-        effort=EFFORT_BY_COMMAND.get(command, ""),
-        model=MODEL_BY_COMMAND.get(command, ""),
+        effort=effort,
+        model=model,
         attempt=context.get("_attempt", 1),
     )
