@@ -50,34 +50,6 @@ def _manifest_belongs_to_epic(
     return isinstance(data, dict) and data.get("epic_id") == expected_id
 
 
-def next_for_convergence_pair(
-    main_state: dict, deepen_state: dict
-) -> tuple[str, str]:
-    """Determine next action for a main/deepen command pair.
-
-    Returns:
-        ("run_main", reason) | ("run_deepen", reason) | ("converged", reason)
-    """
-    main_status = main_state.get("status", "not_started")
-    main_converged = main_state.get("convergence", {}).get("converged", False)
-    main_fc = main_state.get("feedback_consumed", False)
-    deepen_status = deepen_state.get("status", "not_started")
-
-    if main_converged:
-        return ("converged", "already converged")
-
-    if main_status == "not_started":
-        return ("run_main", "first run")
-
-    if deepen_status == "not_started":
-        return ("run_deepen", "main completed, deepen not started")
-
-    if not main_fc:
-        return ("run_main", "fresh feedback available from deepen")
-
-    return ("run_deepen", "main processed feedback, deepen needs re-analysis")
-
-
 def next_for_swarm_pair(swarm_state: dict) -> tuple[str, str]:
     """Determine next action for orchestrate_swarm / review_swarm_pr.
 
@@ -119,18 +91,15 @@ def determine_next(
     if not s:
         return None
 
-    # ── Initiative level: time_split ↔ deepen_time_split ──
+    # ── Initiative level: time_split (single self-converging command) ──
 
     ts = s.get("time_split")
-    dts = s.get("deepen_time_split")
-    if not ts or not dts:
+    if not ts:
         return None
-
-    result = next_for_convergence_pair(ts, dts)
-    if result[0] == "run_main":
+    if ts.get("status") == "not_started":
         return ("time_split", {"scope": "initiative"})
-    if result[0] == "run_deepen":
-        return ("deepen_time_split", {"scope": "initiative"})
+    if not ts.get("convergence", {}).get("converged", False):
+        return ("time_split", {"scope": "initiative"})
 
     # Validate phase_count
     try:

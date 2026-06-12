@@ -159,12 +159,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Maps main commands to their deepen counterparts (commands still using
-# the legacy main/deepen pair pattern). bootstrap_converge and
-# plan_epic_converge are self-converging and live in CONVERGE_COMMANDS.
-MAIN_TO_DEEPEN = {
-    "time_split": "deepen_time_split",
-}
+# The legacy main/deepen pair pattern is no longer used by any command —
+# time_split was the last pair and is now self-converging (single session).
+# These maps are kept (empty) for backward-compatible imports.
+MAIN_TO_DEEPEN: dict[str, str] = {}
 
 DEEPEN_TO_MAIN = {v: k for k, v in MAIN_TO_DEEPEN.items()}
 
@@ -174,8 +172,8 @@ DEEPEN_COMMANDS = set(DEEPEN_TO_MAIN.keys())
 # Which commands are "main" commands (convergence pair left side)
 MAIN_COMMANDS = set(MAIN_TO_DEEPEN.keys())
 
-# Self-converging commands (single command, internal swarm convergence loop)
-CONVERGE_COMMANDS = {"plan_epic_converge", "bootstrap_converge", "space_split_converge"}
+# Self-converging commands (single command, internal self-critique convergence loop)
+CONVERGE_COMMANDS = {"time_split", "plan_epic_converge", "bootstrap_converge", "space_split_converge"}
 
 
 def dispatch(args: Namespace) -> int:
@@ -243,10 +241,8 @@ def cmd_status(args: Namespace) -> int:
     print()
 
     ts = state.time_split
-    dts = state.deepen_time_split
     conv = "converged" if ts.convergence.converged else ts.status
     print(f"  time_split          {conv:12s}  iter {ts.iteration}")
-    print(f"  deepen_time_split   {dts.status:12s}  iter {dts.iteration}")
     print()
 
     for pk in sorted(state.phases.keys(), key=int):
@@ -391,7 +387,7 @@ def cmd_get_context(args: Namespace) -> int:
                   f"Run `eigen-squared next` to see what should run.", file=sys.stderr)
             return EXIT_ERROR
 
-    if phase is None and cmd not in ("time_split", "deepen_time_split"):
+    if phase is None and cmd != "time_split":
         print(f"ERROR: --phase required for {cmd}", file=sys.stderr)
         return EXIT_ERROR
 
@@ -410,124 +406,33 @@ def cmd_get_context(args: Namespace) -> int:
         context["epic"] = epic
 
     # Build command-specific context
-    if cmd in ("time_split", "deepen_time_split"):
+    if cmd == "time_split":
         ts = state.time_split
-        dts = state.deepen_time_split
-
-        if cmd == "time_split":
-            if ts.convergence.converged:
-                print(
-                    f"ERROR: time_split already converged "
-                    f"(iteration {ts.iteration}, decided by "
-                    f"{ts.convergence.decided_by} at {ts.convergence.decided_at}). "
-                    f"No re-run needed.",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-            context["iteration"] = ts.iteration + 1
-            context["current_iteration"] = ts.iteration
-            context["is_first_run"] = ts.iteration == 0
-            context["phase_count"] = ts.phase_count
-
-            # Guard: feedback lifecycle checks
-            if ts.iteration >= 1:
-                # Check if feedback file actually exists on disk
-                feedback_exists = False
-                if dts.feedback_path and root:
-                    feedback_file = Path(root) / "eigen_initiative" / dts.feedback_path
-                    feedback_exists = feedback_file.exists()
-
-                if ts.feedback_consumed and not feedback_exists:
-                    print(
-                        f"ERROR: time_split has already run (iteration {ts.iteration}). "
-                        f"Run /deepen_time_split first to generate feedback before re-running.",
-                        file=sys.stderr,
-                    )
-                    return EXIT_ERROR
-                if ts.feedback_consumed and feedback_exists:
-                    print(
-                        f"ERROR: Feedback already processed in iteration {ts.iteration}. "
-                        f"Run /deepen_time_split again for fresh review before re-running.",
-                        file=sys.stderr,
-                    )
-                    return EXIT_ERROR
-                if not ts.feedback_consumed and feedback_exists:
-                    context["should_process_feedback"] = True
-                    context["feedback_path"] = dts.feedback_path
-                elif not ts.feedback_consumed and not feedback_exists:
-                    print(
-                        f"ERROR: time_split iteration {ts.iteration} has unprocessed feedback "
-                        f"but feedback file not found at {dts.feedback_path}. "
-                        f"Run /deepen_time_split to generate it.",
-                        file=sys.stderr,
-                    )
-                    return EXIT_ERROR
-            else:
-                context["should_process_feedback"] = False
-
-            context["output_paths"] = ts.output_paths
-            recs = state.recommendations.get("time_split", [])
-            context["recommendations"] = [
-                r.to_dict() if hasattr(r, "to_dict") else r for r in recs
-            ]
-        else:  # deepen_time_split
-            if ts.convergence.converged:
-                print(
-                    f"ERROR: time_split already converged "
-                    f"(decided at {ts.convergence.decided_at}: "
-                    f"{ts.convergence.reason}). No further review needed.",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-            if ts.status == "not_started":
-                print(
-                    "ERROR: time_split has not run yet. "
-                    "Run /time_split first to generate the phase split.",
-                    file=sys.stderr,
-                )
-                return EXIT_ERROR
-
-            context["iteration"] = dts.iteration + 1
-            context["main_command_iteration"] = ts.iteration
-            context["phase_count"] = ts.phase_count
-            context["lessons_dir"] = "eigen_lessons/time_split/"
-
-            # Enrich main_command_outputs with phase manifests and source files
-            outputs = dict(ts.output_paths)
-            if ts.phase_count:
-                outputs["phase_manifests"] = [
-                    f"phases/phase_{i}_manifest.md"
-                    for i in range(1, ts.phase_count + 1)
-                ]
-            # Try to read source_files from initiative_summary
-            if root and outputs.get("initiative_summary"):
-                summary_path = Path(root) / "eigen_initiative" / outputs["initiative_summary"]
-                if summary_path.exists():
-                    try:
-                        summary = json.loads(summary_path.read_text())
-                        if "source_files" in summary:
-                            outputs["source_files"] = summary["source_files"]
-                    except (json.JSONDecodeError, OSError):
-                        pass
-            context["main_command_outputs"] = outputs
-
-            # Check if previous feedback exists on disk and warn about overwrite
-            if dts.feedback_path and root:
-                prev_file = Path(root) / "eigen_initiative" / dts.feedback_path
-                context["previous_feedback_path"] = dts.feedback_path
-                context["previous_feedback_exists"] = prev_file.exists()
-                if prev_file.exists() and not dts.feedback_consumed:
-                    context["overwrite_warning"] = (
-                        "Existing feedback has not been consumed by time_split yet. "
-                        "Re-analyzing will overwrite it."
-                    )
-            else:
-                context["previous_feedback_path"] = None
-                context["previous_feedback_exists"] = False
-
-            # Pass locked skills if they exist
-            if dts.locked_skills is not None:
-                context["locked_skills"] = dts.locked_skills
+        if ts.convergence.converged:
+            print(
+                f"ERROR: time_split already converged "
+                f"(iteration {ts.iteration}, decided by "
+                f"{ts.convergence.decided_by} at {ts.convergence.decided_at}). "
+                f"No re-run needed.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        # Self-converging command: a single session drafts the phase split,
+        # self-critiques against the review checklists, and revises. No
+        # main↔deepen feedback lifecycle / should_process_feedback flag.
+        # First-run detection uses iteration == 0 (the slot always exists).
+        context["iteration"] = ts.iteration + 1
+        context["current_iteration"] = ts.iteration
+        context["is_first_run"] = ts.iteration == 0
+        context["phase_count"] = ts.phase_count
+        context["output_paths"] = ts.output_paths
+        context["lessons_dir"] = "eigen_lessons/time_split/"
+        if ts.locked_skills is not None:
+            context["locked_skills"] = ts.locked_skills
+        recs = state.recommendations.get("time_split", [])
+        context["recommendations"] = [
+            r.to_dict() if hasattr(r, "to_dict") else r for r in recs
+        ]
 
     elif cmd in ("bootstrap", "deepen_bootstrap", "space_split", "deepen_space_split"):
         # Legacy: redirect to *_converge replacements
@@ -861,8 +766,6 @@ def cmd_complete(args: Namespace) -> int:
         ts.status = "completed"
         ts.iteration += 1
         ts.last_run_at = now
-        ts.feedback_consumed = True
-        state.deepen_time_split.feedback_consumed = True
         if args.phase_count is not None:
             ts.phase_count = args.phase_count
             # Initialize new phases if count increased
@@ -875,23 +778,11 @@ def cmd_complete(args: Namespace) -> int:
             ts.output_paths = json.loads(args.output_paths)
         elif args.output_path:
             ts.output_paths["initiative_summary"] = args.output_path
-
-    elif cmd == "deepen_time_split":
-        dts = state.deepen_time_split
-        dts.status = "completed"
-        dts.iteration += 1
-        dts.last_run_at = now
-        dts.feedback_consumed = False
-        state.time_split.feedback_consumed = False
-        state.time_split.status = "iterating"  # signal main command needs re-run
-        if args.feedback_path:
-            dts.feedback_path = args.feedback_path
         if args.findings_summary:
             from ..models import FindingsSummary
-            fs = json.loads(args.findings_summary)
-            dts.findings_summary = FindingsSummary.from_dict(fs)
+            ts.findings_summary = FindingsSummary.from_dict(json.loads(args.findings_summary))
         if args.locked_skills:
-            dts.locked_skills = json.loads(args.locked_skills)
+            ts.locked_skills = json.loads(args.locked_skills)
 
     elif cmd in ("bootstrap", "deepen_bootstrap", "space_split", "deepen_space_split"):
         # Legacy: redirect to *_converge replacements
@@ -1071,7 +962,7 @@ def cmd_mark_converged(args: Namespace) -> int:
 
     # Determine caller (which deepen command is marking convergence)
     if cmd == "time_split":
-        caller = "deepen_time_split"
+        caller = "time_split"  # self-marking, like the other converge commands
         target = state.time_split
     elif cmd == "bootstrap" and phase is not None:
         # Legacy: redirect to bootstrap_converge

@@ -14,7 +14,7 @@ description: Single-session phase decomposition into epics with EXECUTED cross-s
 ## Pipeline Context
 
 ```
-time_split ↔ deepen_time_split → bootstrap_converge → space_split_converge → plan_epic_converge → ...
+time_split → bootstrap_converge → space_split_converge → plan_epic_converge → ...
                                                        ^^^^^^^^^^^^^^^^^^^^
                                                        YOU ARE HERE
 ```
@@ -107,7 +107,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 | `output_paths` | Existing output paths recorded in pipeline state |
 | `phase_manifest` | Relative path to the phase manifest |
 | `lessons_dir` | Relative path to the lessons directory |
-| `recommendations` | Advisory observations from upstream `bootstrap_converge` and `deepen_time_split` |
+| `recommendations` | Advisory observations from upstream `bootstrap_converge` and `time_split` |
 
 **Crash recovery (git-log based)**: if `is_first_run: false`, the prior run crashed mid-session. Because the decomposition is committed as real epic.md files + manifests (Stage 3 commits per pass), recover from git rather than any state file:
 

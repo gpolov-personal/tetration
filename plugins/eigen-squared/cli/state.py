@@ -15,7 +15,6 @@ from .models import (
     PipelineState,
     PhaseState,
     VALID_MAIN_STATUSES,
-    VALID_DEEPEN_STATUSES,
     VALID_SWARM_STATUSES,
     VALID_PHASE_REVIEW_STATUSES,
     DEFAULT_RECOMMENDATIONS,
@@ -186,11 +185,6 @@ def validate_state(state: PipelineState) -> list[str]:
 
     if state.time_split.status not in VALID_MAIN_STATUSES:
         errors.append(f"time_split.status invalid: {state.time_split.status!r}")
-
-    if state.deepen_time_split.status not in VALID_DEEPEN_STATUSES:
-        errors.append(
-            f"deepen_time_split.status invalid: {state.deepen_time_split.status!r}"
-        )
 
     for phase_key, phase in state.phases.items():
         prefix = f"phases[{phase_key}]"

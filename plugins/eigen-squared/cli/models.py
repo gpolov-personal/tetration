@@ -312,7 +312,6 @@ class PipelineState:
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     time_split: MainCommandState = field(default_factory=MainCommandState)
-    deepen_time_split: DeepenCommandState = field(default_factory=DeepenCommandState)
     phases: dict[str, PhaseState] = field(default_factory=dict)
     recommendations: dict[str, list] = field(default_factory=dict)
 
@@ -324,7 +323,6 @@ class PipelineState:
             "updated_at": self.updated_at,
             "state": {
                 "time_split": self.time_split.to_dict(),
-                "deepen_time_split": self.deepen_time_split.to_dict(),
                 "phases": {k: v.to_dict() for k, v in self.phases.items()},
             },
             "recommendations": {
@@ -358,9 +356,6 @@ class PipelineState:
             created_at=d.get("created_at"),
             updated_at=d.get("updated_at"),
             time_split=MainCommandState.from_dict(state.get("time_split")),
-            deepen_time_split=DeepenCommandState.from_dict(
-                state.get("deepen_time_split")
-            ),
             phases=phases,
             recommendations=recommendations,
         )
@@ -398,7 +393,7 @@ THREAT_CLASS_ENUM = frozenset({
 })
 
 RECOMMENDATION_MATRIX: dict[str, set[str]] = {
-    "deepen_time_split": {"bootstrap_converge", "space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},
+    "time_split": {"bootstrap_converge", "space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},
     "bootstrap_converge": {"space_split_converge", "plan_epic_converge", "create_issues_from_plan_swarm"},
     "space_split_converge": {"plan_epic_converge", "create_issues_from_plan_swarm"},
     "plan_epic_converge": {"create_issues_from_plan_swarm"},

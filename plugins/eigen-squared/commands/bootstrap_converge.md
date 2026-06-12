@@ -14,7 +14,7 @@ description: Single-session foundation creation, executed verification gate, and
 ## Pipeline Context
 
 ```
-time_split ↔ deepen_time_split → bootstrap_converge → space_split_converge → ...
+time_split → bootstrap_converge → space_split_converge → ...
                                   ^^^^^^^^^^^^^^^^^^
                                   YOU ARE HERE
 ```
@@ -104,7 +104,7 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 | `bootstrap_report` | Relative path where bootstrap-report.json is expected |
 | `phase_manifest` | Relative path to the phase manifest |
 | `lessons_dir` | Relative path to the lessons directory |
-| `recommendations` | Advisory observations from upstream `deepen_time_split` |
+| `recommendations` | Advisory observations from upstream `time_split` |
 | `locked_skills` | (only present after a prior run) frozen skill set discovered in the earlier session |
 
 **Crash recovery**: if `is_first_run: false`, the scaffolder commits real files, so already-committed foundation work must not be redone. Run `git log --oneline -20` in `$EIGEN_ROOT` to detect commits already made (look for `bootstrap_converge: ...` messages — `project scaffold`, `entity stubs and contracts`, `foundation for phase N`, `round <N> ...`). Verify the current working tree matches the expected outputs of those commits, then RESUME from the first stage whose output is not yet committed rather than re-scaffolding. Stage 0 detection is idempotent (scanning the repo is free), so always re-run it to ground the resume.
