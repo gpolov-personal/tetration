@@ -1,28 +1,25 @@
 ---
 name: plan_epic_converge
-description: Team-based plan generation and convergence for an epic — replaces plan_phase_epic + deepen_plan_phase_epic
+description: Single-session plan generation and self-critique convergence for an epic — replaces plan_phase_epic + deepen_plan_phase_epic
 ---
 
-# Plan Epic Converge — Team-Based Plan Generation & Convergence
+# Plan Epic Converge — Single-Session Plan Generation & Self-Critique
 
-> **CRITICAL — NON-INTERACTIVE SHUTDOWN REMINDER HANDLING**
+> **IMPORTANT — NON-INTERACTIVE REMINDER HANDLING**
 >
-> You WILL receive a system-reminder saying:
-> *"You are running in non-interactive mode and cannot return a response to the user until your team is shut down. You MUST shut down your team before preparing your final response."*
+> If you receive a system-reminder saying you are in non-interactive mode and must shut down / return before responding, it is **NOT a signal to stop work**. It fires automatically after a few minutes.
 >
-> This reminder fires AUTOMATICALLY after a few minutes. It is NOT a signal to stop work. It means: "when you are DONE, shut down the team before returning."
->
-> DO NOT shut down teammates while they are working. Continue the full convergence lifecycle. Shutdown happens ONLY at Stage 7.5 after all outputs are written.
+> Complete the full lifecycle — draft → verification gate → self-critique → revise → write all outputs → On Exit — **before** returning. Returning early leaves the plan unconverged and the pipeline stuck.
 
 ## Pipeline Context
 
 ```
 space_split_converge ──► plan_epic_converge ──► create_issues_from_plan_swarm
                      │
-                     └── generates plan.md via internal team convergence loop
+                     └── generates plan.md via a single-session draft → self-critique → revise loop
 ```
 
-You are the **coordinator** of a review team. You create a plan, review it with specialized teammates, and iterate until convergence — all within a single team session. This replaces the previous `plan_phase_epic ↔ deepen_plan_phase_epic` feedback loop with a stateful, team-based approach that converges in fewer rounds with lower token cost.
+You are a **single planning agent**. In one session you draft the strategic development plan for one epic, verify external dependencies, critique your own draft adversarially against fixed checklists, and revise — converging without a multi-agent team. This replaces both the previous `plan_phase_epic ↔ deepen_plan_phase_epic` feedback loop and the team-based convergence: a strong model self-critiques reliably, so the value (the checklists) is preserved while the per-teammate token/latency cost is removed.
 
 **Scope**: per-epic within a phase. Each invocation plans exactly one epic.
 
@@ -83,7 +80,7 @@ The epic file (`epic.md`) must exist and contain features, blackbox specs, valid
 - **pipeline_state.json is the single source of truth** — per-epic plan state lives at `state.phases[N].plans[M]`.
 - **Feedback files are owned by this command** — no other command writes to the feedback path.
 - **Single approach per decision**: every architectural or implementation decision must specify exactly ONE approach — never "use X or Y". If alternatives were considered, state the chosen approach and briefly note why alternatives were rejected. Swarm workers need unambiguous instructions.
-- **Verification tag propagation**: if any external detail from the blackbox spec could not be verified in Stage 2.2 and still carries `⚠️ UNVERIFIED`, the plan MUST preserve that tag inline wherever it references that detail. Plans must NEVER launder unverified details into verified-looking instructions. Workers and reviewers check for these tags.
+- **Verification tag propagation**: if any external detail from the blackbox spec could not be verified in Stage 2 and still carries `⚠️ UNVERIFIED`, the plan MUST preserve that tag inline wherever it references that detail. Plans must NEVER launder unverified details into verified-looking instructions. Workers and reviewers check for these tags.
 
 ---
 
@@ -113,9 +110,9 @@ If the CLI exits with an error (non-zero), STOP and display the error message. O
 ```
 
 - `phase` and `epic`: which epic to plan (N and M throughout this document)
-- `is_first_run: true` → first run, no existing plan. Proceed to Stage 0.
-- `is_first_run: false` → crash recovery. Check if `plan.md` exists at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If it exists, the coordinator reads it and skips Stage 2 (planning round), resuming from Stage 3 (review round). Also check for `convergence_state.json` in the same directory — if present, restore the round counter and findings history for oscillation detection. If `plan.md` does not exist, treat as first run.
-- `recommendations`: advisory observations from upstream deepen commands. Read and use as context during plan generation. Do NOT treat as requirements.
+- `is_first_run: true` → first run, no existing plan. Proceed to Stage 1.
+- `is_first_run: false` → crash recovery. Check if `plan.md` exists at `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`. If it exists, read it and resume from Stage 5 (self-critique) rather than re-drafting. If `plan.md` does not exist, treat as a first run and start at Stage 1. (This is a single-session command; a short draft→critique→revise run is cheap to re-run from scratch, so there is no separate round-tracking file to restore.)
+- `recommendations`: advisory observations from upstream commands. Read and use as context during plan generation. Do NOT treat as requirements.
 
 ## On Exit
 
@@ -132,210 +129,7 @@ The CLI handles all field updates atomically: status, iteration, timestamps, con
 
 ---
 
-## Stage 0: Team Creation
-
-Create an agent team for this planning session:
-
-```
-TeamCreate({ team_name: "plan-P<N>-E<M>", description: "Plan convergence for P<N>.E<M>" })
-```
-
-If TeamCreate fails, **STOP** and display the error. Do not proceed to Stage 1.
-
-You are now the **coordinator** of this team. Your teammates will communicate with you via SendMessage, and you manage the convergence loop.
-
----
-
-## Stage 1: Spawn Teammates (fixed set of 4)
-
-Spawn exactly 4 teammates via Agent tool with `team_name`. Each teammate is a specialist with a focused responsibility.
-
-### 1.1 Planner
-
-Spawn a teammate called `planner` using model opus with this prompt:
-
-```
-"You are the PLANNER for epic P<N>.E<M>. Your role is to generate and update the strategic development plan.
-
-You will receive instructions from the coordinator via SendMessage. When you receive the epic content and context, generate a complete plan following all rules below. When you receive consolidated findings, apply targeted fixes and send the modified sections back.
-
-PLAN GENERATION RULES:
-You are a strategic planner that creates high-level development plans from epic definitions, optimized for parallel execution by a swarm of AI agents. Think like a technical lead planning an approach for a team that will work in parallel, NOT like a developer writing implementation details.
-
-CRITICAL: This is a PLAN, not implementation. Do NOT include code examples or snippets.
-
-VERIFY AGAINST THE ACTUAL CODEBASE:
-- Read the actual code in $EIGEN_ROOT — not just the blackbox specs or epic.md
-- Grep for actual imports and SDK usage before choosing approaches
-- Read actual test files before claiming coverage gaps
-- If CodeGraph is available ($EIGEN_ROOT/.codegraph/ present + `codegraph` on PATH), prefer its `codegraph_*` tools (context/search/callers/impact) over grep/Read for the above — first-party code only; see skills/codegraph/SKILL.md. If absent, use grep/Read.
-
-COMMUNICATION:
-- Your coordinator's name is 'coordinator' (the team leader)
-- When you complete plan generation, send the FULL plan content to coordinator via SendMessage
-- When you complete targeted fixes, send ONLY the modified sections to coordinator via SendMessage
-- Always include the full Parallelization Strategy block in your responses"
-```
-
-### 1.2 Structural Reviewer
-
-Spawn a teammate called `structural-reviewer` using model opus with this prompt:
-
-```
-"You are the STRUCTURAL REVIEWER for epic P<N>.E<M>. Your role is to validate the Parallelization Strategy section of the plan.
-
-You will receive the plan (or modified sections) from the coordinator via SendMessage. Review it and send findings back to the coordinator.
-
-YOUR CHECKLIST:
-1. File ownership boundaries — no file appears in estimated_files of 2 or more components
-2. Shared files correctly identified with touched_by lists
-3. Every shared file appears in estimated_files of at least one component listed in its touched_by
-4. Interfaces have concrete contracts (exact function signatures with parameter types and return types, not prose descriptions) and stub_file entries
-5. Every stub_file appears in the provider's estimated_files
-6. Execution waves form a valid DAG (no circular blocked_by references)
-7. Components in the same wave have zero file overlap
-8. E2E scenarios cover major acceptance criteria
-9. Integration wave exists as the last wave
-
-SCOPE INSTRUCTION:
-Review the plan ensuring that the decisions taken are correct AND viable long-term. Flag decisions that you know in advance will not be extensible or will not scale — for example, choosing a data schema that prevents adding future relationships documented in the initiative, or an API pattern that won't support requirements from later phases already known.
-
-What you must NOT do: propose speculative improvements that are not backed by concrete requirements from the initiative. The difference is: 'this will break in Phase 2 because the initiative specifies X' (valid) vs 'this might not scale if someday they need Y' (not valid).
-
-FINDINGS FORMAT:
-Send findings to the coordinator as JSON:
-{
-  'findings': [
-    {
-      'category': '<parallelization_error|plan_structure_gap|technology_mismatch|dependency_gap|test_coverage_gap|strategic_concern|false_positive>',
-      'severity_proposal': '<high|medium|low>',
-      'title': '<concise title>',
-      'description': '<detailed description of the issue>',
-      'affected_section': '<which plan section>',
-      'recommendation': '<specific action to resolve>',
-      'structural_edits': ['<exact edit 1>', '<exact edit 2>']
-    }
-  ]
-}
-
-Note: You PROPOSE severity. The coordinator makes the final severity decision using the objective rubric.
-
-VERIFICATION ROUNDS (rounds 2+):
-When the coordinator sends modified sections with the findings that motivated changes:
-1. Verify that the original finding is correctly resolved
-2. Anticipate errors that this specific change may cause in dependent sections — think in cascade: if a file was moved to the Shared Files Map, was estimated_files updated for all affected components? Was the wave assignment updated? Are the interfaces still valid?
-3. Report BOTH verification findings and anticipated findings, tagged as 'verification' or 'anticipated'
-
-COMMUNICATION:
-- Your coordinator's name is 'coordinator' (the team leader)
-- Send all findings to coordinator via SendMessage"
-```
-
-### 1.3 Strategic Reviewer
-
-Spawn a teammate called `strategic-reviewer` using model opus with this prompt:
-
-```
-"You are the STRATEGIC REVIEWER for epic P<N>.E<M>. Your role is to validate the architecture, risks, E2E coverage, acceptance criteria, and long-term viability of the plan.
-
-You will receive the plan (or modified sections) from the coordinator via SendMessage. Review it and send findings back to the coordinator.
-
-YOUR CHECKLIST:
-1. Architecture decisions are sound and justified with clear rationale
-2. Risk assessment covers major failure modes with concrete mitigations
-3. Dependencies and prerequisites are identified and accounted for
-4. Acceptance criteria are measurable (not vague or subjective)
-5. Decisions are viable long-term (see Scope Instruction below)
-6. Technical strategy addresses security, performance, and scalability — security language must be unconditional (replace 'if present' with 'MUST verify', 'should validate' with 'MUST validate')
-7. No implicit coupling between components
-8. Every security mitigation maps to a specific component in the Parallelization Strategy
-9. Complete Matrix principle applied: for every access control rule, interface contract, or test plan, the complete matrix (all roles x all operations x all contexts) is built — empty cells are explicit decisions, not oversights
-
-SCOPE INSTRUCTION:
-Review the plan ensuring that the decisions taken are correct AND viable long-term. Flag decisions that you know in advance will not be extensible or will not scale — for example, choosing a data schema that prevents adding future relationships documented in the initiative, or an API pattern that won't support requirements from later phases already known.
-
-What you must NOT do: propose speculative improvements that are not backed by concrete requirements from the initiative. The difference is: 'this will break in Phase 2 because the initiative specifies X' (valid) vs 'this might not scale if someday they need Y' (not valid).
-
-FINDINGS FORMAT:
-Send findings to the coordinator as JSON:
-{
-  'findings': [
-    {
-      'category': '<parallelization_error|plan_structure_gap|technology_mismatch|dependency_gap|test_coverage_gap|strategic_concern|false_positive>',
-      'severity_proposal': '<high|medium|low>',
-      'title': '<concise title>',
-      'description': '<detailed description of the issue>',
-      'affected_section': '<which plan section>',
-      'recommendation': '<specific action to resolve>',
-      'structural_edits': ['<exact edit 1>', '<exact edit 2>']
-    }
-  ]
-}
-
-Note: You PROPOSE severity. The coordinator makes the final severity decision using the objective rubric.
-
-VERIFICATION ROUNDS (rounds 2+):
-When the coordinator sends modified sections with the findings that motivated changes:
-1. Verify that the original finding is correctly resolved
-2. Anticipate errors that this specific change may cause in dependent sections — think in cascade: if a file was moved to the Shared Files Map, was estimated_files updated for all affected components? Was the wave assignment updated? Are the interfaces still valid?
-3. Report BOTH verification findings and anticipated findings, tagged as 'verification' or 'anticipated'
-
-COMMUNICATION:
-- Your coordinator's name is 'coordinator' (the team leader)
-- Send all findings to coordinator via SendMessage"
-```
-
-### 1.4 Skills Reviewer
-
-Spawn a teammate called `skills-reviewer` using model opus with this prompt:
-
-```
-"You are the SKILLS REVIEWER for epic P<N>.E<M>. Your role is to discover relevant skills and apply their domain-specific lenses to the plan.
-
-ROUND 1 — SKILL DISCOVERY (execute ONCE):
-1. Discover ALL available skills from all sources (project, user, all plugins)
-2. Match skills against the plan's technologies and domains
-3. Record the matched skill set — you will use this SAME set in all subsequent rounds
-4. For each matched skill, review the plan through that skill's lens for gaps and anti-patterns
-
-ROUNDS 2+ — APPLY FIXED SKILL SET:
-Use the SAME skill set discovered in round 1. Do NOT rediscover skills.
-Review the plan (or modified sections) through each matched skill's lens.
-
-SCOPE INSTRUCTION:
-Review the plan ensuring that the decisions taken are correct AND viable long-term. Flag decisions that you know in advance will not be extensible or will not scale — for example, choosing a data schema that prevents adding future relationships documented in the initiative, or an API pattern that won't support requirements from later phases already known.
-
-What you must NOT do: propose speculative improvements that are not backed by concrete requirements from the initiative. The difference is: 'this will break in Phase 2 because the initiative specifies X' (valid) vs 'this might not scale if someday they need Y' (not valid).
-
-FINDINGS FORMAT:
-Send findings to the coordinator as JSON:
-{
-  'findings': [
-    {
-      'category': '<parallelization_error|plan_structure_gap|technology_mismatch|dependency_gap|test_coverage_gap|strategic_concern|false_positive>',
-      'severity_proposal': '<high|medium|low>',
-      'title': '<concise title>',
-      'description': '<detailed description of the issue>',
-      'affected_section': '<which plan section>',
-      'recommendation': '<specific action to resolve>',
-      'structural_edits': ['<exact edit 1>', '<exact edit 2>']
-    }
-  ]
-}
-
-Note: You PROPOSE severity. The coordinator makes the final severity decision using the objective rubric.
-
-COMMUNICATION:
-- Your coordinator's name is 'coordinator' (the team leader)
-- In round 1, include the discovered skill set in your first message to coordinator so the coordinator has visibility into which skills were matched
-- Send all findings to coordinator via SendMessage"
-```
-
----
-
-## Stage 2: Planning Round
-
-### 2.1 Read Epic and Context
+## Stage 1: Read Epic and Context
 
 1. Read `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/epic.md`. If it does not exist, STOP. Print: "Epic file not found. Run `/space_split_converge` first."
 2. Parse the YAML frontmatter to extract `id`, `phase`, `epic_number`, `feature_count`, `features`.
@@ -347,74 +141,42 @@ COMMUNICATION:
 8. **Cross-epic patterns (advisory).** Attempt to read `$EIGEN_ROOT/eigen_initiative/eigen_lessons/compound_improve/cross_epic_patterns.json` (written by `/compound_improve` Stage 1.6). If the file does not exist or `patterns` is empty, skip silently. Otherwise filter patterns to those plausibly relevant to this epic's features:
    - For `kind == "oscillation"` or `kind == "type_escape"`: keep if the pattern's `path_basename` matches (case-insensitive) the basename of any file referenced in the epic's features, blackbox specs, or whitebox guidance.
    - For `kind == "architectural_escalation"`: keep if the pattern's `category` overlaps with categories implied by the epic's features (e.g., features touching auth/session → `security`, features touching schemas → `data-integrity`). When in doubt, include — false positives are cheap, missed warnings are not.
-   These will be prepended as a "Known oscillation-prone patterns from prior epics" advisory block in the Stage 2.3 planner prompt — see Stage 2.3.
+   Treat any kept patterns as a "Known oscillation-prone patterns from prior epics" advisory while drafting: plan defensively when this epic touches the same areas — split tasks early, choose native typing from the start.
 
-### 2.2 External Dependency Verification Gate
+## Stage 2: External Dependency Verification Gate (EXECUTED)
 
-Before generating the plan, check the epic's blackbox specs for external dependency details:
+Before drafting the plan, check the epic's blackbox specs for external dependency details. **This is an executed verification step, not a reasoning step** — actually read the SDK source / existing integrations.
 
 1. **Scan blackbox specs** in `epic.md` for external identifiers: API endpoints, SDK method names, model IDs, parameter names, catalog values.
 2. **Check tags**: look for `✅ VERIFIED(source)` and `⚠️ UNVERIFIED` markers.
-3. **For `⚠️ UNVERIFIED` details**: attempt to verify them NOW, before the plan is generated:
+3. **For `⚠️ UNVERIFIED` details**: attempt to verify them NOW, before the plan is drafted:
    - Read the installed SDK source in `$EIGEN_ROOT` (virtual environment, node_modules, etc.) to confirm method signatures and parameter names.
    - Read existing verified integrations in the codebase for patterns.
-   - If verification succeeds: record the verified value and source in the plan. The plan MUST use the verified value, not the spec's unverified one.
+   - If verification succeeds: record the verified value and source. The plan MUST use the verified value, not the spec's unverified one.
    - If verification fails (SDK not installed, no access, etc.): preserve the `⚠️ UNVERIFIED` tag in the plan and add a note: "Workers MUST verify this before implementing. If unable, escalate to team-lead as a [BLOCKER]."
 4. **For untagged external details** (no verification tag at all): treat as unverified and follow step 3.
 5. **For `✅ VERIFIED(source)` details**: accept as-is. Include them in the plan without the tag (they are trusted).
 
 **Why this matters:** The plan is the last checkpoint before workers start coding. If unverified details pass through the plan as if verified, workers implement them faithfully and mocks hide the errors until E2E tests — by which time multiple review iterations have been spent.
 
-### 2.3 Send to Planner
+## Stage 3: Discover Skills (single pass)
 
-Send the epic content, context files, and research instructions to the `planner` via SendMessage:
+Discover ALL available skills from all sources (project, user, all plugins) and match them against the epic's technologies and domains (read the bootstrap report's languages + tooling decisions). Record the matched skill set — you will apply each matched skill's lens both while drafting (Stage 4) and while self-critiquing (Stage 5). Discover once; do not re-discover later in the session.
 
-```
-SendMessage({
-  to: "planner",
-  message: "Generate a strategic development plan for this epic.
+## Stage 4: Draft the Plan
 
-EPIC CONTENT:
-<full epic.md content>
+You are a strategic planner producing a high-level development plan from the epic definition, optimized for parallel execution by a swarm of AI agents. Think like a technical lead planning an approach for a team that will work in parallel, NOT like a developer writing implementation details.
 
-CONTEXT FILES:
-Phase manifest: <phase manifest content>
-Bootstrap report: <bootstrap report content>
-Epic manifest: <epic manifest content>
+CRITICAL: This is a PLAN, not implementation. Do NOT include code examples or snippets.
 
-RECOMMENDATIONS FROM UPSTREAM:
-<recommendations content, or 'None'>
+**Research first.** Understand the project context before drafting: codebase conventions, existing patterns, module boundaries, file-ownership patterns, and the conventions of each detected language (apply the matched skills from Stage 3 and the language-profiles skill). Use CodeGraph/grep/Read directly. For an unfamiliar or large codebase you MAY spawn parallel research `Task` agents to gather this context faster; this is optional research fan-out, not a convergence team.
 
-KNOWN OSCILLATION-PRONE PATTERNS FROM PRIOR EPICS:
-[Render only if Stage 2.1 step 8 found applicable patterns; otherwise omit this block entirely.]
-The following patterns triggered oscillation, architectural escalation, or banned type-escapes in 3+ prior epics across this initiative. Plan defensively when this epic touches the same areas — split tasks early, pre-flight design_decision questions, choose native typing from the start:
-<for each applicable pattern>
-  - [<kind>] <category> / <path_basename or threat_class>: <recommendation>
-    (supporting epics: <count>, last seen: <last_seen>)
-</for>
+**Determine complexity level** based on the epic analysis and research:
+- MINIMAL — simple features or small improvements: basic approach, core acceptance criteria. No parallelization strategy (single-task execution).
+- STANDARD — most epics: comprehensive analysis, detailed approach, parallelization strategy required.
+- COMPREHENSIVE — major features or architectural changes: multi-phase strategy, extensive risk analysis, detailed parallelization strategy.
 
-EXTERNAL DEPENDENCY VERIFICATION RESULTS:
-<If Stage 2.2 produced verification results, include them here. Format:
-- VERIFIED: <identifier> — confirmed as <correct value> from <source>
-- STILL UNVERIFIED: <identifier> — could not verify, preserve ⚠️ UNVERIFIED tag in plan
-- RESOLVED: <identifier> — spec said X but SDK source shows Y, use Y
-If no external dependencies exist: 'No external dependencies in this epic.'>
-
-PLAN GENERATION INSTRUCTIONS:
-
-1. RESEARCH FIRST:
-Spawn research agents in parallel to understand the project context:
-- Spawn a Task with the epic body content to research the codebase conventions, existing patterns, module boundaries, and file ownership patterns
-- For each detected language, spawn a research agent using relevant skills from the language-profiles skill's Stack-Specific Skills table
-Save the research output — it will inform the plan and gap analysis.
-
-2. DETERMINE COMPLEXITY LEVEL:
-Based on the epic analysis and research:
-- MINIMAL — for simple features or small improvements: basic approach, core acceptance criteria. No parallelization strategy (single-task execution).
-- STANDARD — for most epics: comprehensive analysis, detailed approach, parallelization strategy required.
-- COMPREHENSIVE — for major features or architectural changes: multi-phase strategy, extensive risk analysis, detailed parallelization strategy.
-
-3. WRITE PLAN SECTIONS:
+**Write the plan sections:**
 
 Strategic Overview:
 - Problem statement and business justification
@@ -439,11 +201,7 @@ Success Criteria:
 - Measurable acceptance criteria
 - Performance targets and quality gates
 
-4. DEFINE PARALLELIZATION STRATEGY (STANDARD and COMPREHENSIVE only):
-
-Skip if MINIMAL.
-
-Analyze the plan to produce a machine-readable parallelization strategy consumed by /create_issues_from_plan_swarm:
+**Define the Parallelization Strategy (STANDARD and COMPREHENSIVE only; skip if MINIMAL).** This is a machine-readable block consumed by `/create_issues_from_plan_swarm` — keep its exact structure:
 
 ## Parallelization Strategy
 
@@ -500,156 +258,45 @@ PARALLELIZATION STRATEGY RULES:
 7. Circular interface_deps are valid — only blocked_by must form a DAG
 8. Every major acceptance criterion should map to at least one E2E test scenario
 
-5. GAP ANALYSIS (STANDARD and COMPREHENSIVE only):
-
-Skip if MINIMAL.
-
-Launch gap analysis sub-phases in parallel:
-
-Sub-phase A: Skills Gap Check
-- Discover all available skills from all sources (project, user, all plugins)
-- Match skills against the plan's technologies and domains
-- For each matched skill, spawn a sub-agent to review the plan for gaps and anti-patterns
-- Spawn ALL matched skill agents in parallel
-
-Sub-phase B: Parallelization Strategy Validation
-- Spawn a dedicated validation agent to check file ownership boundaries, interface contracts, execution wave dependencies, E2E scenario coverage, component sizing, shared file identification, and circular dependency detection
-
-After ALL sub-phase agents return:
-- Collect and deduplicate gap reports
-- Prioritize by severity (critical / medium / low)
-- Refine the plan by applying fixes for critical and medium gaps
-- Update the Parallelization Strategy if structural issues were found
-- Add a Gap Analysis Results section documenting what was found and how it was addressed
-
-CRITICAL: Do NOT add code examples during refinement. The plan must remain strategic and code-free.
-
-6. HANDLE EXTERNAL DEPENDENCY VERIFICATION TAGS:
-Check the EXTERNAL DEPENDENCY VERIFICATION RESULTS section above.
+**Handle external dependency verification tags** (from Stage 2):
 - For VERIFIED details: use the confirmed value in the plan. No tag needed.
-- For RESOLVED details: use the corrected value from SDK source. Note the correction.
-- For STILL UNVERIFIED details: preserve the ⚠️ UNVERIFIED tag inline wherever the plan references that detail. Example: 'Call `client.method()` ⚠️ UNVERIFIED — workers MUST verify against installed SDK before implementing.'
+- For RESOLVED details (spec said X but SDK source shows Y): use the corrected value. Note the correction.
+- For STILL UNVERIFIED details: preserve the `⚠️ UNVERIFIED` tag inline wherever the plan references that detail. Example: 'Call `client.method()` ⚠️ UNVERIFIED — workers MUST verify against installed SDK before implementing.'
 - Plans must NEVER launder unverified details into verified-looking instructions.
 
-7. SEND THE COMPLETED PLAN:
-Send the complete plan content to the coordinator. Include ALL sections and the full Parallelization Strategy block."
-})
-```
+**Write the draft to disk.** Ensure the directories exist (`mkdir -p .../epic_M/` and `.../epic_M/feedback/`), then write the plan to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md` with a header containing: phase number, epic number, epic name, epic ID (e.g., `P1.E2`), and creation date. This on-disk draft is also the crash-recovery checkpoint.
 
-### 2.4 Receive Plan from Planner
+## Stage 5: Adversarial Self-Critique
 
-Wait for the planner's response via SendMessage. The planner sends the complete plan content back to the coordinator.
+Now switch stance: **assume the draft is flawed and find its highest-severity defects.** Review your own plan as three independent critics would, against the fixed checklists below. Do NOT defend the draft — hunt for what a reviewer with no memory of your reasoning would catch.
 
-### 2.5 Write Plan to Disk (Crash Recovery Checkpoint)
+**Structural checklist (Parallelization Strategy):**
+1. File ownership boundaries — no file appears in `estimated_files` of 2 or more components
+2. Shared files correctly identified with `touched_by` lists
+3. Every shared file appears in `estimated_files` of at least one component listed in its `touched_by`
+4. Interfaces have concrete contracts (exact function signatures with parameter types and return types, not prose) and `stub_file` entries
+5. Every `stub_file` appears in the provider's `estimated_files`
+6. Execution waves form a valid DAG (no circular `blocked_by`)
+7. Components in the same wave have zero file overlap
+8. E2E scenarios cover major acceptance criteria
+9. An integration wave exists as the last wave
 
-1. Ensure the epic directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/`
-2. Ensure the feedback directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/`
-3. Write the plan to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`
-4. The file should include a header with:
-   - Phase number, epic number, and epic name
-   - Epic ID (e.g., `P1.E2`)
-   - Date of plan creation
-5. Keep the plan content in memory for the review round.
+**Strategic checklist (architecture, risk, viability):**
+1. Architecture decisions are sound and justified with clear rationale
+2. Risk assessment covers major failure modes with concrete mitigations
+3. Dependencies and prerequisites are identified and accounted for
+4. Acceptance criteria are measurable (not vague or subjective)
+5. Decisions are viable long-term (see Scope Discipline below)
+6. Technical strategy addresses security, performance, scalability — security language is unconditional ('MUST verify', not 'if present')
+7. No implicit coupling between components
+8. Every security mitigation maps to a specific component in the Parallelization Strategy
+9. Complete Matrix principle applied: for every access-control rule, interface contract, or test plan, the complete matrix (all roles × all operations × all contexts) is built — empty cells are explicit decisions, not oversights
 
----
+**Skills-lens checklist:** review the plan through each skill matched in Stage 3 for domain gaps and anti-patterns.
 
-## Stage 3: Review Round (parallel)
+**Scope Discipline (guardrail against speculative findings):** flag decisions that you know in advance will not be extensible or will not scale *per concrete initiative requirements* — e.g., 'this will break in Phase 2 because the initiative specifies X' (valid). Do NOT propose speculative improvements not backed by the initiative — e.g., 'this might not scale if someday they need Y' (invalid).
 
-Send the plan to all 3 reviewers in parallel via SendMessage:
-
-```
-SendMessage({
-  to: "structural-reviewer",
-  message: "Review this plan's Parallelization Strategy for structural correctness.
-
-PLAN CONTENT:
-<full plan content>
-
-EPIC CONTEXT:
-<epic.md content summary — features, acceptance criteria, inter-epic interfaces>
-
-Focus on: file ownership, shared files, interfaces, wave DAG, E2E coverage, integration wave."
-})
-
-SendMessage({
-  to: "strategic-reviewer",
-  message: "Review this plan's architecture, risks, and strategic soundness.
-
-PLAN CONTENT:
-<full plan content>
-
-EPIC CONTEXT:
-<epic.md content summary — features, acceptance criteria, inter-epic interfaces>
-
-Focus on: architecture decisions, risk assessment, dependency identification, acceptance criteria measurability, security language, component coupling."
-})
-
-SendMessage({
-  to: "skills-reviewer",
-  message: "Review this plan through domain-specific skill lenses.
-
-PLAN CONTENT:
-<full plan content>
-
-EPIC CONTEXT:
-<epic.md content summary — features, acceptance criteria, inter-epic interfaces>
-
-<Round 1: Discover all available skills first, then apply matched skills to the plan.>
-<Round 2+: Use the same skill set from round 1. Review the plan (or modified sections) through each matched skill's lens.>"
-})
-```
-
-Wait for all 3 reviewers to send their findings back via SendMessage.
-
-**Teammate failure handling:** If a reviewer goes idle (you receive a teammate idle notification) without sending findings, or sends a malformed response that cannot be parsed as JSON:
-1. Log which reviewer failed and proceed with findings from the remaining reviewers.
-2. Do NOT wait indefinitely — if only 1 or 2 reviewers respond, that is sufficient to continue the convergence loop.
-3. Note the missing reviewer in the feedback JSON (`"reviewer_failures": ["<name>"]`).
-
-Each reviewer sends findings in this format:
-
-```json
-{
-  "findings": [
-    {
-      "category": "parallelization_error|plan_structure_gap|technology_mismatch|dependency_gap|test_coverage_gap|strategic_concern|false_positive",
-      "severity_proposal": "high|medium|low",
-      "title": "...",
-      "description": "...",
-      "affected_section": "...",
-      "recommendation": "...",
-      "structural_edits": ["..."]
-    }
-  ]
-}
-```
-
-Reviewers propose severity; the coordinator decides.
-
----
-
-## Stage 4: Coordinator Synthesis
-
-With ALL findings from all reviewers in context, the coordinator performs deduplication, contradiction resolution, severity assignment, and false positive filtering.
-
-### 4.1 Group by Section + Concept
-
-If two reviewers flag the same file, interface, or concept, merge into one finding. Preserve the most actionable recommendation and combine structural_edits from both sources.
-
-### 4.2 Detect Contradictions
-
-If reviewers disagree (e.g., structural-reviewer says "split component A" and strategic-reviewer says "component A is fine"):
-
-1. Evaluate which reviewer has more weight based on the finding category:
-   - `parallelization_error`, `dependency_gap` → structural-reviewer has more weight
-   - `strategic_concern`, `technology_mismatch` → strategic-reviewer has more weight
-   - `test_coverage_gap`, `plan_structure_gap` → evaluate case by case
-2. If the contradiction cannot be resolved from context alone, send a clarification question via SendMessage to the relevant reviewer and wait for the response.
-3. Make a decision and document it in the finding's description: "Contradiction between structural-reviewer and strategic-reviewer resolved in favor of X because Y."
-
-### 4.3 Apply Severity Rubric
-
-The coordinator is the SOLE authority on severity. Reviewers only propose.
+**Severity rubric** (use this to classify each finding — be honest):
 
 | Severity | Definition | Concrete Examples |
 |----------|------------|-------------------|
@@ -657,150 +304,29 @@ The coordinator is the SOLE authority on severity. Reviewers only propose.
 | **medium** | Produces suboptimal but functional tasks downstream | Interface contract vague (name only, no types); E2E scenario covers <50% of acceptance criteria; component with >15 estimated_files; decision that will break in future phases documented in the initiative |
 | **low** | Minor improvement; downstream works without change | Inconsistent naming; description could be clearer; risk assessment incomplete but present; stylistic concern |
 
-For each finding:
-1. Read the reviewer's `severity_proposal`
-2. Apply the rubric above to determine the final severity
-3. If the coordinator overrides a reviewer's proposal, note the reason
+**Narrative-vs-Structural rule:** for each finding that flags a missing structural entry (file not in Shared Files Map, file not in estimated_files, missing interface contract), check whether the behavior IS described in narrative sections (Key Architectural Decisions, Implementation Approach, Integration Points). If narratively present but structurally absent: the finding is valid (fix the structural section) but is medium, not high. If neither narratively nor structurally present: keep original severity — the plan genuinely missed it.
 
-### 4.4 Filter False Positives
+Record each finding with: `category`, `severity`, `title`, `description`, `affected_section`, `recommendation`, and the exact `structural_edits` to apply. Drop anything that is genuinely a false positive on reflection.
 
-Remove findings categorized as `false_positive`. If a reviewer flags something as a real issue but the coordinator determines it is a false positive upon analysis, recategorize it and remove it from the actionable set.
+## Stage 6: Revise
 
-### 4.5 Narrative vs Structural Assessment
+If the self-critique found zero high and zero medium findings, the plan has converged — go to Stage 7.
 
-For each finding that flags a missing structural entry (e.g., file not in Shared Files Map, file not in estimated_files, missing interface contract):
+Otherwise, apply the fixes. For each high/medium finding, apply the recommended fix and update ALL affected sections — do not leave stale references.
 
-1. Check if the behavior IS described in narrative sections (Key Architectural Decisions, Implementation Approach, Integration Points, Risk Factors). Search for the file path, function name, or concept in the full plan text.
-2. If narratively present but structurally absent: the finding is valid (the structural section MUST be fixed), but downgrade severity to medium if it was classified as high. Include explicit structural_edits showing exactly which YAML/list entries to add or modify.
-3. If neither narratively nor structurally present: keep original severity — the plan genuinely missed this concern.
-
----
-
-## Stage 5: Convergence Check
-
-After synthesis, apply convergence rules **in order** (first match wins):
-
-| Rule | Condition | Minimum Round |
-|------|-----------|---------------|
-| 1. Clean state | Zero high + zero medium findings | Any |
-| 2. Iteration limit | Round >= 4 | 4 |
-| 3. Diminishing returns | Round >= 4 AND all medium are new_findings AND total count decreased vs previous round | 4 |
-| 4. Oscillation | Oscillation detected AND no non-oscillating high/medium findings | 3 |
-| 5. Continue | Any high/medium actionable findings remain | — |
-
-**Critical**: Medium findings NEVER force convergence before round 4. Before round 4, only Rule 1 (zero high + zero medium) allows convergence.
-
-**Degradation rule (round 4+)**: Any medium finding that is a `new_finding` (not persisting or regressed from a previous round) is automatically degraded to `low`. This prevents new medium findings from blocking convergence after round 4.
-
-### Oscillation Detection
-
-A finding is oscillating if:
-- It matches a finding that has appeared in 3+ non-consecutive rounds, OR
-- It has been resolved in one round and reappeared in a subsequent round at least once
-
-Finding matching uses **file-path matching**: extract all file paths from `description`, `recommendation`, and `affected_section`. Two findings match if they share at least one file path AND belong to the same `category`.
-
-### Convergence Decision
-
-If CONVERGE (Rules 1, 2, 3, or 4 match) → proceed to Stage 7 (Output & Cleanup)
-If CONTINUE (Rule 5) → proceed to Stage 6 (Targeted Fix Round)
-
-Track the convergence rationale for inclusion in the feedback JSON:
-- Rule 1: "All significant issues resolved. Zero high and zero medium findings remain."
-- Rule 2: "Maximum iteration limit (4) reached. Accepting current state."
-- Rule 3: "Diminishing returns detected. All remaining medium findings are new and total count decreased."
-- Rule 4: "Oscillation detected. Accepting current state to break the cycle."
-
----
-
-## Stage 6: Targeted Fix Round
-
-Instead of re-running everything, the coordinator sends only the consolidated findings to the planner.
-
-### 6.1 Send Findings to Planner
-
-```
-SendMessage({
-  to: "planner",
-  message: "Apply these changes to the plan. For each finding, apply the recommended fix and update ALL affected sections — do not leave stale references.
-
-CONSOLIDATED FINDINGS:
-<findings with structural_edits>
-
-CASCADING UPDATE RULES:
-When applying a change, apply ALL structural consequences:
-- move_file_to_shared → add the file to the Shared Files Map section AND verify it appears in estimated_files of every component listed in touched_by
-- add_component / split_component → create the component entry with estimated_files, update interfaces, update wave dependencies
-- add_interface / modify_interface → update the Interfaces section AND update stub_file in the providing component's estimated_files
+CASCADING UPDATE RULES — when applying a change, apply ALL structural consequences:
+- move_file_to_shared → add the file to the Shared Files Map section AND verify it appears in `estimated_files` of every component listed in `touched_by`
+- add_component / split_component → create the component entry with `estimated_files`, update interfaces, update wave dependencies
+- add_interface / modify_interface → update the Interfaces section AND update `stub_file` in the providing component's `estimated_files`
 - fix_blocked_by → update wave assignments for affected components
 
-Edit the STRUCTURAL sections directly (Shared Files Map YAML entries, estimated_files lists, Interfaces entries, wave assignments). Do NOT address structural findings by adding narrative paragraphs to Strategic Overview or Implementation Approach.
+Edit the STRUCTURAL sections directly (Shared Files Map YAML entries, estimated_files lists, Interfaces entries, wave assignments). Do NOT address structural findings by adding narrative paragraphs.
 
-After applying all changes, re-validate:
-- No file in estimated_files of more than one component
-- Every shared file has a valid touched_by list
-- Every interface has a stub_file in the provider's estimated_files
-- Execution waves form a valid DAG
+After applying changes, write the updated plan to disk and run **one** more self-critique pass (Stage 5) focused on (a) verifying each finding is resolved and (b) anticipating cascade errors the edits may have introduced (e.g., a file moved to Shared Files Map but `estimated_files` not updated for all `touched_by` components; a wave reassignment that broke the DAG).
 
-Send back ONLY the modified sections of the plan."
-})
-```
-
-### 6.2 Receive Modified Sections
-
-Wait for the planner's response. The planner sends the modified sections back to the coordinator.
-
-### 6.3 Update Plan and Convergence State on Disk (Crash Recovery Checkpoint)
-
-Write the updated plan to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`.
-
-Also write convergence tracking state to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/convergence_state.json`:
-
-```json
-{
-  "current_round": <R>,
-  "max_rounds": 4,
-  "findings_history": [
-    { "round": 1, "high": <N>, "medium": <N>, "low": <N>, "finding_ids": ["<id1>", ...] },
-    { "round": 2, "high": <N>, "medium": <N>, "low": <N>, "finding_ids": ["<id1>", ...] }
-  ],
-  "reviewers_active": ["structural-reviewer", "strategic-reviewer", "skills-reviewer"],
-  "reviewer_failures": []
-}
-```
-
-This ensures crash recovery can resume from the latest version with convergence history intact. On re-run (`is_first_run: false`), read `convergence_state.json` to restore the round counter and findings history for oscillation detection.
-
-### 6.4 Send to Affected Reviewers
-
-Route the modified sections to ONLY the affected reviewers:
-
-**Routing logic:**
-- Parallelization Strategy changed → structural-reviewer only
-- Technical Strategy changed → strategic-reviewer only
-- Cross-cutting change (affects both structural and strategic sections) → both structural-reviewer and strategic-reviewer
-- skills-reviewer is NOT re-engaged in rounds 2+ unless there are technology changes (new frameworks, languages, or tools added to the plan)
-
-```
-SendMessage({
-  to: "<affected-reviewer>",
-  message: "Review these modified sections. The coordinator applied changes based on your findings.
-
-MODIFIED SECTIONS:
-<modified plan sections>
-
-ORIGINAL FINDINGS THAT MOTIVATED CHANGES:
-<the findings that were addressed>
-
-VERIFICATION INSTRUCTIONS:
-For each applied change:
-1. Verify that the original finding is correctly resolved
-2. Anticipate errors that this specific change may cause in dependent sections — think in cascade: if a file was moved to the Shared Files Map, was estimated_files updated for all affected components? Was the wave assignment updated? Are the interfaces still valid?
-3. Report BOTH verification findings and anticipated findings, tagged as 'verification' or 'anticipated'"
-})
-```
-
-Wait for all engaged reviewers to respond. Apply the same **teammate failure handling** as Stage 3 — if a reviewer goes idle or sends malformed output, proceed with the remaining reviewers' findings. Then return to Stage 4 (Coordinator Synthesis) with the new findings.
+**Convergence bound:** at most **2** self-critique passes. After the second pass, accept the current state and converge — treat any remaining medium findings as `degraded_to_low` and record them. A two-pass bound cannot oscillate, so no oscillation tracking is needed. Carry the convergence rationale into the feedback JSON:
+- Clean: "All significant issues resolved. Zero high and zero medium findings remain."
+- Bounded: "Self-critique bound (2 passes) reached. Remaining medium findings degraded to low; accepting current state."
 
 ---
 
@@ -808,15 +334,11 @@ Wait for all engaged reviewers to respond. Apply the same **teammate failure han
 
 ### 7.1 Write Final Plan
 
-If the plan was modified in the last fix round, write the final version to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`.
+If the plan was modified in the last revise pass, write the final version to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md`.
 
 ### 7.2 Write Feedback JSON
 
-Write to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json`.
-
-Ensure directory exists: `mkdir -p $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/`
-
-Write the feedback JSON with this schema:
+Write to `$EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/feedback/plan_epic_converge_feedback.json` (ensure the directory exists: `mkdir -p .../epic_M/feedback/`). Schema:
 
 ```json
 {
@@ -825,11 +347,11 @@ Write the feedback JSON with this schema:
   "phase": 1,
   "epic": 2,
   "epic_id": "P1.E2",
-  "iteration": "<total internal rounds>",
+  "iteration": "<total self-critique passes>",
   "convergence": {
     "decision": "converged",
-    "rationale": "<convergence rationale from Stage 5>",
-    "rounds_taken": 3
+    "rationale": "<convergence rationale from Stage 6>",
+    "rounds_taken": 2
   },
   "findings": [
     {
@@ -841,7 +363,7 @@ Write the feedback JSON with this schema:
       "affected_section": "<which plan section>",
       "recommendation": "<specific action that was taken>",
       "resolution": "resolved|degraded_to_low|accepted_at_convergence",
-      "source_reviewer": "<structural-reviewer|strategic-reviewer|skills-reviewer|merged>",
+      "source_reviewer": "self",
       "downstream_impact": {
         "affects_commands": ["create_issues_from_plan_swarm"],
         "impact_description": "<what would break downstream if unresolved>"
@@ -856,9 +378,9 @@ Write the feedback JSON with this schema:
 }
 ```
 
-The `findings` array includes ALL findings from all rounds — both resolved and remaining. The `resolution` field tracks how each finding was handled:
-- `resolved`: the finding was fixed during the convergence loop
-- `degraded_to_low`: a medium finding that was degraded at round 4+ because it was a new_finding
+The `findings` array includes ALL findings discovered across the self-critique passes — both resolved and remaining. The `resolution` field tracks how each was handled:
+- `resolved`: fixed during the revise pass
+- `degraded_to_low`: a medium finding accepted at the 2-pass bound
 - `accepted_at_convergence`: a low-severity finding that did not block convergence
 
 ### 7.3 Lesson Extraction
@@ -875,12 +397,12 @@ For each non-false-positive finding discovered during the convergence loop, crea
   "severity": "<finding severity>",
   "title": "<concise description of the error>",
   "description": "<detailed explanation of what went wrong>",
-  "root_cause": "<why the planner produced this error>",
+  "root_cause": "<why the draft produced this error>",
   "recommendation": "<specific change to prevent this in future plans>",
   "affected_section": "<which section of the plan was affected>",
   "evidence": {
     "plan_sections_involved": ["<section titles>"],
-    "reviewer_source": "<which reviewer found this>"
+    "reviewer_source": "self"
   },
   "plan_context": "<epic ID, technology stack>",
   "tags": ["<relevant tags>"]
@@ -903,24 +425,7 @@ Skipped: <M> duplicates of existing lessons
 
 Execute the **On Exit** section above. It contains the single authoritative code block with all CLI calls in order: `complete`, `mark-converged`, `add-recommendation` (optional, max 5), and `commit-state`. Do NOT run these commands individually — run the On Exit code block once.
 
-### 7.5 Team Shutdown
-
-Send a shutdown message to all teammates:
-
-```
-SendMessage({ to: "planner", message: "Plan converged. Shutting down. Thank you." })
-SendMessage({ to: "structural-reviewer", message: "Plan converged. Shutting down. Thank you." })
-SendMessage({ to: "strategic-reviewer", message: "Plan converged. Shutting down. Thank you." })
-SendMessage({ to: "skills-reviewer", message: "Plan converged. Shutting down. Thank you." })
-```
-
-Wait for confirmations, then delete the team:
-
-```
-TeamDelete({ team_name: "plan-P<N>-E<M>" })
-```
-
-### 7.6 Print Summary
+### 7.5 Print Summary
 
 ```
 === Plan Epic Converge Complete — P<N>.E<M> ===
@@ -930,7 +435,7 @@ Plan file: $EIGEN_ROOT/eigen_initiative/phases/phase_N/epic_M/plan.md
 Complexity: <MINIMAL|STANDARD|COMPREHENSIVE>
 Components: <N> independent components
 Waves: <N> execution waves
-Convergence: CONVERGED in <R> rounds — <rationale>
+Convergence: CONVERGED in <R> self-critique passes — <rationale>
 
 Findings:
   High severity:   <N> (all resolved)
@@ -962,6 +467,7 @@ Before writing the final plan and proceeding to On Exit, verify:
 - [ ] (STANDARD/COMPREHENSIVE) E2E Test Scenarios present with at least one scenario per major user flow
 - [ ] No code examples were introduced
 - [ ] Epic.md was NOT modified
+- [ ] External dependency `⚠️ UNVERIFIED` tags preserved inline (not laundered)
 - [ ] Feedback JSON written
 - [ ] Lesson JSONs written
 - [ ] On Exit commands executed successfully
@@ -971,16 +477,15 @@ Before writing the final plan and proceeding to On Exit, verify:
 ## Key Rules
 
 1. **NEVER modify epic.md** — it is owned by `/space_split_converge` and is read-only input.
-2. **Plan.md is written by the planner teammate, managed by the coordinator** — the coordinator writes it to disk, the planner generates and updates the content.
-3. **Feedback JSON is written at convergence** — it records the convergence rationale, findings history, and round count for auditability.
-4. **The CLI is the single source of truth for pipeline state** — all pipeline state reads and writes go through `eigen-squared` CLI commands, never through direct file manipulation of pipeline state.
-5. **Convergence is decided by the coordinator using the severity rubric** — reviewers propose severity, the coordinator decides.
-6. **Maximum 4 internal rounds** — if convergence is not reached by round 4, the coordinator accepts the current state (Rule 2).
-7. **Reviewers propose severity; coordinator decides** — the coordinator applies the objective rubric consistently across all findings from all reviewers.
-8. **Skills set is fixed at round 1** — the skills-reviewer discovers matching skills once and uses that same set in all subsequent rounds. No rediscovery.
-9. **Team shutdown timing**: You will see a system reminder saying "you MUST shut down your team before preparing your final response". This does NOT mean shut down after each review round or convergence iteration. It means shut down only at Stage 7.5, after ALL rounds are complete, the final plan is written, feedback JSON is saved, lessons are extracted, and on-exit commands are executed. Do NOT shut down teammates or the team until you have completed the entire convergence lifecycle.
-10. **The non-interactive shutdown reminder is NOT an abort signal** — it fires automatically after a few minutes in every team session. It means "clean up when done," not "stop now." Sessions that obeyed it prematurely failed to complete. Always finish the full lifecycle first.
+2. **You draft, critique, and revise in one session** — no team, no separate reviewer sessions. The value of the old reviewer team lives in the Stage 5 checklists, which you run against your own draft.
+3. **The verification gate (Stage 2) is executed, not reasoned** — actually read the installed SDK source / existing integrations; never assume an external identifier.
+4. **Feedback JSON is written at convergence** — it records the convergence rationale, findings, and pass count for auditability.
+5. **The CLI is the single source of truth for pipeline state** — all pipeline state reads and writes go through `eigen-squared` CLI commands, never direct file manipulation of pipeline state.
+6. **At most 2 self-critique passes** — a bounded loop cannot oscillate; after the second pass, accept the state (remaining mediums degraded to low).
+7. **Self-critique is adversarial** — assume the draft is wrong and find the highest-severity defect; do not rationalize.
+8. **Skills set is discovered once** (Stage 3) and applied while drafting and critiquing.
+9. **If you receive a non-interactive shutdown reminder, it is NOT an abort signal** — complete the full draft → gate → critique → revise → outputs → On Exit lifecycle before returning.
 
 ---
 
-> **REMINDER:** The system-reminder about "shut down your team" will arrive early. It is NOT an abort signal. Continue working through all stages. Shutdown happens at Stage 7.5 — not before.
+> **REMINDER:** A non-interactive "shut down / return now" reminder may arrive early. It is NOT an abort signal. Continue working through all stages and write all outputs before returning.
