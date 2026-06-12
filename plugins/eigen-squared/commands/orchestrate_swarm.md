@@ -294,14 +294,7 @@ YOUR ASSIGNMENT:
   <if available> When exploring existing code (dependency context, stub interfaces, integration points, the rest of the repo), prefer the `codegraph_*` tools (context/search/callers/callees/impact/node) over grep/Read; treat returned source as already read. See skills/codegraph/SKILL.md. Do NOT run `codegraph sync` — a shared watcher keeps the index fresh. If a call fails, fall back to grep/Read.
   <if absent> Use grep/Glob/Read for code exploration.
 
-TESTING PHILOSOPHY — NON-NEGOTIABLE:
-- Write tests that use REAL dependencies whenever possible
-- Use real database connections, real HTTP calls, real file systems
-- Mocks ONLY when the real dependency is genuinely unavailable
-- NEVER use SQLite as substitute for PostgreSQL
-- NEVER use in-memory fakes for real services
-- NEVER monkeypatch connections
-- If infrastructure is needed for a test, structure it to work with real infra when available
+TESTING PHILOSOPHY — NON-NEGOTIABLE: real dependencies, minimal mocks. Mocks ONLY when the real dependency is genuinely unavailable (never SQLite-as-Postgres, in-memory fakes, or monkeypatched connections); if infrastructure is needed, structure the test to use real infra when available. The full policy is restated in your design_validation_tests_swarm / code_from_validation_tests_swarm skills — follow it.
 
 EXTERNAL DEPENDENCIES — VERIFICATION REQUIRED:
 - If your task involves calling external APIs or SDKs: verify method signatures, parameter names, and identifiers against the installed library source or official documentation BEFORE Step B implementation (not during Step A test design — mocks in tests are expected, but implementation must use verified calls)
