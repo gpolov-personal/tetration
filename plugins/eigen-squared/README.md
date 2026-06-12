@@ -12,7 +12,7 @@ Give it an initiative document (10-150+ features with dependencies), and it prog
 ```
 Initiative Documents (feature tables + specs)
         |
-    time_split ↔ deepen_time_split         Split initiative into sequential phases
+    time_split (self-converging)           Split initiative into sequential phases
         |
     bootstrap_converge                      Create project foundation (per phase, self-converging)
         |
@@ -31,7 +31,7 @@ Initiative Documents (feature tables + specs)
     Next phase (repeat)
 ```
 
-Each `↔` is a **convergence loop**: the main command produces output, the deepen command reviews it with parallel research agents, and they iterate until quality is sufficient (zero high/medium findings). The `eigen-squared` CLI tracks all state deterministically.
+Most stages are **self-converging**: a single command session drafts its output, critiques it against fixed checklists, and revises — converging internally with no separate reviewer command. The one remaining `↔` loop is `orchestrate_swarm ↔ review_swarm`: parallel workers implement, a review pass finds issues, and they iterate (bounded to ≤3 rounds, then merge with any residuals disclosed). The `eigen-squared` CLI tracks all state deterministically.
 
 Epics within a phase execute **sequentially** (E1 fully done, then E2, then E3...). Workers within each epic execute **in parallel** via agent swarms.
 
@@ -188,18 +188,15 @@ Core Work:
 On Exit:
   eigen-squared complete <command> --phase N [flags]
   eigen-squared commit-state --message "..." --additional-paths ...
-  → CLI handles all bookkeeping: status, iteration, timestamps, feedback flags
+  → CLI handles all bookkeeping: status, iteration, timestamps, convergence flags
   → The watchdog detects the state change and schedules the next command
 ```
 
-### Convergence loops
+### Convergence
 
-Main commands with deepen pairs (time_split) produce output and their deepen counterparts review it with parallel agents. Self-converging commands (bootstrap_converge, space_split_converge, plan_epic_converge) instead spawn an internal swarm of teammates (one builder + multiple reviewers) and iterate within a single command invocation. Both patterns decide:
+The planning/decomposition stages (`time_split`, `bootstrap_converge`, `space_split_converge`, `plan_epic_converge`) are **self-converging single sessions**: the command drafts its output, runs any executed verification gate (e.g. the bootstrap build gate), critiques the draft against fixed checklists, and revises — bounded to ≤2 internal passes. `bootstrap_converge` and `space_split_converge` additionally spawn ONE independent reviewer subagent that re-runs the build / re-checks cross-source consistency against ground truth. Each self-marks convergence via `eigen-squared mark-converged <command>`, and the watchdog advances to the next stage.
 
-- **Continue**: Write feedback file, signal fresh feedback available. The watchdog schedules the main command to iterate.
-- **Converge**: Set convergence flag, optionally write downstream recommendations. The watchdog advances to the next stage.
-
-The feedback lifecycle is managed entirely by the CLI — `complete` for a main command sets `feedback_consumed=true` on both itself and its deepen counterpart. `complete` for a deepen command sets `feedback_consumed=false` to signal fresh feedback. This cross-flag handshake was the #1 source of bugs before the CLI.
+The one cross-command loop is `orchestrate_swarm ↔ review_swarm`: the review pass either finds zero P1/P2 (converge clean) or, after ≤3 fixup rounds, converges with residuals disclosed (`CAP_REACHED_WITH_RESIDUAL`, surfaced at the human checkpoint). The CLI tracks this via the per-unit `status` + `convergence` fields — there is no main↔deepen feedback handshake.
 
 ### Watchdog scheduling
 
@@ -216,23 +213,23 @@ Commands do NOT schedule their successors. This eliminates the class of bugs whe
 
 ### Stage 1: time_split
 
-Decomposes the initiative into **sequential, E2E-testable phases**. Each phase is a self-contained deliverable. Output: phase manifests with feature tables, dependency graphs, blackbox specs.
+Decomposes the initiative into **sequential, E2E-testable phases**. Each phase is a self-contained deliverable. Output: phase manifests with feature tables, dependency graphs, blackbox specs. Self-converging: a single session drafts the phase split and critiques it against fixed checklists (structural/content-fidelity/strategic/skills), iterating ≤2 passes.
 
 ### Stage 2: bootstrap_converge (per phase)
 
-Creates the project foundation: directory structure, entity stubs, API/message contracts, package manifests, quality config, basic CI, and Docker artifacts for server projects. Incremental — scans what exists before creating. Self-converging: a single command spawns a 5-teammate swarm (bootstrapper + foundation/fidelity/strategic/skills reviewers) that iterates internally until convergence, with no external main↔deepen feedback loop.
+Creates the project foundation: directory structure, entity stubs, API/message contracts, package manifests, quality config, basic CI, and Docker artifacts for server projects. Incremental — scans what exists before creating. Self-converging: a single session scaffolds the foundation, runs an executed verification gate (build/lint/test + `docker compose config`), then spawns ONE independent reviewer subagent that re-runs the build before a bounded revise loop.
 
 ### Stage 3: space_split_converge (per phase)
 
-Decomposes a phase into **sequential epics**. Each epic is a focused unit of work with clear boundaries. Output: epic definition files, `epic_manifest.json` with execution order, `phase_e2e_config.json` with test scenarios. The last epic is always the E2E Testing epic. Self-converging: a single command spawns an internal swarm (decomposer + reviewers) that iterates until convergence, with no external main↔deepen feedback loop.
+Decomposes a phase into **sequential epics**. Each epic is a focused unit of work with clear boundaries. Output: epic definition files, `epic_manifest.json` with execution order, `phase_e2e_config.json` with test scenarios. The last epic is always the E2E Testing epic. Self-converging: a single session decomposes the phase, runs an executed cross-source consistency gate, then spawns ONE independent reviewer subagent before a bounded revise loop.
 
 ### Stage 4: plan_epic_converge (per epic)
 
-Creates a strategic development plan from the epic definition. Self-converging: generates the plan and reviews it with parallel research agents in a single command, iterating until quality is sufficient. Includes a Parallelization Strategy — how to decompose the epic into parallel tasks for the swarm. No code, only architecture and strategy.
+Creates a strategic development plan from the epic definition. Self-converging: a single session drafts the plan and critiques it against fixed checklists (structural/strategic/skills) in the same session, iterating ≤2 passes. Includes a Parallelization Strategy — how to decompose the epic into parallel tasks for the swarm. No code, only architecture and strategy.
 
 ### Stage 5: create_issues_from_plan_swarm (per epic)
 
-One-shot command (no deepen counterpart). Transforms the converged plan into task files + `swarm-manifest.json`. Tasks have file ownership boundaries, dependency graphs, execution waves, and interface contracts. Creates the integration branch `feat/P<N>.E<M>`.
+One-shot command (no convergence loop). Transforms the converged plan into task files + `swarm-manifest.json`. Tasks have file ownership boundaries, dependency graphs, execution waves, and interface contracts. Creates the integration branch `feat/P<N>.E<M>`.
 
 ### Stage 6: orchestrate_swarm (per epic)
 
@@ -358,13 +355,13 @@ cd plugins/eigen-squared
 python -m pytest cli/tests/ -v
 ```
 
-98 tests covering: state transitions, convergence pairs, swarm state machine, model serialization, backward compatibility, epic manifest loading, scheduler dedup logic, and a full multi-phase pipeline walk.
+153 tests covering: state transitions, self-converging transitions, swarm state machine, model serialization, backward compatibility, epic manifest loading, scheduler dedup logic, and a full multi-phase pipeline walk.
 
 ### Plugin structure
 
 ```
 plugins/eigen-squared/
-  .claude-plugin/plugin.json    # Plugin metadata (v3.1.0)
+  .claude-plugin/plugin.json    # Plugin metadata (v3.9.0)
   cli/                          # Python CLI (the brain)
     models.py                   # Typed dataclasses for pipeline state
     state.py                    # Load/save/validate JSON
@@ -375,7 +372,7 @@ plugins/eigen-squared/
     main.py                     # Argparse dispatch (20 subcommands)
     eigen-watchdog.sh           # Cron-based pipeline scheduler
     subcommands/                # All subcommand implementations
-    tests/                      # 98 tests
-  commands/                     # Pipeline command prompts (13 commands)
+    tests/                      # 153 tests
+  commands/                     # Pipeline command prompts (14 commands)
   skills/                       # Supporting skills (language-profiles, etc.)
 ```
