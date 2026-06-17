@@ -27,8 +27,7 @@ The eigen-squared codebase has three classes of persistent JSON files. They are 
 
 | Command | Scope | State type | Pattern |
 |---|---|---|---|
-| `time_split` | initiative | `MainCommandState` | Main/deepen pair with `deepen_time_split` |
-| `deepen_time_split` | initiative | `DeepenCommandState` | Reviews time_split, produces feedback |
+| `time_split` | initiative | `MainCommandState` | Self-converging (internal swarm loop) |
 | `bootstrap_converge` | per-phase | `MainCommandState` | Self-converging (internal swarm loop) |
 | `space_split_converge` | per-phase | `MainCommandState` | Self-converging (internal swarm loop) |
 | `plan_epic_converge` | per-epic | `MainCommandState` | Self-converging (internal swarm loop) |
@@ -55,7 +54,7 @@ The eigen-squared codebase has three classes of persistent JSON files. They are 
 Determined by `determine_next()` in the CLI:
 
 ```
-1. time_split <-> deepen_time_split  (must converge before phases)
+1. time_split  (self-converging; must converge before phases)
 2. For each phase (1..phase_count), sequentially:
    a. bootstrap_converge            (must converge)
    b. space_split_converge          (must converge)
@@ -87,21 +86,13 @@ Determined by `determine_next()` in the CLI:
       "output_paths": {},
       "feedback_consumed": false,
       "phase_count": null,
+      "findings_summary": { "high": 0, "medium": 0, "low": 0 },
       "convergence": {
         "converged": false,
         "decided_by": null,
         "decided_at": null,
         "reason": null
       }
-    },
-    "deepen_time_split": {
-      "status": "not_started|completed",
-      "iteration": 0,
-      "last_run_at": null,
-      "feedback_path": null,
-      "feedback_consumed": false,
-      "findings_summary": { "high": 0, "medium": 0, "low": 0 },
-      "locked_skills": null
     },
     "phases": {}
   },
@@ -163,7 +154,7 @@ Determined by `determine_next()` in the CLI:
 }
 ```
 
-`findings_summary` and `locked_skills` are **optional** on `MainCommandState` — omitted from JSON when `null`. All three converge commands (`bootstrap_converge`, `space_split_converge`, `plan_epic_converge`) use `findings_summary`. `bootstrap_converge` and `space_split_converge` also use `locked_skills`.
+`findings_summary` and `locked_skills` are **optional** on `MainCommandState` — omitted from JSON when `null`. All self-converging commands (`time_split`, `bootstrap_converge`, `space_split_converge`, `plan_epic_converge`) use `findings_summary`. `bootstrap_converge` and `space_split_converge` also use `locked_skills`.
 
 ### phase_review
 
@@ -588,7 +579,7 @@ Keyed by **target command name**. Each value is an array of recommendation objec
 
 | Source Command | Can Recommend To |
 |---|---|
-| `deepen_time_split` | `bootstrap_converge`, `space_split_converge`, `plan_epic_converge`, `create_issues_from_plan_swarm` |
+| `time_split` | `bootstrap_converge`, `space_split_converge`, `plan_epic_converge`, `create_issues_from_plan_swarm` |
 | `bootstrap_converge` | `space_split_converge`, `plan_epic_converge`, `create_issues_from_plan_swarm` |
 | `space_split_converge` | `plan_epic_converge`, `create_issues_from_plan_swarm` |
 | `plan_epic_converge` | `create_issues_from_plan_swarm` |
@@ -605,49 +596,9 @@ Keyed by **target command name**. Each value is an array of recommendation objec
 
 ## Feedback Lifecycle
 
-### Who uses it
+**There are no main/deepen pairs anymore.** All convergence commands — `time_split`, `bootstrap_converge`, `space_split_converge`, `plan_epic_converge` — are **self-converging single sessions**: each one drafts → self-critiques → revises internally (via its swarm of reviewer agents) and self-marks convergence with `eigen-squared mark-converged <cmd>`. They use `convergence.converged` as the exit condition and `iteration` to track rounds; internal feedback state is managed via `convergence_state.json`.
 
-The feedback lifecycle with `feedback_consumed` flags applies **only to the `time_split` / `deepen_time_split` pair** — the only remaining main/deepen pair.
-
-Self-converging commands (`bootstrap_converge`, `space_split_converge`, `plan_epic_converge`) manage their own iterate-until-converged loop internally via their swarm of reviewer agents. They do NOT use the main/deepen feedback exchange.
-
-### Flow (time_split / deepen_time_split only)
-
-```
-1. time_split runs (first time)
-   -> creates outputs
-   -> sets own feedback_consumed = false (no feedback yet)
-   -> sets deepen's feedback_consumed = true (deepen hasn't analyzed these outputs)
-
-2. deepen_time_split runs
-   -> reads time_split outputs
-   -> writes feedback file
-   -> sets time_split.feedback_consumed = false (fresh feedback available)
-   -> sets own feedback_consumed = false
-
-3. time_split runs again (iteration)
-   -> reads feedback file (does NOT delete it)
-   -> regenerates outputs incorporating feedback
-   -> sets own feedback_consumed = true (feedback processed)
-   -> sets deepen's feedback_consumed = true (outputs changed)
-
-4. Repeat until deepen_time_split decides convergence.
-```
-
-### On Entry Guards
-
-**time_split:**
-- `iteration >= 1` AND feedback file exists AND `feedback_consumed == false` -> proceed (process feedback)
-- `iteration >= 1` AND feedback file exists AND `feedback_consumed == true` -> STOP (run deepen again)
-- `iteration >= 1` AND no feedback file -> STOP (run deepen first)
-
-**deepen_time_split:**
-- time_split `status == "not_started"` -> STOP (run time_split first)
-- time_split `convergence.converged == true` -> STOP (already converged)
-
-### Self-converging commands
-
-`bootstrap_converge`, `space_split_converge`, and `plan_epic_converge` use `convergence.converged` as the exit condition and `iteration` to track rounds. Their `feedback_consumed` field exists in the schema but is **NOT toggled by the CLI** — the internal swarm loop manages all feedback state via `convergence_state.json`.
+The `feedback_consumed` flag remains in the schema only as **legacy/vestigial** state — it is **NOT toggled by the CLI** and no longer drives any transition. (The old `time_split` ↔ `deepen_time_split` main/deepen handshake that consumed it has been removed; `deepen_time_split` no longer exists.)
 
 ---
 
@@ -656,8 +607,8 @@ Self-converging commands (`bootstrap_converge`, `space_split_converge`, `plan_ep
 | Status | Used by | Meaning |
 |---|---|---|
 | `"not_started"` | All | Command has never run |
-| `"completed"` | Main + Deepen | Command ran successfully on last invocation |
-| `"iterating"` | Main only | Has run, feedback produced, awaiting next iteration |
+| `"completed"` | All converge commands | Command ran successfully on last invocation |
+| `"iterating"` | Self-converging commands | Has run, not yet converged, awaiting next internal iteration |
 
 **Swarm statuses** (on `swarm_execution`):
 
@@ -688,7 +639,7 @@ $EIGEN_ROOT/eigen_initiative/
     phase_1_manifest.md                        # time_split output
     phase_2_manifest.md                        # time_split output
     feedback/                                  # Initiative-level feedback
-      deepen_time_split_feedback.json          # Owned by deepen_time_split
+      time_split_feedback.json                 # Owned by time_split (convergence feedback)
     phase_1/                                   # Per-phase outputs
       bootstrap-report.json                    # bootstrap_converge output
       convergence_state.json                   # bootstrap_converge internal state
@@ -710,7 +661,7 @@ $EIGEN_ROOT/eigen_initiative/
     phase_2/
       ...same structure...
   eigen_lessons/                               # Lesson extraction by converge commands
-    time_split/                                # Lessons from deepen_time_split
+    time_split/                                # Lessons from time_split
     bootstrap_converge/                        # Lessons from bootstrap_converge
     space_split_converge/                      # Lessons from space_split_converge
     plan_epic_converge/                        # Lessons from plan_epic_converge

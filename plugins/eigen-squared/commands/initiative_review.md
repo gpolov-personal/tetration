@@ -557,7 +557,7 @@ For every Blackbox spec that references an external dependency, apply these rule
 1. **Tag ALL external details with verification status.** Every external identifier (API endpoint, SDK method name, model ID, parameter name, catalog of values) must carry one of three tags:
    - `✅ VERIFIED(source)` — confirmed from a specific source. Include the source: `✅ VERIFIED(Mistral SDK v2.3 source)` or `✅ VERIFIED(live API query 2026-04-12)`.
    - `⚠️ UNVERIFIED` — copied from examples, blog posts, guides, or inferred. Workers MUST verify before implementing.
-   - No tag = **not yet assessed**. The `deepen_time_split` agent will flag untagged external details as needing assessment.
+   - No tag = **not yet assessed**. The time_split self-critique and downstream commands will flag untagged external details as needing assessment.
 
    Examples:
    ```markdown

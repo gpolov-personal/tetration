@@ -67,7 +67,7 @@ Lessons are read from `$EIGEN_ROOT/eigen_initiative/eigen_lessons/` with one sub
 
 | Lesson Directory | Written By | Improves Command |
 |-----------------|-----------|-----------------|
-| `eigen_lessons/time_split/` | `/deepen_time_split` | `time_split.md` |
+| `eigen_lessons/time_split/` | `/time_split` | `time_split.md` |
 | `eigen_lessons/bootstrap_converge/` | `/bootstrap_converge` | `bootstrap_converge.md` |
 | `eigen_lessons/space_split_converge/` | `/space_split_converge` | `space_split_converge.md` |
 | `eigen_lessons/plan_epic_converge/` | `/plan_epic_converge` | `plan_epic_converge.md` |

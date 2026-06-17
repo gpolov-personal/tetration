@@ -9,7 +9,6 @@ import pytest
 from unittest.mock import patch
 
 from cli.transitions import (
-    next_for_convergence_pair,
     next_for_swarm_pair,
     determine_next,
     resolve_branch,
@@ -20,27 +19,6 @@ from cli.transitions import (
 # ─────────────────────────────────────────────────────────────────────────────
 # FIXTURES
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def make_convergence_pair(
-    main_status="not_started",
-    main_fc=False,
-    main_converged=False,
-    deepen_status="not_started",
-    deepen_fc=False,
-):
-    main = {
-        "status": main_status,
-        "feedback_consumed": main_fc,
-        "convergence": {"converged": main_converged},
-        "iteration": 0,
-    }
-    deepen = {
-        "status": deepen_status,
-        "feedback_consumed": deepen_fc,
-        "iteration": 0,
-    }
-    return main, deepen
 
 
 def make_swarm_state(
@@ -130,10 +108,6 @@ def make_pipeline_state(
                 "convergence": {"converged": time_split_converged},
                 "phase_count": phase_count,
             },
-            "deepen_time_split": {
-                "status": "completed",
-                "feedback_consumed": False,
-            },
             "phases": phases or {},
         }
     }
@@ -144,79 +118,8 @@ def make_pipeline_state(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TestNextForConvergencePair:
-
-    def test_converged_returns_converged(self):
-        main, deepen = make_convergence_pair(main_converged=True)
-        assert next_for_convergence_pair(main, deepen)[0] == "converged"
-
-    def test_not_started_returns_run_main(self):
-        main, deepen = make_convergence_pair(main_status="not_started")
-        assert next_for_convergence_pair(main, deepen)[0] == "run_main"
-
-    def test_main_completed_deepen_not_started_returns_run_deepen(self):
-        main, deepen = make_convergence_pair(
-            main_status="completed", deepen_status="not_started"
-        )
-        assert next_for_convergence_pair(main, deepen)[0] == "run_deepen"
-
-    def test_fresh_feedback_returns_run_main(self):
-        main, deepen = make_convergence_pair(
-            main_status="completed", main_fc=False, deepen_status="completed",
-        )
-        assert next_for_convergence_pair(main, deepen)[0] == "run_main"
-
-    def test_feedback_consumed_returns_run_deepen(self):
-        main, deepen = make_convergence_pair(
-            main_status="completed", main_fc=True, deepen_status="completed",
-        )
-        assert next_for_convergence_pair(main, deepen)[0] == "run_deepen"
-
-    def test_bug1_completed_completed_mfc_true_dfc_false(self):
-        main, deepen = make_convergence_pair(
-            main_status="completed", main_fc=True,
-            deepen_status="completed", deepen_fc=False,
-        )
-        result = next_for_convergence_pair(main, deepen)
-        assert result is not None
-        assert result[0] == "run_deepen"
-
-    def test_bug1_iterating_not_started_mfc_true_dfc_false(self):
-        main, deepen = make_convergence_pair(
-            main_status="iterating", main_fc=True,
-            deepen_status="not_started", deepen_fc=False,
-        )
-        result = next_for_convergence_pair(main, deepen)
-        assert result is not None
-        assert result[0] == "run_deepen"
-
-    def test_bug1_iterating_completed_mfc_true_dfc_false(self):
-        main, deepen = make_convergence_pair(
-            main_status="iterating", main_fc=True,
-            deepen_status="completed", deepen_fc=False,
-        )
-        result = next_for_convergence_pair(main, deepen)
-        assert result is not None
-        assert result[0] == "run_deepen"
-
-    def test_never_returns_none(self):
-        for main_status in ("not_started", "completed", "iterating"):
-            for main_fc in (True, False):
-                for main_conv in (True, False):
-                    for deepen_status in ("not_started", "completed"):
-                        for deepen_fc in (True, False):
-                            main, deepen = make_convergence_pair(
-                                main_status=main_status,
-                                main_fc=main_fc,
-                                main_converged=main_conv,
-                                deepen_status=deepen_status,
-                                deepen_fc=deepen_fc,
-                            )
-                            result = next_for_convergence_pair(main, deepen)
-                            assert result is not None, (
-                                f"None for {main_status=}, {main_fc=}, "
-                                f"{main_conv=}, {deepen_status=}, {deepen_fc=}"
-                            )
+# (Convergence-pair tests removed — time_split is now self-converging, with no
+# main↔deepen pair. Its routing is covered by the DETERMINE_NEXT tests below.)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -268,13 +171,12 @@ class TestDetermineNext:
         assert result is not None
         assert result[0] == "time_split"
 
-    def test_time_split_completed_schedules_deepen(self):
+    def test_time_split_completed_not_converged_reruns_self(self):
+        """Self-converging: completed but not converged → re-run time_split (resume)."""
         state = make_pipeline_state(time_split_converged=False)
         state["state"]["time_split"]["status"] = "completed"
-        state["state"]["time_split"]["feedback_consumed"] = True
-        state["state"]["deepen_time_split"]["status"] = "not_started"
         result = determine_next(state)
-        assert result[0] == "deepen_time_split"
+        assert result[0] == "time_split"
 
     def test_time_split_converged_goes_to_bootstrap(self):
         phase = make_phase(bootstrap_converged=False)

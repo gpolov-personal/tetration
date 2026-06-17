@@ -28,7 +28,6 @@ from eigen_core.cli.scheduler import (  # noqa: F401  (re-exported for callers/t
 
 COMMAND_TO_SKILL = {
     "time_split": "eigen-squared:time_split",
-    "deepen_time_split": "eigen-squared:deepen_time_split",
     "bootstrap_converge": "eigen-squared:bootstrap_converge",
     "space_split_converge": "eigen-squared:space_split_converge",
     "plan_epic_converge": "eigen-squared:plan_epic_converge",
@@ -49,7 +48,6 @@ DEFAULT_MODEL = "claude-opus-4-8[1m]"
 EXECUTION_BY_COMMAND = {
     # command                          (model,         effort)
     "time_split":                      (DEFAULT_MODEL, "xhigh"),
-    "deepen_time_split":               (DEFAULT_MODEL, "high"),
     "bootstrap_converge":              (DEFAULT_MODEL, "high"),
     "space_split_converge":            (DEFAULT_MODEL, "medium"),
     "plan_epic_converge":              (DEFAULT_MODEL, "medium"),

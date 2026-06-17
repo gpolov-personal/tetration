@@ -1,7 +1,7 @@
 """Integration test: simulate a full pipeline walk via CLI subcommands.
 
 This test walks through the entire pipeline lifecycle:
-  init → complete time_split → complete deepen_time_split → mark-converged →
+  init → complete time_split → mark-converged →
   complete bootstrap_converge → mark-converged →
   complete space_split_converge → mark-converged →
   complete plan_epic_converge → mark-converged →
@@ -91,20 +91,16 @@ class TestFullPipelineWalk:
         run(["complete", "time_split", "--phase-count", "1",
              "--output-path", "phases/summary.json"])
         result = run_json(["next", "--json"])
-        assert result["command"] == "deepen_time_split"
+        # Self-converging: completed but not yet converged → re-run time_split.
+        assert result["command"] == "time_split"
 
     def test_convergence_cycle_to_bootstrap(self, pipeline_env):
-        """Full time_split ↔ deepen_time_split cycle ending in convergence."""
+        """time_split self-converging cycle ending in convergence."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
 
         # time_split completes
         run(["complete", "time_split", "--phase-count", "1",
              "--output-path", "phases/summary.json"])
-
-        # deepen_time_split completes
-        run(["complete", "deepen_time_split",
-             "--feedback-path", "phases/feedback/dt.json",
-             "--findings-summary", '{"high":0,"medium":0,"low":1}'])
 
         # Converge
         run(["mark-converged", "time_split", "--reason", "Zero high/medium"])
@@ -120,7 +116,6 @@ class TestFullPipelineWalk:
 
         # time_split cycle
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
 
         # bootstrap_converge (self-converging, single command)
@@ -168,8 +163,6 @@ class TestFullPipelineWalk:
         """`complete review_swarm_pr --findings-detail` appends to findings_history."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f",
-             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
         run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
@@ -227,8 +220,6 @@ class TestFullPipelineWalk:
         """`--findings-detail` with `entries[]` writes self-describing per-finding payloads."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f",
-             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
         run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
@@ -275,8 +266,6 @@ class TestFullPipelineWalk:
         """Unknown threat_class is rejected with non-zero exit before mutation."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f",
-             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
         run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
@@ -316,8 +305,6 @@ class TestFullPipelineWalk:
         """A detail file whose iteration does not match the just-bumped one is rejected."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f",
-             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
         run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
@@ -353,7 +340,6 @@ class TestFullPipelineWalk:
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
         assert run(["validate"]) == 0
 
-        run(["complete", "deepen_time_split", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         assert run(["validate"]) == 0
 
     def test_get_context_returns_correct_info(self, pipeline_env):
@@ -366,11 +352,10 @@ class TestFullPipelineWalk:
     def test_recommendations(self, pipeline_env):
         run(["init", "--initiative", "Test", "--phase-count", "1"])
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
 
         # Add recommendation
-        assert run(["add-recommendation", "--from-cmd", "deepen_time_split",
+        assert run(["add-recommendation", "--from-cmd", "time_split",
                      "--target", "bootstrap_converge", "--text", "Check entity stubs"]) == 0
 
         # Get context should include it
@@ -378,7 +363,7 @@ class TestFullPipelineWalk:
         assert len(ctx["recommendations"]) == 1
 
         # Clear
-        run(["clear-recommendations", "--from-cmd", "deepen_time_split"])
+        run(["clear-recommendations", "--from-cmd", "time_split"])
         ctx = run_json(["get-context", "bootstrap_converge", "--phase", "1", "--json"])
         assert len(ctx["recommendations"]) == 0
 
@@ -386,7 +371,6 @@ class TestFullPipelineWalk:
         """get-context space_split_converge returns full context like bootstrap_converge."""
         run(["init", "--initiative", "Test", "--phase-count", "1"])
         run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f", "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
         run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "report.json"])
         run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])
@@ -427,8 +411,6 @@ class TestFullPipelineWalk:
 
         # === TIME_SPLIT (initiative-level, once) ===
         run(["complete", "time_split", "--phase-count", "2", "--output-path", "x"])
-        run(["complete", "deepen_time_split", "--feedback-path", "f",
-             "--findings-summary", '{"high":0,"medium":0,"low":0}'])
         run(["mark-converged", "time_split", "--reason", "clean"])
 
         # === PHASE 1 ===
@@ -515,8 +497,6 @@ def _bring_to_orchestrate_complete(epic: int = 1) -> None:
     """Walk pipeline state up to orchestrate_swarm completion (PR created)."""
     run(["init", "--initiative", "Test", "--phase-count", "1"])
     run(["complete", "time_split", "--phase-count", "1", "--output-path", "x"])
-    run(["complete", "deepen_time_split", "--feedback-path", "f",
-         "--findings-summary", '{"high":0,"medium":0,"low":0}'])
     run(["mark-converged", "time_split", "--reason", "clean"])
     run(["complete", "bootstrap_converge", "--phase", "1", "--output-path", "r.json"])
     run(["mark-converged", "bootstrap_converge", "--phase", "1", "--reason", "clean"])

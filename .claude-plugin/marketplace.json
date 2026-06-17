@@ -12,7 +12,7 @@
     {
       "name": "eigen-squared",
       "description": "Autonomous initiative-scale development orchestration with auto-chaining via claude-tasks. Zero-argument pipeline, triplet IDs, language-agnostic, worktree isolation, convergence loops, real-dependencies testing. Runs a full phase autonomously — plan, code, review, fix — until the E2E Testing epic converges.",
-      "version": "3.8.0",
+      "version": "3.9.0",
       "author": {
         "name": "G.Polo.V",
         "email": "ggpolovera@gmail.com"
