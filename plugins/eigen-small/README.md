@@ -26,7 +26,7 @@ of the swarm-worker decomposition.
 
 ```
 small_route   triage → shape + two dials → drives planning in-session → stops at the plan→build boundary
-small_plan    collapsed planning: manifest → bootstrap-delta → space_split + goals (reuse / synthesize / skip)   [forthcoming]
+small_plan    collapsed planning: manifest → bootstrap-delta → space_split + goals (reuse / synthesize / skip)
 small_build   wave executor: per-epic implementers (worktrees) → goal-gate stop-condition → per-wave review     [forthcoming]
 ```
 
@@ -67,5 +67,5 @@ the `gh`-probe guards.
 
 ## Status
 
-v1, in progress. Built so far: the plugin scaffold + thin CLI + `small_route`.
-`small_plan` and `small_build` are the next increments.
+v1, in progress. Built so far: the plugin scaffold + thin CLI + `small_route` + `small_plan`.
+`small_build` (wave executor) is the next increment.

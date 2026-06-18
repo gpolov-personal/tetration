@@ -82,9 +82,7 @@ shape. This is the human-auditable record of the routing call.
 - **`defer_to_squared`** → recommend `eigen-squared` (this work is initiative-scale).
   Do **not** reinvent the heavy pipeline here. **Stop.**
 - **`single_phase`** → drive the planning stage **in-session**:
-  - Invoke `Skill("eigen-small:small_plan")` *(forthcoming increment — until it exists,
-    stop here and report `eigen-small next`, which will name the next planning stage so
-    the operator can proceed manually).*
+  - Invoke `Skill("eigen-small:small_plan")` (in-session — never as a subagent).
   - `small_plan` runs the collapsed planning (manifest → bootstrap-delta → space_split +
     goals) with the **reuse / synthesize / skip** rule per stage, then emits the wave
     plan + the frozen goal specs.
