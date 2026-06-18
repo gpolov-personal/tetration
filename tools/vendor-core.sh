@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$REPO_ROOT/plugins/eigen-core/eigen_core"
-CONSUMERS=("eigen-squared" "eigen-lite")
+CONSUMERS=("eigen-squared" "eigen-lite" "eigen-small")
 
 if [[ ! -d "$SOURCE" ]]; then
   echo "ERROR: source $SOURCE not found" >&2
