@@ -22,7 +22,7 @@ record progress. You write no product code.
 eigen-small status                       # current waves + per-epic goal status
 eigen-small next                         # which wave / pending epics is next
 eigen-small complete-epic <wave> <epic> --goal-green
-eigen-small set-wave-review <wave> --status done
+eigen-small set-wave-review <wave>              # --status defaults to done
 eigen-small commit-state --message "..."
 ```
 
@@ -92,7 +92,7 @@ If a goal is red, send the implementer back (do not mark green, do not advance).
    again**; re-`/code-review` the fix diff if non-trivial; record the rest as documented
    follow-ups. Then:
 ```
-eigen-small set-wave-review <wave> --status done
+eigen-small set-wave-review <wave>              # --status defaults to done
 ```
 4. Clean up worktrees (`git worktree remove ../wt-P1.E<M>`). `eigen-small next` → the next wave.
 

@@ -289,7 +289,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("set-wave-review", help="Set a wave's review status")
     p.add_argument("wave")
-    p.add_argument("--status", required=True, choices=["pending", "done"])
+    p.add_argument("--status", default="done", choices=["pending", "done"],
+                   help="Review status (default: done — the common case)")
 
     sub.add_parser("validate", help="Validate the state file")
 
