@@ -103,7 +103,7 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    sharing a data model / a linear pipeline / a deployable unit stay together; the E2E
    gate epic is last). Write the **invariant artifacts** (same shapes eigen-squared
    produces, so downstream tooling can consume them):
-   - `phases/phase_<N>/epic_manifest.json` — `epics[]{id, features[], interfaces_provided[]
+   - `phases/phase_<N>/epic_manifest.json` — `epics[]{id, features[], risk (concurrency|silent_corruption|external_integration|none), interfaces_provided[]
      {interface_name, consumer_epics[], contract, concrete_files[]}, validation_summary}`,
      `execution_order[]` (E2E last), `phase_e2e_test`.
    - `phases/phase_<N>/epic_<M>/epic.md` per epic — features table, **frozen interface
@@ -146,9 +146,13 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
 
 ## On Exit
 
-1. `eigen-small validate` (state must be internally consistent).
-2. `eigen-small commit-state --message "small_plan: planned <name> (<E> epics, <W> waves)" --additional-paths eigen_initiative/phases/,test/waves/`.
-3. **STOP at the plan→build boundary** (default — a human checkpoint to review the epics,
+1. **Epic-readiness check** (one pass — the mini Handoff Test; "execute directly against epics"
+   is only as good as the epics). Per epic confirm: clear, testable ACs; **frozen interface
+   signatures** named; a **real-boundary goal spec** under `test/waves/<id>/`; a `risk` tag set;
+   and a unique feature→epic mapping (invariant §10). Fix gaps now — one pass, not an iterative gate.
+2. `eigen-small validate` (state must be internally consistent).
+3. `eigen-small commit-state --message "small_plan: planned <name> (<E> epics, <W> waves)" --additional-paths eigen_initiative/phases/,test/waves/`.
+4. **STOP at the plan→build boundary** (default — a human checkpoint to review the epics,
    the goal specs, and the wave plan, and to assign models per the tiered policy before
    hours of implementation begin). Print `eigen-small next` (→ `small_build`, wave a).
    If `small_route` was invoked with `--auto`, proceed into `Skill("eigen-small:small_build")`

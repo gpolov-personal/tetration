@@ -87,7 +87,10 @@ you sequence them (trivial for 2). **≥3 phases → use eigen-squared** (the ro
 
 v1 complete: scaffold + thin CLI + `small_start` (CLI install) + the three pipeline
 commands (`small_route` · `small_plan` · `small_build`). Registered in `marketplace.json`
-(v0.2.0). Validated end-to-end via a `kvstore` dry-run. Supports a phase slot
-(`init --phase N`) so a single run can layer as phase 2 onto an existing repo.
+(v0.3.0). Validated end-to-end via a `kvstore` dry-run. Supports a phase slot
+(`init --phase N`) so a single run can layer as phase 2 onto an existing repo, plus the
+§15 lean-philosophy refinements: a **cross-phase freeze ledger** (`freeze-add`/`freeze-list`),
+a **one-pass cross-cutting critique** in `small_plan`, and **epic `risk` tags** driving
+targeted review.
 **Install with `/small_start`** (manual-only — no watchdog/env). Remaining hardening:
 exercise the parallel-worktree fan-out and the manifest *reuse* path on a real project.
