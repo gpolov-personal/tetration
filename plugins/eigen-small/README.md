@@ -25,6 +25,7 @@ of the swarm-worker decomposition.
 ## Commands
 
 ```
+small_start   ONE-TIME setup: install the eigen-small CLI wrapper on PATH (manual-only; --reinstall-cli-only)
 small_route   triage → shape + two dials → drives planning in-session → stops at the plan→build boundary
 small_plan    collapsed planning: manifest → bootstrap-delta → space_split + goals (reuse / synthesize / skip)
 small_build   wave executor: per-epic implementers (worktrees) → goal-gate stop-condition → per-wave review
@@ -76,8 +77,9 @@ you sequence them (trivial for 2). **≥3 phases → use eigen-squared** (the ro
 
 ## Status
 
-v1 command surface complete: scaffold + thin CLI + all three commands
-(`small_route` · `small_plan` · `small_build`). Not yet registered in
-`marketplace.json` (deferred until shipping). Remaining hardening: end-to-end dry-run
-on a real small project, and (optional) install wrapper / `.eigen-small/env` if
-autonomous scheduling is ever wanted.
+v1 complete: scaffold + thin CLI + `small_start` (CLI install) + the three pipeline
+commands (`small_route` · `small_plan` · `small_build`). Registered in `marketplace.json`
+(v0.2.0). Validated end-to-end via a `kvstore` dry-run. Supports a phase slot
+(`init --phase N`) so a single run can layer as phase 2 onto an existing repo.
+**Install with `/small_start`** (manual-only — no watchdog/env). Remaining hardening:
+exercise the parallel-worktree fan-out and the manifest *reuse* path on a real project.
