@@ -56,7 +56,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     path = _state_path(args)
     if path.exists() and not args.force:
         return _err(f"{path} already exists (use --force to overwrite)")
-    state = create_initial_state(args.initiative)
+    state = create_initial_state(args.initiative, phase=args.phase)
     if args.shape:
         state.shape = args.shape
     if args.structure:
@@ -64,7 +64,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if args.rigor:
         state.dials["rigor"] = args.rigor
     save_state(state, path)
-    _emit({"created": str(path), "shape": state.shape, "dials": state.dials})
+    _emit({"created": str(path), "phase": state.phase, "shape": state.shape, "dials": state.dials})
     return 0
 
 
@@ -254,6 +254,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("init", help="Create pipeline_state_small.json")
     p.add_argument("--initiative", required=True, help="Feature / product name")
+    p.add_argument("--phase", type=int, default=1,
+                   help="Phase SLOT this single run occupies (default 1; use 2 to layer "
+                        "onto a repo that already ran phase 1 — artifacts go to phases/phase_<N>/)")
     p.add_argument("--shape", choices=["unknown", "direct", "single_phase", "defer_to_squared"])
     p.add_argument("--structure", choices=["unset", "none", "epics", "epics_parallel"])
     p.add_argument("--rigor", choices=["unset", "low", "standard", "high"])

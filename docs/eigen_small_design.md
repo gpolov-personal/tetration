@@ -268,7 +268,7 @@ Manifest auto-discovers `commands/*.md` (no explicit registration). Install via 
 ## 13. Out of scope for v1 (deliberate)
 
 - **Autonomous watchdog / `CLAUDE_TASKS_API` scheduling.** v1 is manual / in-session driver. (Add later if wanted.)
-- **Multi-phase.** That's Shape 2 → defer to eigen-squared.
+- **Multi-phase orchestration (a built-in phase splitter / N-phase sequencing + phase gates).** That's Shape `defer_to_squared`. **Exception (Level 0):** a 2-phase product (MVP → extensions) is supported as **two single-phase runs** — run again with `init --phase 2`, which slots artifacts into `phases/phase_2/` and reuses phase 1's frozen contracts/hooks. The router does **not** auto-plan the two phases; you sequence them (the boundary is trivial for 2). ≥3 phases → defer to eigen-squared.
 - **Convergence loops** (main↔deepen, multi-iteration review). The goal gate replaces them.
 - **Reusing squared's swarm workers** for execution. The goal-gate direct build is the divergence.
 - **Squared's 22-verb CLI + nested phase/epic state + strict ordering gate.** eigen-small has a *thin* CLI (~6–7 permissive verbs, §4) over flat state — not the absence of a CLI, and not squared's surface.

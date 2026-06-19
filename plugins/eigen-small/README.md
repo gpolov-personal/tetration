@@ -38,7 +38,7 @@ squared's hard ordering gate). State lives at
 `eigen_initiative/phases/pipeline_state_small.json`.
 
 ```
-small init --initiative <name> [--shape ...] [--structure ...] [--rigor ...]
+small init --initiative <name> [--phase N] [--shape ...] [--structure ...] [--rigor ...]
 small set-shape --shape single_phase --structure epics_parallel --rigor high
 small status
 small next                                  # permissive: next stage/wave or "done"
@@ -64,6 +64,15 @@ the `gh`-probe guards.
   (e.g. `language-profiles` for toolchain detection) via cross-plugin `Skill(...)`.
 - **Own flat state** (`pipeline_state_small.json`) with a `SquaredSchemaDetected`
   guard so it can never clobber a squared/lite state file.
+
+## Two phases on one repo (run twice)
+
+eigen-small is single-phase, but a 2-phase product (MVP → extensions) is supported as **two
+runs**: do phase 1, then run again with `init --phase 2`. The phase-2 run slots its artifacts
+into `phases/phase_2/`, **reuses** the existing `phase_2_manifest.md`, and builds on phase 1's
+**frozen extension seams** (the no-op hooks pattern). It does **not** auto-plan both phases —
+you sequence them (trivial for 2). **≥3 phases → use eigen-squared** (the router answers
+`defer_to_squared`).
 
 ## Status
 

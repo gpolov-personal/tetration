@@ -28,6 +28,8 @@ eigen-small commit-state --message "..."
 
 ## On Entry
 
+> **Phase slot (N).** Read `phase` from `eigen-small status` (or `next`'s `context.phase`). All `phases/phase_<N>/…` paths and the `feat/P<N>.E<M>` / `wt-P<N>.E<M>` branch + worktree names below use that N (a phase-2 run uses `phases/phase_2/`, `feat/P2.E<M>`).
+
 1. `eigen-small status`. **STOP** if there are no `waves` — run `small_plan` first.
 2. `eigen-small next` → `context.wave` + `context.pending_epics` (or `step: review`) is the
    wave to work. Walk waves in the order `next` reports them; do not skip ahead.
@@ -36,14 +38,14 @@ eigen-small commit-state --message "..."
 
 ### Stage 1 — Implement
 
-One focused implementer per epic. Build **directly from `phases/phase_1/epic_<M>/epic.md`**
+One focused implementer per epic. Build **directly from `phases/phase_<N>/epic_<M>/epic.md`**
 (its frozen interface signatures, verbatim Blackbox specs, validation_summary). TDD on the
 risky features; keep frozen signatures; honour logging/secret guardrails.
 
 - **Parallel wave** (`context.parallel == true` — mutually-independent epics): for each epic,
   create an **explicit git worktree** and spawn one implementer there:
   ```
-  git worktree add ../wt-P1.E<M> -b feat/P1.E<M> <integration-branch>
+  git worktree add ../wt-P<N>.E<M> -b feat/P<N>.E<M> <integration-branch>
   ```
   Spawn the implementer (Agent tool) with `cwd` = that worktree. **Use explicit
   `git worktree add` — NOT `isolation:"worktree"`** (verified: it does not isolate parallel
@@ -51,7 +53,7 @@ risky features; keep frozen signatures; honour logging/secret guardrails.
   implementer touches **only its own subpackage + its own test file**; `contracts/`/`config/`
   and other epics' packages are read-only; it commits **only its own files**. (Strict
   file-ownership is the load-bearing safety margin under any residual sharing.)
-- **Sequential wave** (`parallel == false`): one implementer on `feat/P1.E<M>`. The
+- **Sequential wave** (`parallel == false`): one implementer on `feat/P<N>.E<M>`. The
   integration-heart epic (orchestration / wiring) goes to the **strongest available model**
   plus a **targeted concurrency review** in Stage 3 — it is where late integration + races +
   light review coincide.
@@ -61,7 +63,7 @@ risky features; keep frozen signatures; honour logging/secret guardrails.
 
 **Implementer brief (per epic):**
 ```
-Read:    phases/phase_1/epic_<M>/epic.md (the contract — read fully)
+Read:    phases/phase_<N>/epic_<M>/epic.md (the contract — read fully)
 GOAL (stop): test/waves/<id>/ — do NOT return success until your goal runs GREEN
 You own: <epic subpackage> + test/unit/.../test_<pkg>.py   (+ may EXTEND test/waves/<id>/, never weaken frozen assertions)
 Read-only: contracts/, config/, other epics' packages, the frozen goal assertions
@@ -94,7 +96,7 @@ If a goal is red, send the implementer back (do not mark green, do not advance).
 ```
 eigen-small set-wave-review <wave>              # --status defaults to done
 ```
-4. Clean up worktrees (`git worktree remove ../wt-P1.E<M>`). `eigen-small next` → the next wave.
+4. Clean up worktrees (`git worktree remove ../wt-P<N>.E<M>`). `eigen-small next` → the next wave.
 
 ### Last wave — the E2E phase gate
 

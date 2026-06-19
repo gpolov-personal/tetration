@@ -38,6 +38,8 @@ After each stage, record it: `eigen-small set-stage <stage> --status <s> [--path
 
 ## On Entry
 
+> **Phase slot (N).** Read `phase` from `eigen-small status` (or `next`'s `context.phase`; default 1). Every `phases/phase_<N>/…` path below uses that N — a phase-2 run (`init --phase 2`) reads/writes `phases/phase_2/…` and reuses the existing `phase_2_manifest.md`, never colliding with a `phase_1/` from an earlier (e.g. squared) run.
+
 1. `eigen-small status`. **STOP** unless `shape == single_phase` — print: "run
    `small_route` first (shape must be single_phase)."
 2. `eigen-small next` → its `context.next_stage` tells you where to resume (stages are
@@ -48,9 +50,9 @@ After each stage, record it: `eigen-small set-stage <stage> --status <s> [--path
 
 ## Stage M — Phase manifest
 
-Goal: ensure a usable `phases/phase_1_manifest.md` exists.
+Goal: ensure a usable `phases/phase_<N>_manifest.md` exists.
 
-- **Reuse** — if `eigen_initiative/phases/phase_1_manifest.md` exists (e.g. eigen-squared
+- **Reuse** — if `eigen_initiative/phases/phase_<N>_manifest.md` exists (e.g. eigen-squared
   `time_split` already ran), use it as-is → `set-stage manifest --status reused --path <p>`.
 - **Synthesize** — otherwise produce the **minimal viable manifest** from the
   Initiative/Blackbox. Load-bearing parts only (everything else is defaultable):
@@ -68,7 +70,7 @@ Goal: ensure a usable `phases/phase_1_manifest.md` exists.
 Goal: the foundation every epic fills + a `bootstrap-report.json` that satisfies
 **Invariant #2**.
 
-- **Reuse** — if `phases/phase_1/bootstrap-report.json` exists, use it →
+- **Reuse** — if `phases/phase_<N>/bootstrap-report.json` exists, use it →
   `set-stage bootstrap --status reused --path <p>`.
 - **Greenfield (new service)** — full scaffold: directory structure, the **frozen
   contracts/ABCs**, config surface, tooling baseline, optional Docker artifacts. This is
@@ -96,12 +98,12 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    sharing a data model / a linear pipeline / a deployable unit stay together; the E2E
    gate epic is last). Write the **invariant artifacts** (same shapes eigen-squared
    produces, so downstream tooling can consume them):
-   - `phases/phase_1/epic_manifest.json` — `epics[]{id, features[], interfaces_provided[]
+   - `phases/phase_<N>/epic_manifest.json` — `epics[]{id, features[], interfaces_provided[]
      {interface_name, consumer_epics[], contract, concrete_files[]}, validation_summary}`,
      `execution_order[]` (E2E last), `phase_e2e_test`.
-   - `phases/phase_1/epic_<M>/epic.md` per epic — features table, **frozen interface
+   - `phases/phase_<N>/epic_<M>/epic.md` per epic — features table, **frozen interface
      signatures**, verbatim Blackbox specs, validation_summary, bootstrap context.
-   - `phases/phase_1/phase_e2e_config.json`.
+   - `phases/phase_<N>/phase_e2e_config.json`.
    - **Invariant #1:** every manifest feature lands in exactly one epic.
    - **Invariant #2:** every `concrete_files[]` path appears in
      `bootstrap-report.json.entities_created[].path` (populate from real stubs, or only
@@ -120,7 +122,7 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    epics share a wave** (parallel); everything downstream is sequential. The E2E gate is
    the last (solo) wave.
    `eigen-small set-waves --waves '[{"id":"a","epics":["E3","E4","E5"],"parallel":true}, {"id":"b","epics":["E6"],"parallel":false}, {"id":"c","epics":["E7"],"parallel":false}]'`
-4. Record: `eigen-small set-stage space_split --status done --path phases/phase_1/epic_manifest.json`.
+4. Record: `eigen-small set-stage space_split --status done --path phases/phase_<N>/epic_manifest.json`.
 
 ## On Exit
 

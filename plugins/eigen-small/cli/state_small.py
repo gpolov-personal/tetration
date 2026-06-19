@@ -93,6 +93,7 @@ class Wave:
 class SmallPipelineState:
     schema: str = SCHEMA
     initiative: str = ""
+    phase: int = 1  # which phase SLOT this single-phase run occupies (1, or 2 to layer onto an existing repo)
     shape: str = "unknown"
     dials: dict = field(default_factory=lambda: {"structure": "unset", "rigor": "unset"})
     stages: dict = field(default_factory=lambda: {s: StageMarker() for s in PLANNING_STAGES})
@@ -104,6 +105,7 @@ class SmallPipelineState:
         return {
             "schema": self.schema,
             "initiative": self.initiative,
+            "phase": self.phase,
             "shape": self.shape,
             "dials": self.dials,
             "stages": {k: v.to_dict() for k, v in self.stages.items()},
@@ -129,6 +131,7 @@ class SmallPipelineState:
         return cls(
             schema=d.get("schema", SCHEMA),
             initiative=d.get("initiative", ""),
+            phase=int(d.get("phase", 1)),
             shape=d.get("shape", "unknown"),
             dials=d.get("dials") or {"structure": "unset", "rigor": "unset"},
             stages=stages,
@@ -159,9 +162,9 @@ def save_state(state: SmallPipelineState, state_file: str | Path) -> None:
     save_raw_state(state.to_dict(), state_file)
 
 
-def create_initial_state(initiative: str) -> SmallPipelineState:
+def create_initial_state(initiative: str, phase: int = 1) -> SmallPipelineState:
     now = datetime.now(timezone.utc).isoformat()
-    return SmallPipelineState(initiative=initiative, created_at=now, updated_at=now)
+    return SmallPipelineState(initiative=initiative, phase=phase, created_at=now, updated_at=now)
 
 
 def validate_state(state: SmallPipelineState) -> list[str]:

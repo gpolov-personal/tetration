@@ -30,7 +30,9 @@ eigen-small next              # permissive next step
 ## On Entry
 
 1. Run `eigen-small status`. If `no_state`, create it:
-   `eigen-small init --initiative "<feature/product name>"`.
+   `eigen-small init --initiative "<feature/product name>"` — add `--phase 2` if this layers
+   onto a repo that already ran an earlier phase (artifacts then slot into `phases/phase_2/`
+   and reuse `phase_2_manifest.md`, no collision with an existing `phase_1/`).
 2. If `shape` is already set (≠ `unknown`), this is a re-run — skip to **Stage 3**
    (drive), using the recorded shape/dials.
 

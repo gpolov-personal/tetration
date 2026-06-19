@@ -27,6 +27,7 @@ def determine_next_small(state: dict) -> Optional[tuple[str, dict]]:
     """
     shape = state.get("shape", "unknown")
     initiative = state.get("initiative", "")
+    phase = int(state.get("phase", 1))
 
     # ── Triage not done yet → run the router ──
     if shape in ("unknown", "", None):
@@ -43,14 +44,14 @@ def determine_next_small(state: dict) -> Optional[tuple[str, dict]]:
     for stage in PLANNING_STAGES:
         status = (stages.get(stage) or {}).get("status", "pending")
         if status not in RESOLVED_STAGE_STATUSES:
-            return ("small_plan", {"next_stage": stage, "initiative": initiative})
+            return ("small_plan", {"next_stage": stage, "initiative": initiative, "phase": phase})
 
     # ── Planning resolved → the wave plan must exist (emitted by space_split) ──
     waves = state.get("waves") or []
     if not waves:
         return (
             "small_plan",
-            {"next_stage": "space_split", "note": "emit the wave plan"},
+            {"next_stage": "space_split", "note": "emit the wave plan", "phase": phase},
         )
 
     # ── Walk waves in order: a wave is done when every epic goal is green AND
@@ -67,12 +68,13 @@ def determine_next_small(state: dict) -> Optional[tuple[str, dict]]:
                 "small_build",
                 {
                     "wave": wid,
+                    "phase": phase,
                     "parallel": bool(wave.get("parallel", False)),
                     "pending_epics": pending,
                 },
             )
         if review_status != "done":
-            return ("small_build", {"wave": wid, "step": "review"})
+            return ("small_build", {"wave": wid, "step": "review", "phase": phase})
         # else: this wave is fully done — advance.
 
     return None  # all waves complete
