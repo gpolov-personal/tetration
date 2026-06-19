@@ -47,6 +47,11 @@ After each stage, record it: `eigen-small set-stage <stage> --status <s> [--path
 3. Read the Initiative + Blackbox (or the feature description) and the existing repo
    conventions (CodeGraph/Read/Grep directly; you MAY fan out read-only research
    `Task` agents for a large/unfamiliar repo).
+4. **Read the cross-phase freeze ledger** — the seams this phase must respect:
+   `eigen-small freeze-list --phase <N-1>`. Every listed seam is **read-only** — build
+   against it, never mutate it. If phase N's design would require **mutating** a frozen
+   seam, that is a cross-cutting contradiction: STOP and reconcile (re-shape phase N, or
+   surface that the earlier freeze was wrong) before proceeding.
 
 ## Stage M — Phase manifest
 
@@ -122,7 +127,11 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    epics share a wave** (parallel); everything downstream is sequential. The E2E gate is
    the last (solo) wave.
    `eigen-small set-waves --waves '[{"id":"a","epics":["E3","E4","E5"],"parallel":true}, {"id":"b","epics":["E6"],"parallel":false}, {"id":"c","epics":["E7"],"parallel":false}]'`
-4. Record: `eigen-small set-stage space_split --status done --path phases/phase_<N>/epic_manifest.json`.
+4. **Record this phase's freezes** so phase N+1 inherits them: for each interface/seam this
+   phase freezes, `eigen-small freeze-add --phase <N> --name <seam> --kind frozen
+   [--signature "<sig>"] [--consumers <csv>]`; for each seam deliberately left as an
+   **extension hook** for a future phase, use `--kind hook` (the SVC-01 no-op-hooks pattern).
+5. Record the stage done: `eigen-small set-stage space_split --status done --path phases/phase_<N>/epic_manifest.json`.
 
 ## On Exit
 

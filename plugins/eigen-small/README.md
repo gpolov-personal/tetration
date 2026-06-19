@@ -49,7 +49,15 @@ small complete-epic a E4 --goal-green
 small set-wave-review a --status done
 small validate
 small commit-state --message "..."
+small freeze-add --phase 1 --name <seam> --kind frozen|hook [--signature ...] [--consumers ...]
+small freeze-list [--phase N] [--kind frozen|hook]    # the cross-phase contract a later phase must respect
 ```
+
+**Cross-phase freeze ledger** (`eigen_initiative/phases/freeze_ledger.json`): `small_plan`
+records each phase's **frozen** seams (immutable contracts) and **hooks** (extension seams
+left for a later phase). A phase-N run reads `freeze-list --phase <N-1>`, treats those as
+read-only, and flags any design that would mutate one — this is the cross-phase verification
+that makes the two-runs multi-phase approach safe.
 
 Deliberately absent (the squared ceremony shed): the strict ordering gate, the
 recommendation matrix, findings/signature validation, the scheduler/watchdog, and

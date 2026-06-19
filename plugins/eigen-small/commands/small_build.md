@@ -117,8 +117,9 @@ Report the wave summary + any recorded follow-ups.
 2. **The orchestrator confirms each goal green** by running it against the real boundary —
    never on the implementer's self-report. The goal is the independent oracle.
 3. **A fix is not done until its goal + the unit suite are green again** (the regression gate).
-4. **Frozen signatures are read-only** to implementers; goal assertions are read-only (extend,
-   never weaken).
+4. **Frozen signatures are read-only** to implementers — including every seam in the
+   cross-phase freeze ledger (`eigen-small freeze-list`); goal assertions are read-only
+   (extend, never weaken).
 5. **Invoked in-session, never wrapped in a router subagent** — implementers must spawn from
    the top level.
 6. **Strict file-ownership** per epic (only its subpackage + its test file) — the safety margin

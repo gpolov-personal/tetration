@@ -28,6 +28,7 @@ from .state_small import (
     validate_state,
 )
 from .transitions_small import determine_next_small
+from .freeze_ledger import Seam, add_seam, load_ledger, resolve_ledger_file, save_ledger
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -39,6 +40,10 @@ def _eigen_root() -> str:
 def _state_path(args: argparse.Namespace) -> Path:
     override = getattr(args, "state_file", None)
     return Path(override) if override else resolve_state_file(_eigen_root())
+
+
+def _ledger_path() -> Path:
+    return resolve_ledger_file(_eigen_root())
 
 
 def _emit(obj: object) -> None:
@@ -220,6 +225,38 @@ def cmd_commit_state(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_freeze_add(args: argparse.Namespace) -> int:
+    ledger = load_ledger(_ledger_path())
+    consumers = (
+        [c.strip() for c in args.consumers.split(",") if c.strip()]
+        if args.consumers
+        else []
+    )
+    seam = Seam(
+        name=args.name,
+        phase=args.phase,
+        kind=args.kind,
+        signature=args.signature,
+        consumers=consumers,
+        note=args.note,
+    )
+    add_seam(ledger, seam)
+    save_ledger(ledger, _ledger_path())
+    _emit({"frozen": seam.name, "phase": seam.phase, "kind": seam.kind})
+    return 0
+
+
+def cmd_freeze_list(args: argparse.Namespace) -> int:
+    ledger = load_ledger(_ledger_path())
+    seams = ledger.seams
+    if args.phase is not None:
+        seams = [s for s in seams if s.phase <= args.phase]
+    if args.kind:
+        seams = [s for s in seams if s.kind == args.kind]
+    _emit({"seams": [s.to_dict() for s in seams], "count": len(seams)})
+    return 0
+
+
 _HANDLERS = {
     "init": cmd_init,
     "set-shape": cmd_set_shape,
@@ -231,6 +268,8 @@ _HANDLERS = {
     "set-wave-review": cmd_set_wave_review,
     "validate": cmd_validate,
     "commit-state": cmd_commit_state,
+    "freeze-add": cmd_freeze_add,
+    "freeze-list": cmd_freeze_list,
 }
 
 
@@ -302,6 +341,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--additional-paths", dest="additional_paths",
                    help="Comma-separated extra paths to stage")
     p.add_argument("--branch", help="Branch to push to (defaults to current)")
+
+    p = sub.add_parser("freeze-add",
+                       help="Record a frozen seam / extension hook in the cross-phase freeze ledger")
+    p.add_argument("--phase", type=int, required=True)
+    p.add_argument("--name", required=True, help="Seam / interface name")
+    p.add_argument("--kind", choices=["frozen", "hook"], default="frozen",
+                   help="frozen = immutable contract; hook = extension seam left for a later phase")
+    p.add_argument("--signature", help="The frozen signature (informational)")
+    p.add_argument("--consumers", help="Comma-separated consumer epics/features")
+    p.add_argument("--note")
+
+    p = sub.add_parser("freeze-list",
+                       help="List frozen seams a later phase must respect")
+    p.add_argument("--phase", type=int, help="Only seams frozen at or before phase N")
+    p.add_argument("--kind", choices=["frozen", "hook"])
+    p.add_argument("--json", action="store_true", dest="as_json", help="(no-op; always JSON)")
 
     return parser
 

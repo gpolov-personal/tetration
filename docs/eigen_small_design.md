@@ -282,3 +282,40 @@ Manifest auto-discovers `commands/*.md` (no explicit registration). Install via 
 3. ~~**Cross-plugin reuse.**~~ **RESOLVED → reuse `Skill("eigen-squared:language-profiles")`**; declare `dependencies:["eigen-squared"]` in the manifest (§3, §11).
 4. ~~**`small_route` ↔ `small_build` handoff.**~~ **RESOLVED → stop after planning by default** (human checkpoint); `--auto` flag proceeds in-session (§6.4).
 5. ~~**First build increment.**~~ **RESOLVED → scaffold (manifest + vendored eigen-core + thin CLI + state) + `small_route` first**, then `small_plan`, then `small_build` — each increment independently testable.
+
+---
+
+## 15. Refinement plan — embodying the lean philosophy (strong-model-direct)
+
+> Context: with a strong model (Opus 4.8 / Fable 5) building a whole epic directly from `epic.md`, most of eigen-squared's machinery is redundant. But "the instructions are redundant" conflates **three buckets**, and only one is truly redundant:
+> 1. **Weak-model rails** (atomic task-slicing, TDD-A/B handoff, multi-iteration convergence, recommendation matrix) → **redundant. Already dropped.**
+> 2. **Parallelism coordination** (frozen interfaces, file-ownership, waves/DAG) → **not weakness, it's concurrency.** Needed *iff* you fan out — kept, model-independent. Already present.
+> 3. **Independent verification** (the goal-oracle) → **NOT redundant.** Capability doesn't fix the self-blind-spot; a stronger model writes *more plausible* wrong code. Kept regardless. Already present.
+>
+> The gap to close is the **second job the convergence loop did** — surfacing cross-cutting design contradictions — and the **explicit ownership of cross-phase seam-freezing**. The burden moves *upstream* into epic + seam authoring; it does not vanish.
+
+### Already aligned (do not touch)
+No atomic tasks · no TDD-A/B · no multi-iteration convergence · no 8-agent review · frozen interfaces + file-ownership + waves · goal-oracle + orchestrator-confirms-green · lightweight targeted review.
+
+### Core enhancements
+
+**E1 — Cross-cutting critique (ONE adversarial pass, never a loop).** After `small_plan`'s decomposition and **before freezing**, a single adversarial self-review: *"assume the decomposition is wrong — find the highest-severity contradiction."* Checks: (a) do two epics' contracts/ACs contradict? (b) **would any contract about to be frozen need to mutate in a later phase?** (the PII `boolean→set` class — dtf-50), (c) coverage (already invariant §10.1). This distills the convergence's *job (b)* to one cheap pass that catches the expensive class. Guardrail: **one pass, not a loop** — the strong model reviewing its own decomposition adversarially, not a review team.
+
+**E2 — Cross-phase freeze ledger (the requested ownership).** A persisted `eigen_initiative/phases/freeze_ledger.json` recording, per phase: the interface signatures/seams **frozen** and the ones deliberately left as **extension hooks** for future phases (the SVC-01 no-op-hooks pattern). `small_plan`:
+- phase N>1 → **reads** prior phases' ledger entries, treats them as **read-only**, and (via E1) flags any phase-N design that would mutate a frozen seam;
+- at close → **writes** phase N's newly-frozen seams + the hooks it leaves for N+1.
+This *is* the cross-phase verification eigen-small otherwise lacks — it makes "run eigen-small once per phase" safe (closes the gap noted for the per-phase multi-run approach). Guardrail: **a lightweight JSON**, not squared's freeze-ledger + dependent-lane-recheck machinery.
+
+### Light folds (no new commands)
+
+**E3 — Epic-readiness checklist** at `small_plan` exit (a mini Handoff Test): each epic has clear ACs, frozen interface signatures, a real-boundary goal spec, and a unique feature→epic mapping. A single checklist pass, not an iterative gate — "execute directly against epics" is only as good as the epics.
+
+**E4 — Risk tags on epics** (`concurrency` / `silent_corruption` / `external_integration`) in `epic_manifest.json` → `small_build` applies its **targeted review** exactly there, instead of relying on implementer judgment.
+
+### Implementation increments
+1. **E2 (freeze ledger)** — CLI verbs (`freeze-add` / `freeze-list`) + the ledger file + `small_plan`/`small_build` wiring (read prior frozen seams as read-only; write new freezes at close). *The core of the request; unblocks safe multi-phase.*
+2. **E1 (cross-cutting critique)** — a `Stage S.5` in `small_plan.md` (prompt only).
+3. **E3 + E4 (folds)** — checklist at `small_plan` exit + a `risk` field on epics + `small_build` wiring.
+
+### The guardrail (avoid rebuilding squared)
+Every addition stays thin: E1 is **one pass** (not convergence), E2 is **one JSON** (not the dependent-lane-recheck apparatus), E3 is **a checklist** (not an iterative gate). The test: *if a human with Opus wouldn't do it by hand in minutes, it's too much.* The moment E1 becomes a loop or E2 grows re-check machinery, we've rebuilt eigen-squared.

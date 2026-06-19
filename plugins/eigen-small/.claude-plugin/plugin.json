@@ -1,6 +1,6 @@
 {
   "name": "eigen-small",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Router-driven, artifact-robust, goal-gated pipeline for a feature or single-phase product. Triage (small_route) picks a shape + two dials; collapsed planning (small_plan) reuses/synthesizes/skips stages; wave execution (small_build) builds each epic directly from its epic.md, gated by an executable real-boundary goal as its stop-condition, with lightweight per-wave review. Reuses eigen-squared skills via cross-plugin referencing.",
   "dependencies": ["eigen-squared"],
   "keywords": ["eigen", "small", "router", "triage", "single-phase", "goal-gated", "artifact-robust", "lightweight"],
