@@ -28,6 +28,10 @@ Load `Skill("eigen-small:language-profiles")` for toolchain detection (package
 manager, linter, type checker, test runner, structural patterns per language). It is
 read-only knowledge; you still own every decision.
 
+Load `Skill("eigen-small:goal-authoring")` before Stage S step 2 — the doctrine for the
+per-epic goal specs (independent · strong-model + adversarial · real-boundary · golden-manifest ·
+frozen oracle). It is the keystone that makes direct per-epic build safe.
+
 ## The unifying rule for every stage
 
 > **reuse-if-present · synthesize-if-missing · skip-if-not-needed** — decided per stage
@@ -113,16 +117,13 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    - **Invariant #2:** every `concrete_files[]` path appears in
      `bootstrap-report.json.entities_created[].path` (populate from real stubs, or only
      reference paths confirmed to exist).
-2. **Emit the goal specs — independent of the implementer, frozen read-only.** For each
-   epic write `test/waves/<id>/` goal specs derived from the epic's `validation_summary`
-   + Blackbox ACs + a **real-boundary** requirement (validate against the real broker /
-   object store / record-replay stub, faking only what the wave doesn't own). **Always
-   author the goal WHAT with a stronger model than the implementer and an adversarial
-   mandate** ("design the goal to break a plausible-but-wrong implementation") — a fixed
-   policy, regardless of the rigor dial; the rigor dial tunes corpus *breadth* and review
-   depth only. For deterministic seams prefer an independently-authored **golden manifest**
-   (expected outputs fixed externally). These specs are **read-only** to `small_build`'s
-   implementers — they may extend the accessory, never weaken the frozen assertions.
+2. **Emit the goal specs**, one per epic under `test/waves/<id>/`, **per the goal-authoring
+   doctrine** (`Skill("eigen-small:goal-authoring")`, loaded above). Derive each from the epic's
+   `validation_summary` + Blackbox ACs; validate against a **real boundary**; author it
+   **independently** with a stronger model + an adversarial mandate; freeze it **read-only** to
+   `small_build`'s implementers (golden manifest for deterministic seams). This is a fixed policy
+   — the rigor dial tunes only corpus *breadth* and review depth, never whether the goal is
+   independent/adversarial. See the skill for the full rationale.
 3. **Emit the wave plan.** Group epics into waves by the DAG — **only mutually-independent
    epics share a wave** (parallel); everything downstream is sequential. The E2E gate is
    the last (solo) wave.

@@ -71,9 +71,10 @@ the `gh`-probe guards.
   Python entry point.
 - **Self-contained — no plugin dependencies.** Bundles its own read-only skills
   (`language-profiles` for toolchain detection, `security-best-practices` for secure-by-default
-  coding/review) and review agents (`data-integrity-guardian`, `security-sentinel`,
-  `architecture-strategist`, mapped from epic `risk` tags). These were vendored from
-  eigen-squared so eigen-small stands alone.
+  coding/review, `goal-authoring` for the independent-real-boundary-oracle doctrine) and review
+  agents (`data-integrity-guardian`, `security-sentinel`, `architecture-strategist`, mapped from
+  epic `risk` tags). The `language-profiles`/`security-best-practices`/review agents were vendored
+  from eigen-squared so eigen-small stands alone.
 - **Own flat state** (`pipeline_state_small.json`) with a `SquaredSchemaDetected`
   guard so it can never clobber a squared/lite state file.
 
@@ -95,6 +96,6 @@ commands (`small_route` · `small_plan` · `small_build`). Registered in `market
 §15 lean-philosophy refinements: a **cross-phase freeze ledger** (`freeze-add`/`freeze-list`),
 a **one-pass cross-cutting critique** in `small_plan`, and **epic `risk` tags** driving
 targeted review. As of v0.4.0: **self-contained** (no eigen-squared dependency — review agents
-and reference skills vendored).
+and reference skills vendored), plus a **`goal-authoring` doctrine skill**.
 **Install with `/small_start`** (manual-only — no watchdog/env). Remaining hardening:
 exercise the parallel-worktree fan-out and the manifest *reuse* path on a real project.

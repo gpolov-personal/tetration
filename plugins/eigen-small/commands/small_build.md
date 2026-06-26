@@ -78,7 +78,8 @@ Don't: change frozen ABC signatures, touch other subpackages, weaken the goal, e
 For each epic, **the orchestrator runs the epic's `test/waves/<id>/` goal itself** against
 its **real boundary** (real broker / object store / record-replay stub — fake only what the
 wave doesn't own). The implementer's self-report is not sufficient — the goal is the
-independent oracle. Only when it is **actually green**:
+independent oracle (the why, and the extend-never-weaken rule, are the goal-authoring doctrine:
+`Skill("eigen-small:goal-authoring")`). Only when it is **actually green**:
 ```
 eigen-small complete-epic <wave> <epic> --goal-green
 ```
