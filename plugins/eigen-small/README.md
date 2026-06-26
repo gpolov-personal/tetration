@@ -75,6 +75,11 @@ the `gh`-probe guards.
   agents (`data-integrity-guardian`, `security-sentinel`, `architecture-strategist`, mapped from
   epic `risk` tags). The `language-profiles`/`security-best-practices`/review agents were vendored
   from eigen-squared so eigen-small stands alone.
+- **Live, per-run model tiering** (`phases/phase_<N>/model_plan.yaml`): `small_plan` emits it
+  pre-filled with the default tiering (strongest model → goal authoring + riskiest/integration
+  epics; cheaper → mechanical epics); the human tunes it at the plan→build STOP and `small_build`
+  reads it before spawning each implementer (fallback to defaults if absent). It lives under
+  `EIGEN_ROOT`, **not** in the plugin — so tuning a run never needs a reinstall.
 - **Own flat state** (`pipeline_state_small.json`) with a `SquaredSchemaDetected`
   guard so it can never clobber a squared/lite state file.
 
@@ -96,6 +101,7 @@ commands (`small_route` · `small_plan` · `small_build`). Registered in `market
 §15 lean-philosophy refinements: a **cross-phase freeze ledger** (`freeze-add`/`freeze-list`),
 a **one-pass cross-cutting critique** in `small_plan`, and **epic `risk` tags** driving
 targeted review. As of v0.4.0: **self-contained** (no eigen-squared dependency — review agents
-and reference skills vendored), plus a **`goal-authoring` doctrine skill**.
+and reference skills vendored), a **`goal-authoring` doctrine skill**, and **live per-run model
+tiering** (`model_plan.yaml`).
 **Install with `/small_start`** (manual-only — no watchdog/env). Remaining hardening:
 exercise the parallel-worktree fan-out and the manifest *reuse* path on a real project.

@@ -89,8 +89,8 @@ shape. This is the human-auditable record of the routing call.
     goals) with the **reuse / synthesize / skip** rule per stage, then emits the wave
     plan + the frozen goal specs.
   - **Stop at the plan→build boundary** (default — a human checkpoint to review the
-    epics, the goals, and the wave plan, and to assign models per the tiered policy
-    before hours of implementation begin). `--auto` proceeds into
+    epics, the goals, and the wave plan, and to review/edit `model_plan.yaml` (the per-run
+    model tiering `small_plan` emits) before hours of implementation begin). `--auto` proceeds into
     `Skill("eigen-small:small_build")` in-session instead of stopping.
 
 ## On Exit

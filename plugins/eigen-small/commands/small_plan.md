@@ -128,7 +128,28 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    epics share a wave** (parallel); everything downstream is sequential. The E2E gate is
    the last (solo) wave.
    `eigen-small set-waves --waves '[{"id":"a","epics":["E3","E4","E5"],"parallel":true}, {"id":"b","epics":["E6"],"parallel":false}, {"id":"c","epics":["E7"],"parallel":false}]'`
-4. **Cross-cutting critique — ONE adversarial pass, before you freeze anything.** Assume the
+4. **Emit the per-run model plan** — `phases/phase_<N>/model_plan.yaml`, the **live, editable**
+   knob the human tunes at the plan→build STOP and `small_build` reads before spawning each
+   implementer. Pre-populate it with the **default tiering** (below), one row per epic, so the
+   human only adjusts values:
+   ```yaml
+   # Edit during the plan→build checkpoint. small_build reads this before spawning each
+   # implementer; if this file is absent it falls back to the same defaults by risk tag.
+   defaults: { strong: <strongest available>, cheap: <cheaper> }
+   goal_authoring: <strongest available>      # always strong — see the goal-authoring doctrine
+   epics:
+     E3: { model: <cheap>,  why: "spec-transcription / mechanical" }
+     E4: { model: <strong>, why: "risk: concurrency — integration heart" }
+     # ...one row per epic
+   ```
+   **Default tiering policy** (the basis for the pre-fill, and `small_build`'s fallback when the
+   file is missing): **goal authoring** + the **riskiest epic** (`risk` ∈ {concurrency,
+   silent_corruption, external_integration}) + the **integration-heart** (orchestration/wiring)
+   epic + the **greenfield bootstrap gate** → **strongest** available model; mechanical /
+   spec-transcription epics → a **cheaper** model. The frozen real-boundary goal is what makes a
+   cheaper implementer safe. This file is the **only** place tiering is tuned per run — it lives
+   under `EIGEN_ROOT` (the project), **not** in the plugin, so changing it never needs a reinstall.
+5. **Cross-cutting critique — ONE adversarial pass, before you freeze anything.** Assume the
    decomposition is wrong and hunt the highest-severity contradiction. (This is the *one* job
    of the old convergence loop worth keeping — distilled to a single pass, **NOT a loop**.)
    - Do any two epics' to-be-frozen contracts / ACs **contradict** each other?
@@ -139,11 +160,11 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
      resolve (the two invariants — feature coverage + concrete-files resolution, defined in Stage S)?
    Fix what you find by re-shaping the epics/contracts; only then freeze. One pass — if nothing
    high-severity surfaces, move on (**do not iterate**).
-5. **Record this phase's freezes** so phase N+1 inherits them: for each interface/seam this
+6. **Record this phase's freezes** so phase N+1 inherits them: for each interface/seam this
    phase freezes, `eigen-small freeze-add --phase <N> --name <seam> --kind frozen
    [--signature "<sig>"] [--consumers <csv>]`; for each seam deliberately left as an
    **extension hook** for a future phase, use `--kind hook` (the SVC-01 no-op-hooks pattern).
-6. Record the stage done: `eigen-small set-stage space_split --status done --path phases/phase_<N>/epic_manifest.json`.
+7. Record the stage done: `eigen-small set-stage space_split --status done --path phases/phase_<N>/epic_manifest.json`.
 
 ## On Exit
 
@@ -154,8 +175,9 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
 2. `eigen-small validate` (state must be internally consistent).
 3. `eigen-small commit-state --message "small_plan: planned <name> (<E> epics, <W> waves)" --additional-paths eigen_initiative/phases/,test/waves/`.
 4. **STOP at the plan→build boundary** (default — a human checkpoint to review the epics,
-   the goal specs, and the wave plan, and to assign models per the tiered policy before
-   hours of implementation begin). Print `eigen-small next` (→ `small_build`, wave a).
+   the goal specs, and the wave plan, and to **review/edit `phases/phase_<N>/model_plan.yaml`**
+   — pre-filled with the default tiering — before hours of implementation begin). Print
+   `eigen-small next` (→ `small_build`, wave a).
    If `small_route` was invoked with `--auto`, proceed into `Skill("eigen-small:small_build")`
    in-session instead of stopping.
 

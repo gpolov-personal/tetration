@@ -54,12 +54,14 @@ risky features; keep frozen signatures; honour logging/secret guardrails.
   and other epics' packages are read-only; it commits **only its own files**. (Strict
   file-ownership is the load-bearing safety margin under any residual sharing.)
 - **Sequential wave** (`parallel == false`): one implementer on `feat/P<N>.E<M>`. The
-  integration-heart epic (orchestration / wiring) goes to the **strongest available model**
-  plus a **targeted concurrency review** in Stage 3 — it is where late integration + races +
-  light review coincide.
-- **Tiered models:** the riskiest epic (and goal authoring, already done in `small_plan`) →
-  strongest model; mechanical/spec-transcription epics → a cheaper model. The frozen
-  real-boundary goal is what makes a cheaper implementer safe.
+  integration-heart epic (orchestration / wiring) also gets a **targeted concurrency review** in
+  Stage 3 — it is where late integration + races + light review coincide.
+- **Model assignment:** read `phases/phase_<N>/model_plan.yaml` (emitted by `small_plan`, possibly
+  hand-tuned at the STOP) and spawn each epic's implementer with the model it names. **If the file
+  is absent, fall back to the default tiering:** the riskiest epic (and goal authoring, already
+  done in `small_plan`) + the integration-heart epic → strongest model; mechanical /
+  spec-transcription epics → a cheaper model. The frozen real-boundary goal is what makes a
+  cheaper implementer safe.
 
 **Implementer brief (per epic):**
 ```
