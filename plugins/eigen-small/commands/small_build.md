@@ -67,6 +67,8 @@ Read:    phases/phase_<N>/epic_<M>/epic.md (the contract — read fully)
 GOAL (stop): test/waves/<id>/ — do NOT return success until your goal runs GREEN
 You own: <epic subpackage> + test/unit/.../test_<pkg>.py   (+ may EXTEND test/waves/<id>/, never weaken frozen assertions)
 Read-only: contracts/, config/, other epics' packages, the frozen goal assertions
+Secure-by-default: when the epic touches inputs, auth, secrets, or external I/O, load
+      `Skill("eigen-small:security-best-practices")` for the detected language (python/js/ts/go)
 Do:   TDD from the epic ACs → implement → keep frozen signatures → make the §goal green against its real boundary
 Don't: change frozen ABC signatures, touch other subpackages, weaken the goal, edit pipeline_state_small.json
 ```
@@ -86,10 +88,13 @@ If a goal is red, send the implementer back (do not mark green, do not advance).
 
 1. Merge the wave's epic branches into the integration branch (file-disjoint ownership →
    clean merges). Run the unit suite on the integrated tree.
-2. **Lightweight review:** `/code-review` on the wave diff (+ a targeted reviewer on epics
-   tagged `risk` ∈ {concurrency, silent_corruption, external_integration} in the epic_manifest —
-   e.g. a concurrency review on a `risk: concurrency` epic). Not the 8-agent × 3-iteration
-   swarm; no P3 sweeps.
+2. **Lightweight review:** `/code-review` on the wave diff. Then, for each epic carrying a
+   `risk` tag in the epic_manifest, spawn the matching **bundled** specialist reviewer
+   (Agent tool, `subagent_type`) on that epic's diff:
+   - `risk: silent_corruption` → `eigen-small:data-integrity-guardian`
+   - `risk: external_integration` → `eigen-small:security-sentinel`
+   - `risk: concurrency` → `eigen-small:architecture-strategist`
+   Not the 8-agent × 3-iteration swarm; no P3 sweeps.
 3. **Triage → fix → regression-gate:** fix the blocking / cheap-isolated findings in-wave;
    **a fix is not done until its affected `test/waves/<id>/` goal AND the unit suite are green
    again**; re-`/code-review` the fix diff if non-trivial; record the rest as documented

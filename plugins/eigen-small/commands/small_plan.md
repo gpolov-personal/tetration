@@ -24,7 +24,7 @@ sheds). Do the decomposition here, reusing only read-only knowledge skills.
 
 ## Skills to load
 
-Load `Skill("eigen-squared:language-profiles")` for toolchain detection (package
+Load `Skill("eigen-small:language-profiles")` for toolchain detection (package
 manager, linter, type checker, test runner, structural patterns per language). It is
 read-only knowledge; you still own every decision.
 
@@ -135,7 +135,7 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
      `JUDGE_PII_PSEUDONYMISATION_ENABLED` boolean→set class — reshape it **now**, before the
      freeze, so the future phase plugs in additively.)
    - Does every manifest feature land in **exactly one** epic and every `concrete_files[]`
-     resolve (invariants §10)?
+     resolve (the two invariants — feature coverage + concrete-files resolution, defined in Stage S)?
    Fix what you find by re-shaping the epics/contracts; only then freeze. One pass — if nothing
    high-severity surfaces, move on (**do not iterate**).
 5. **Record this phase's freezes** so phase N+1 inherits them: for each interface/seam this
@@ -149,7 +149,7 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
 1. **Epic-readiness check** (one pass — the mini Handoff Test; "execute directly against epics"
    is only as good as the epics). Per epic confirm: clear, testable ACs; **frozen interface
    signatures** named; a **real-boundary goal spec** under `test/waves/<id>/`; a `risk` tag set;
-   and a unique feature→epic mapping (invariant §10). Fix gaps now — one pass, not an iterative gate.
+   and a unique feature→epic mapping (Invariant #1 — feature coverage). Fix gaps now — one pass, not an iterative gate.
 2. `eigen-small validate` (state must be internally consistent).
 3. `eigen-small commit-state --message "small_plan: planned <name> (<E> epics, <W> waves)" --additional-paths eigen_initiative/phases/,test/waves/`.
 4. **STOP at the plan→build boundary** (default — a human checkpoint to review the epics,

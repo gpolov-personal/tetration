@@ -69,8 +69,11 @@ the `gh`-probe guards.
   `tools/vendor-core.sh`): atomic state I/O + base models. A CLI is *required*, not
   optional — a markdown command can only get atomic writes by shelling out to a
   Python entry point.
-- **Declares `dependencies: ["eigen-squared"]`** so it can reuse read-only skills
-  (e.g. `language-profiles` for toolchain detection) via cross-plugin `Skill(...)`.
+- **Self-contained — no plugin dependencies.** Bundles its own read-only skills
+  (`language-profiles` for toolchain detection, `security-best-practices` for secure-by-default
+  coding/review) and review agents (`data-integrity-guardian`, `security-sentinel`,
+  `architecture-strategist`, mapped from epic `risk` tags). These were vendored from
+  eigen-squared so eigen-small stands alone.
 - **Own flat state** (`pipeline_state_small.json`) with a `SquaredSchemaDetected`
   guard so it can never clobber a squared/lite state file.
 
@@ -87,10 +90,11 @@ you sequence them (trivial for 2). **≥3 phases → use eigen-squared** (the ro
 
 v1 complete: scaffold + thin CLI + `small_start` (CLI install) + the three pipeline
 commands (`small_route` · `small_plan` · `small_build`). Registered in `marketplace.json`
-(v0.3.0). Validated end-to-end via a `kvstore` dry-run. Supports a phase slot
+(v0.4.0). Validated end-to-end via a `kvstore` dry-run. Supports a phase slot
 (`init --phase N`) so a single run can layer as phase 2 onto an existing repo, plus the
 §15 lean-philosophy refinements: a **cross-phase freeze ledger** (`freeze-add`/`freeze-list`),
 a **one-pass cross-cutting critique** in `small_plan`, and **epic `risk` tags** driving
-targeted review.
+targeted review. As of v0.4.0: **self-contained** (no eigen-squared dependency — review agents
+and reference skills vendored).
 **Install with `/small_start`** (manual-only — no watchdog/env). Remaining hardening:
 exercise the parallel-worktree fan-out and the manifest *reuse* path on a real project.
