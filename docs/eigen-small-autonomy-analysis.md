@@ -186,14 +186,27 @@ Con planificación multi-fase upfront + ejecución secuencial, **eigen-small se 
 
 ## 9. Recomendación y fases de construcción
 
-**Construir Fork A escalonado, validando valor en cada paso:**
+**Estado: Fork A IMPLEMENTADO** en `feat/eigen-small` (commits `4ee95ea`→`fb8294c`). Los cuatro
+pasos están construidos y pusheados; el cap quedó en 2 fases recomendado / 3 experimental (warn) /
+≥4 → squared. No se construyó watchdog/cron/claude-tasks/feedback-artifact (decisión sostenida).
 
-1. **Paso 0 (independiente, alto ROI):** las dos piezas de §7 — invariante AC→goal coverage + circuit-breaker `--max-attempts N`. Útiles por sí solas, sin compromiso con el resto.
-2. **Paso 1:** `small_review` sobre el modelo actual (single-phase) — el comando de comprensión + validación con síntesis por capas y chequeos mecánicos. Aporta valor incluso para una sola fase.
-3. **Paso 2:** `small_plan_horizon` (corte ≤3 fases + reutiliza núcleo small_plan + freezes upfront + E2E acumulativo) y el estado multi-fase (`total_phases`, `review_approved`).
-4. **Paso 3:** `small_build --unsupervised` (driver secuencial in-session, gated por opt-in + review_approved, con halt-and-surface).
+1. ✅ **Paso 0 (independiente, alto ROI):** invariante AC→goal coverage (Invariant #3 en `small_plan`)
+   + circuit-breaker `--max-attempts N` en `small_build`. *(commit `51b8524`)*
+2. ✅ **Paso 1:** `small_review` (comando) + `cli/review_ledger.py` + verbos `set-review`/`review-list`
+   + tests. Descubre fases por disco; síntesis por capas + chequeo mecánico AC→goal. *(commit `f58cf22`)*
+3. ✅ **Paso 2:** `small_plan_horizon` (corte ≤3 fases, reutiliza núcleo small_plan, freezes upfront,
+   E2E acumulativo) + routing en `small_route` + README. Markdown-only. *(commit `b97fad1`)*
+4. ✅ **Paso 3:** `small_build --unsupervised` + `skills/unsupervised-multiphase` (progressive
+   disclosure). State-file por fase (`--state-file`) en vez de un campo `total_phases`; gate por
+   `review-list` (todas aprobadas). Markdown-only. *(commit `fb8294c`)*
 
-**Cap recomendado:** 2 fases como contrato soportado; 3 como modo experimental marcado. No construir watchdog/cron/claude-tasks/feedback-artifact.
+**Notas de implementación que se desviaron del plan original:** (a) las aprobaciones por fase viven
+en un **`review_ledger.json`** cross-fase (espejo del freeze ledger), no en el estado plano — más
+consistente con "descubrir por disco"; (b) el driver no usa `total_phases`: usa un **state-file
+aislado por fase** (`phases/phase_<N>/pipeline_state_small.json`), lo que evita re-apuntar/sobrescribir
+un estado compartido y da resumibilidad gratis; (c) el circuit-breaker es prompt-level (in-session),
+sin persistir `goal_attempts` — suficiente para la seguridad dentro de un run (persistir entre
+resumes queda como follow-up opcional).
 
 ---
 
