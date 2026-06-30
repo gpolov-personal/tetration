@@ -29,6 +29,7 @@ from .state_small import (
 )
 from .transitions_small import determine_next_small
 from .freeze_ledger import Seam, add_seam, load_ledger, resolve_ledger_file, save_ledger
+from . import review_ledger
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -44,6 +45,10 @@ def _state_path(args: argparse.Namespace) -> Path:
 
 def _ledger_path() -> Path:
     return resolve_ledger_file(_eigen_root())
+
+
+def _review_ledger_path() -> Path:
+    return review_ledger.resolve_ledger_file(_eigen_root())
 
 
 def _emit(obj: object) -> None:
@@ -257,6 +262,24 @@ def cmd_freeze_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_set_review(args: argparse.Namespace) -> int:
+    ledger = review_ledger.load_ledger(_review_ledger_path())
+    review = review_ledger.Review(phase=args.phase, status=args.status, note=args.note)
+    review_ledger.set_review(ledger, review)
+    review_ledger.save_ledger(ledger, _review_ledger_path())
+    _emit({"phase": review.phase, "status": review.status})
+    return 0
+
+
+def cmd_review_list(args: argparse.Namespace) -> int:
+    ledger = review_ledger.load_ledger(_review_ledger_path())
+    reviews = ledger.reviews
+    if args.phase is not None:
+        reviews = [r for r in reviews if r.phase == args.phase]
+    _emit({"reviews": [r.to_dict() for r in reviews], "count": len(reviews)})
+    return 0
+
+
 _HANDLERS = {
     "init": cmd_init,
     "set-shape": cmd_set_shape,
@@ -270,6 +293,8 @@ _HANDLERS = {
     "commit-state": cmd_commit_state,
     "freeze-add": cmd_freeze_add,
     "freeze-list": cmd_freeze_list,
+    "set-review": cmd_set_review,
+    "review-list": cmd_review_list,
 }
 
 
@@ -356,6 +381,18 @@ def build_parser() -> argparse.ArgumentParser:
                        help="List frozen seams a later phase must respect")
     p.add_argument("--phase", type=int, help="Only seams frozen at or before phase N")
     p.add_argument("--kind", choices=["frozen", "hook"])
+    p.add_argument("--json", action="store_true", dest="as_json", help="(no-op; always JSON)")
+
+    p = sub.add_parser("set-review",
+                       help="Record a phase's human review approval (written by small_review)")
+    p.add_argument("--phase", type=int, required=True)
+    p.add_argument("--status", default="approved", choices=["pending", "approved"],
+                   help="Review status (default: approved — the common case)")
+    p.add_argument("--note", help="Optional reviewer note")
+
+    p = sub.add_parser("review-list",
+                       help="List per-phase review approvals (gates small_build --unsupervised)")
+    p.add_argument("--phase", type=int, help="Only the review for phase N")
     p.add_argument("--json", action="store_true", dest="as_json", help="(no-op; always JSON)")
 
     return parser

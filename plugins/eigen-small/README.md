@@ -28,10 +28,11 @@ of the swarm-worker decomposition.
 small_start   ONE-TIME setup: install the eigen-small CLI wrapper on PATH (manual-only; --reinstall-cli-only)
 small_route   triage → shape + two dials → drives planning in-session → stops at the plan→build boundary
 small_plan    collapsed planning: manifest → bootstrap-delta → space_split + goals (reuse / synthesize / skip)
+small_review  interactive comprehension + validation gate: synthesize specs+goals per phase, mechanical AC→goal coverage, record per-phase approval
 small_build   wave executor: per-epic implementers (worktrees) → goal-gate stop-condition → per-wave review
 ```
 
-## State CLI (thin, ~9 permissive verbs)
+## State CLI (thin, permissive)
 
 A thin CLI over `eigen-core`'s atomic raw I/O. **Permissive** — `next` reports the
 next actionable step and never refuses a skipped or reordered stage (the opposite of
@@ -51,6 +52,8 @@ small validate
 small commit-state --message "..."
 small freeze-add --phase 1 --name <seam> --kind frozen|hook [--signature ...] [--consumers ...]
 small freeze-list [--phase N] [--kind frozen|hook]    # the cross-phase contract a later phase must respect
+small set-review --phase N --status approved [--note ...]   # written by small_review (per-phase human approval)
+small review-list [--phase N]                         # per-phase approvals; gates small_build --unsupervised
 ```
 
 **Cross-phase freeze ledger** (`eigen_initiative/phases/freeze_ledger.json`): `small_plan`
