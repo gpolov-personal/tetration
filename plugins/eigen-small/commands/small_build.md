@@ -85,7 +85,12 @@ independent oracle (the why, and the extend-never-weaken rule, are the goal-auth
 ```
 eigen-small complete-epic <wave> <epic> --goal-green
 ```
-If a goal is red, send the implementer back (do not mark green, do not advance).
+If a goal is red, send the implementer back **with the failing assertions as feedback** (do not
+mark green, do not advance). **Bound this loop with `--max-attempts N` (default N=3) round-trips
+per epic:** on the Nth still-red attempt, **STOP and surface** — report the epic, the
+persistently-failing assertions, and what was tried, then hand back to the human. Never silently
+loop past N. (You MAY escalate the implementer's model on a retry via `model_plan.yaml`.) The bound
+turns the implicit "iterate until green" into "iterate until green *or* fail loudly".
 
 ### Stage 3 — Merge + per-wave code-review
 
@@ -134,3 +139,6 @@ Report the wave summary + any recorded follow-ups.
 6. **Strict file-ownership** per epic (only its subpackage + its test file) — the safety margin
    that keeps merges clean and survives any residual checkout sharing.
 7. **Never edit `pipeline_state_small.json` by hand** — always via the CLI.
+8. **Bound the goal-retry loop** — `--max-attempts N` (default 3) round-trips per epic; on the Nth
+   still-red attempt STOP and surface to the human, never loop silently. The goal stays the oracle;
+   the bound is the circuit-breaker.

@@ -117,6 +117,9 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    - **Invariant #2:** every `concrete_files[]` path appears in
      `bootstrap-report.json.entities_created[].path` (populate from real stubs, or only
      reference paths confirmed to exist).
+   - **Invariant #3 (AC→goal coverage):** every acceptance criterion in an epic's Blackbox spec
+     maps to ≥1 assertion in that epic's goal (Step 2) — no AC left un-asserted. An orphan AC is a
+     silent "passes-but-is-wrong" gap. Authored in Step 2, verified at On Exit.
 2. **Emit the goal specs**, one per epic under `test/waves/<id>/`, **per the goal-authoring
    doctrine** (`Skill("eigen-small:goal-authoring")`, loaded above). Derive each from the epic's
    `validation_summary` + Blackbox ACs; validate against a **real boundary**; author it
@@ -156,8 +159,9 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
    - Would any contract you're about to **freeze need to mutate in a later phase**? (the
      `JUDGE_PII_PSEUDONYMISATION_ENABLED` boolean→set class — reshape it **now**, before the
      freeze, so the future phase plugs in additively.)
-   - Does every manifest feature land in **exactly one** epic and every `concrete_files[]`
-     resolve (the two invariants — feature coverage + concrete-files resolution, defined in Stage S)?
+   - Does every manifest feature land in **exactly one** epic, every `concrete_files[]`
+     resolve, and every AC map to ≥1 goal assertion (the three invariants — feature coverage +
+     concrete-files resolution + AC→goal coverage, defined in Stage S)?
    Fix what you find by re-shaping the epics/contracts; only then freeze. One pass — if nothing
    high-severity surfaces, move on (**do not iterate**).
 6. **Record this phase's freezes** so phase N+1 inherits them: for each interface/seam this
@@ -171,7 +175,8 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
 1. **Epic-readiness check** (one pass — the mini Handoff Test; "execute directly against epics"
    is only as good as the epics). Per epic confirm: clear, testable ACs; **frozen interface
    signatures** named; a **real-boundary goal spec** under `test/waves/<id>/`; a `risk` tag set;
-   and a unique feature→epic mapping (Invariant #1 — feature coverage). Fix gaps now — one pass, not an iterative gate.
+   a unique feature→epic mapping (Invariant #1 — feature coverage); and that **every AC maps to ≥1
+   goal assertion — flag orphan ACs** (Invariant #3 — AC→goal coverage). Fix gaps now — one pass, not an iterative gate.
 2. `eigen-small validate` (state must be internally consistent).
 3. `eigen-small commit-state --message "small_plan: planned <name> (<E> epics, <W> waves)" --additional-paths eigen_initiative/phases/,test/waves/`.
 4. **STOP at the plan→build boundary** (default — a human checkpoint to review the epics,
@@ -183,9 +188,10 @@ Goal: the epic decomposition + frozen goal specs + the wave plan.
 
 ## Hard rules
 
-1. **The two invariants are non-negotiable** — feature coverage (every feature in exactly
-   one epic) and concrete-files resolution (every `concrete_files[]` ⊆
-   `entities_created[].path`). They hold no matter which stages were reused/synthesized/skipped.
+1. **The three invariants are non-negotiable** — feature coverage (every feature in exactly
+   one epic), concrete-files resolution (every `concrete_files[]` ⊆ `entities_created[].path`),
+   and AC→goal coverage (every AC asserted by ≥1 goal — no orphan ACs). They hold no matter which
+   stages were reused/synthesized/skipped.
 2. **reuse / synthesize / skip** per stage — never redo a present artifact; never block on
    a legitimately-absent one.
 3. **Goal authoring is independent + strong-model + adversarial, always** (not dial-gated).
