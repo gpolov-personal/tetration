@@ -16,6 +16,19 @@ epic, **confirm each epic's goal green yourself** (the goal is an independent or
 not trust an implementer's self-report), merge, run a lightweight per-wave review, and
 record progress. You write no product code.
 
+## Mode: supervised (default) vs `--unsupervised`
+
+**Default — supervised, single phase.** Everything below is the supervised hot path: build the
+current phase's waves, stop. This is the common case — keep reading.
+
+**`--unsupervised` — multi-phase sequential driver.** If invoked with `--unsupervised`, you are
+instead driving an *unattended sequential build across all planned phases* (planned by
+`small_plan_horizon`, approved by `small_review`). **Do not follow the single-phase flow below.**
+Load `Skill("eigen-small:unsupervised-multiphase")` and follow it — that doctrine is kept out of
+this hot path **on purpose** (progressive disclosure), so a supervised single-phase run never
+carries multi-phase instructions it doesn't need. The driver reuses the per-wave loop below, once
+per phase, against a per-phase state file.
+
 ## The CLI you use
 
 ```
@@ -142,3 +155,8 @@ Report the wave summary + any recorded follow-ups.
 8. **Bound the goal-retry loop** — `--max-attempts N` (default 3) round-trips per epic; on the Nth
    still-red attempt STOP and surface to the human, never loop silently. The goal stays the oracle;
    the bound is the circuit-breaker.
+9. **`--unsupervised` is multi-phase-only and gated.** It runs only after `small_review` approved
+   **every** discovered phase, builds phases sequentially in-session (no watchdog/cron), and halts
+   on a goal still red after `--max-attempts N` without crossing to the next phase. On a single
+   phase it degenerates to `--auto`. The driver doctrine lives in
+   `Skill("eigen-small:unsupervised-multiphase")`, loaded only when the flag is set.
