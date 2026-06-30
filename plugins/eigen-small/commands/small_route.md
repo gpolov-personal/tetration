@@ -66,7 +66,11 @@ Then pick the **shape**:
 |---|---|
 | `direct` | trivial / one cohesive change (≲ ~200 LOC, fits one agent's head). |
 | `single_phase` | small/medium; obvious single phase; benefits from epic decomposition / parallelism. **The main path.** |
-| `defer_to_squared` | many features; non-obvious phase boundaries; multi-phase. |
+| `defer_to_squared` | many features; non-obvious phase boundaries; **≥4 phases** or initiative-scale. |
+
+**Multi-phase within small (2–3 obvious phases):** still `single_phase` shape, but plan with
+`small_plan_horizon` (the long-horizon planner) instead of `small_plan`, enabling the unattended
+sequential build. **2 phases recommended; 3 experimental (warned); ≥4 → `defer_to_squared`.**
 
 ## Stage 2 — Record the decision
 
@@ -84,10 +88,12 @@ shape. This is the human-auditable record of the routing call.
 - **`defer_to_squared`** → recommend `eigen-squared` (this work is initiative-scale).
   Do **not** reinvent the heavy pipeline here. **Stop.**
 - **`single_phase`** → drive the planning stage **in-session**:
-  - Invoke `Skill("eigen-small:small_plan")` (in-session — never as a subagent).
-  - `small_plan` runs the collapsed planning (manifest → bootstrap-delta → space_split +
-    goals) with the **reuse / synthesize / skip** rule per stage, then emits the wave
-    plan + the frozen goal specs.
+  - **Pick the planner by phase count.** A single phase → `Skill("eigen-small:small_plan")`
+    (in-session — never as a subagent), which runs the collapsed planning (manifest →
+    bootstrap-delta → space_split + goals) with **reuse / synthesize / skip** per stage and emits
+    the wave plan + frozen goal specs. **2–3 obvious phases** intended for the unattended sequential
+    build → `Skill("eigen-small:small_plan_horizon")` instead (→ `small_review` → `small_build
+    --unsupervised`). **≥4 phases → `defer_to_squared`.**
   - **Stop at the plan→build boundary** (default — a human checkpoint to review the
     epics, the goals, and the wave plan, and to review/edit `model_plan.yaml` (the per-run
     model tiering `small_plan` emits) before hours of implementation begin). `--auto` proceeds into

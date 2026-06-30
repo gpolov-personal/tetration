@@ -28,6 +28,7 @@ of the swarm-worker decomposition.
 small_start   ONE-TIME setup: install the eigen-small CLI wrapper on PATH (manual-only; --reinstall-cli-only)
 small_route   triage → shape + two dials → drives planning in-session → stops at the plan→build boundary
 small_plan    collapsed planning: manifest → bootstrap-delta → space_split + goals (reuse / synthesize / skip)
+small_plan_horizon  long-horizon planner: cut up to 3 phases (warn >2), reuse small_plan per phase, freeze cross-phase seams upfront, cumulative E2E
 small_review  interactive comprehension + validation gate: synthesize specs+goals per phase, mechanical AC→goal coverage, record per-phase approval
 small_build   wave executor: per-epic implementers (worktrees) → goal-gate stop-condition → per-wave review
 ```
@@ -86,14 +87,23 @@ the `gh`-probe guards.
 - **Own flat state** (`pipeline_state_small.json`) with a `SquaredSchemaDetected`
   guard so it can never clobber a squared/lite state file.
 
-## Two phases on one repo (run twice)
+## Multi-phase (2–3 phases): two paths
 
-eigen-small is single-phase, but a 2-phase product (MVP → extensions) is supported as **two
-runs**: do phase 1, then run again with `init --phase 2`. The phase-2 run slots its artifacts
-into `phases/phase_2/`, **reuses** the existing `phase_2_manifest.md`, and builds on phase 1's
-**frozen extension seams** (the no-op hooks pattern). It does **not** auto-plan both phases —
-you sequence them (trivial for 2). **≥3 phases → use eigen-squared** (the router answers
-`defer_to_squared`).
+A 2-phase product (MVP → extensions) has two supported approaches:
+
+1. **Two manual runs (conservative default).** Do phase 1, then run again with `init --phase 2`.
+   The phase-2 run slots its artifacts into `phases/phase_2/`, **reuses** the existing
+   `phase_2_manifest.md`, and builds on phase 1's **frozen extension seams** (no-op hooks). This
+   preserves the "build phase 1, *learn*, then plan phase 2" loop. Best for exploratory work.
+2. **Plan upfront + unattended build** (`small_plan_horizon` → `small_review` → `small_build
+   --unsupervised`). Plan **2–3 phases at once**, freezing cross-phase seams upfront; a human
+   validates every phase's specs+goals in `small_review`; then the builds run **sequentially and
+   unattended**, halting if a goal can't be met after N attempts. Best for predictable work — it
+   trades the learn-between-phases loop for unattended throughput.
+
+**2 phases recommended; 3 is experimental (warned); ≥4 phases → use eigen-squared** (the router
+answers `defer_to_squared`). See [`../../docs/eigen-small-autonomy-analysis.md`](../../docs/eigen-small-autonomy-analysis.md)
+for the full Fork A rationale.
 
 ## Status
 
