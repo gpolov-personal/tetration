@@ -48,8 +48,11 @@ For each phase N in ascending order:
 4. **The last wave is the cumulative E2E gate** (phase N covers 1..N, per `phase_e2e_config.json`) —
    the only oracle for cross-phase integration.
 5. **Bounded goal-retry circuit-breaker** (the Paso-0 rule): `--max-attempts N` (default 3)
-   implementer round-trips per epic, feeding the failing assertions back each time. On the Nth
-   still-red attempt → **halt** (next section).
+   implementer round-trips per epic, feeding the failing assertions back each time. Count each
+   still-red round-trip with `eigen-small --state-file <per-phase> record-goal-attempt <wave> <epic>`
+   so the bound **survives a resume** — on re-entry, read the counter and do not re-loop past N (a
+   human resets it with `--reset` to grant a fresh budget). On the Nth still-red attempt → **halt**
+   (next section).
 6. On phase N **fully green** (all waves' goals green + reviews done): `commit-state`, optionally
    write `phases/phase_<N>/build_notes.md` (gotchas worth a human's eye — advisory, not consumed by
    planning), then advance to phase N+1.

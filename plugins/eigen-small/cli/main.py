@@ -149,6 +149,7 @@ def cmd_set_waves(args: argparse.Namespace) -> int:
                 parallel=bool(w.get("parallel", False)),
                 epic_status={e: "pending" for e in epics},
                 goal_status={e: "pending" for e in epics},
+                goal_attempts={e: 0 for e in epics},
                 review_status="pending",
             )
         )
@@ -179,6 +180,24 @@ def cmd_complete_epic(args: argparse.Namespace) -> int:
             "goal_status": wave.goal_status.get(args.epic),
         }
     )
+    return 0
+
+
+def cmd_record_goal_attempt(args: argparse.Namespace) -> int:
+    state = load_state(_state_path(args))
+    if state is None:
+        return _err("no state file")
+    wave = next((w for w in state.waves if w.id == args.wave), None)
+    if wave is None:
+        return _err(f"no wave {args.wave!r}")
+    if args.epic not in wave.epics:
+        return _err(f"epic {args.epic!r} not in wave {args.wave!r}")
+    if args.reset:
+        wave.goal_attempts[args.epic] = 0
+    else:
+        wave.goal_attempts[args.epic] = int(wave.goal_attempts.get(args.epic, 0)) + 1
+    save_state(state, _state_path(args))
+    _emit({"wave": args.wave, "epic": args.epic, "attempts": wave.goal_attempts[args.epic]})
     return 0
 
 
@@ -288,6 +307,7 @@ _HANDLERS = {
     "set-stage": cmd_set_stage,
     "set-waves": cmd_set_waves,
     "complete-epic": cmd_complete_epic,
+    "record-goal-attempt": cmd_record_goal_attempt,
     "set-wave-review": cmd_set_wave_review,
     "validate": cmd_validate,
     "commit-state": cmd_commit_state,
@@ -353,6 +373,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("epic")
     p.add_argument("--goal-green", action="store_true", dest="goal_green",
                    help="Also mark the epic's wave goal green")
+
+    p = sub.add_parser("record-goal-attempt",
+                       help="Increment (or --reset) an epic's goal-attempt counter — the persisted circuit-breaker")
+    p.add_argument("wave")
+    p.add_argument("epic")
+    p.add_argument("--reset", action="store_true",
+                   help="Reset the counter to 0 (a human granting a fresh N after a halt)")
 
     p = sub.add_parser("set-wave-review", help="Set a wave's review status")
     p.add_argument("wave")

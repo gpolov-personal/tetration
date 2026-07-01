@@ -65,6 +65,7 @@ class Wave:
     parallel: bool = False
     epic_status: dict = field(default_factory=dict)  # epic -> pending|implemented
     goal_status: dict = field(default_factory=dict)   # epic -> pending|green
+    goal_attempts: dict = field(default_factory=dict)  # epic -> int (red implementer round-trips; the circuit-breaker counter)
     review_status: str = "pending"                    # pending|done
 
     def to_dict(self) -> dict:
@@ -74,6 +75,7 @@ class Wave:
             "parallel": self.parallel,
             "epic_status": self.epic_status,
             "goal_status": self.goal_status,
+            "goal_attempts": self.goal_attempts,
             "review_status": self.review_status,
         }
 
@@ -85,6 +87,7 @@ class Wave:
             parallel=bool(d.get("parallel", False)),
             epic_status=d.get("epic_status") or {},
             goal_status=d.get("goal_status") or {},
+            goal_attempts=d.get("goal_attempts") or {},
             review_status=d.get("review_status", "pending"),
         )
 

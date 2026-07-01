@@ -104,6 +104,9 @@ per epic:** on the Nth still-red attempt, **STOP and surface** — report the ep
 persistently-failing assertions, and what was tried, then hand back to the human. Never silently
 loop past N. (You MAY escalate the implementer's model on a retry via `model_plan.yaml`.) The bound
 turns the implicit "iterate until green" into "iterate until green *or* fail loudly".
+Record each still-red round-trip with `eigen-small record-goal-attempt <wave> <epic>` so the count
+**persists across resumes** — on a resumed run, read it back and don't blindly re-loop past N; a
+human grants a fresh budget with `record-goal-attempt <wave> <epic> --reset`.
 
 ### Stage 3 — Merge + per-wave code-review
 
@@ -152,9 +155,9 @@ Report the wave summary + any recorded follow-ups.
 6. **Strict file-ownership** per epic (only its subpackage + its test file) — the safety margin
    that keeps merges clean and survives any residual checkout sharing.
 7. **Never edit `pipeline_state_small.json` by hand** — always via the CLI.
-8. **Bound the goal-retry loop** — `--max-attempts N` (default 3) round-trips per epic; on the Nth
-   still-red attempt STOP and surface to the human, never loop silently. The goal stays the oracle;
-   the bound is the circuit-breaker.
+8. **Bound the goal-retry loop** — `--max-attempts N` (default 3) round-trips per epic, counted with
+   `record-goal-attempt` so it survives a resume; on the Nth still-red attempt STOP and surface to
+   the human, never loop silently. The goal stays the oracle; the bound is the circuit-breaker.
 9. **`--unsupervised` is multi-phase-only and gated.** It runs only after `small_review` approved
    **every** discovered phase, builds phases sequentially in-session (no watchdog/cron), and halts
    on a goal still red after `--max-attempts N` without crossing to the next phase. On a single

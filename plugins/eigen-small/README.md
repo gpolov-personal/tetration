@@ -48,6 +48,7 @@ small next                                  # permissive: next stage/wave or "do
 small set-stage manifest --status synthesized [--path ...]
 small set-waves --waves '[{"id":"a","epics":["E3","E4","E5"],"parallel":true}, ...]'
 small complete-epic a E4 --goal-green
+small record-goal-attempt a E4 [--reset]    # persisted goal-retry counter (circuit-breaker; survives resume)
 small set-wave-review a --status done
 small validate
 small commit-state --message "..."
