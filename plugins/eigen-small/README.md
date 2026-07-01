@@ -33,6 +33,75 @@ small_review  interactive comprehension + validation gate: synthesize specs+goal
 small_build   wave executor: per-epic implementers (worktrees) → goal-gate stop-condition → per-wave review
 ```
 
+## Usage — which flow for which task
+
+`small_route` triages every job and picks a **shape**; the shape decides the flow:
+
+| Your task | Shape | Flow |
+|---|---|---|
+| Trivial / one cohesive change (≲ ~200 LOC) | `direct` | Implement inline + TDD + `/code-review`. **No pipeline.** |
+| A feature / small product, one obvious phase | `single_phase` | **Flow A** (below) — the main path |
+| 2–3 obvious phases you want built unattended | `single_phase` (multi-phase) | **Flow B** (below) |
+| Many features / non-obvious boundaries / **≥4 phases** | `defer_to_squared` | Use **eigen-squared** |
+
+### Flow A — small feature / single phase (the main path)
+
+| # | Command | What it outputs |
+|---|---|---|
+| 1 | `/small_route` | shape + dials in `pipeline_state_small.json` + a rationale paragraph; **stops at plan→build** (or `--auto` continues) |
+| 2 | `/small_plan` | epics (`epic_manifest.json`, `epic_<M>/epic.md` with **frozen interfaces**), goal specs under `test/waves/<id>/`, `phase_e2e_config.json`, `model_plan.yaml`, `freeze_ledger.json`, the wave plan; **stops at plan→build** |
+| 3 *(optional)* | `/small_review` | synthesized walkthrough + **mechanical AC→goal coverage**; approval in `review_ledger.json` |
+| 4 | `/small_build` | per wave: implement each epic in a git worktree → orchestrator runs the **frozen goal as the oracle** → `/code-review` → commit; bounded retry (`--max-attempts N`); last wave = the E2E gate |
+
+```mermaid
+flowchart TD
+    Start(["feature / task"]) --> R["/small_route — triage"]
+    R --> D{"shape?"}
+    D -->|direct| Direct["implement inline + TDD<br/>+ /code-review (no pipeline)"]
+    D -->|"defer_to_squared (≥4 phases)"| Squared["use eigen-squared"]
+    D -->|single_phase| P["/small_plan"]
+    P --> Pout[/"epics + frozen interfaces (epic.md)<br/>goals (test/waves/) · model_plan.yaml<br/>freeze_ledger.json · wave plan"/]
+    Pout --> Rev["/small_review<br/>(optional for 1 phase)"]
+    Rev --> Revout[/"AC→goal coverage OK<br/>review_ledger.json approved"/]
+    Revout --> B["/small_build"]
+    P -.->|"--auto (skip review)"| B
+    B --> Bout[/"per wave: worktree impl → goal-oracle gate<br/>→ /code-review → commit<br/>retry ≤ N · last wave = E2E gate"/]
+    Bout --> Done(["waves green ✅"])
+```
+
+### Flow B — larger / multi-phase (2–3 phases, unattended)
+
+Use this **only when the work is predictable enough to plan all phases upfront** — it trades away
+the "build phase 1, *learn*, then plan phase 2" loop for unattended throughput. The human validates
+**every** phase in `small_review` *before* any build; then the builds run sequentially and
+unattended, halting on the first goal that can't be met.
+
+| # | Command | What it outputs |
+|---|---|---|
+| 1 | `/small_route` | recognizes 2–3 obvious phases (shape stays `single_phase`) |
+| 2 | `/small_plan_horizon` | cuts ≤3 phases (**warns if 3**), plans each (reusing `small_plan`), freezes cross-phase seams **upfront** (`freeze_ledger.json`), cumulative E2E per phase, a `wave_plan.json` per phase |
+| 3 | `/small_review` | walks **every** phase; per-phase approval in `review_ledger.json` — **required** to unlock step 4 |
+| 4 | `/small_build --unsupervised` | gated on all phases approved → builds phase 1→2→3 sequentially (isolated `--state-file` per phase); **halts and surfaces** if any goal stays red after `--max-attempts N` |
+
+```mermaid
+flowchart TD
+    Start(["2–3 obvious phases"]) --> R["/small_route"]
+    R --> H["/small_plan_horizon"]
+    H --> Hout[/"cut ≤3 phases (warn if 3)<br/>per phase: manifest + epics + goals + wave_plan.json<br/>cross-phase seams frozen UPFRONT (freeze_ledger.json)<br/>cumulative E2E (phase N covers 1..N)"/]
+    Hout --> Rev["/small_review — walk EVERY phase"]
+    Rev --> Revout[/"per-phase approval (required)<br/>review_ledger.json"/]
+    Revout --> Gate{"all phases approved?"}
+    Gate -->|no| Fix["fix in small_plan_horizon<br/>(nothing builds)"]
+    Gate -->|yes| B["/small_build --unsupervised"]
+    B --> Loop["phase 1 → 2 → 3 (sequential)<br/>isolated --state-file per phase"]
+    Loop --> Bout[/"per phase: normal wave build + goal oracle<br/>circuit-breaker: HALT if a goal stays red after N"/]
+    Bout --> Done(["all phases green ✅<br/>(or halted for a human)"])
+```
+
+> **≥4 phases → use eigen-squared.** Auto-advancing phases without a human between them is exactly
+> what eigen-small avoids (and what squared has, hardened). Full rationale:
+> [`../../docs/eigen-small-autonomy-analysis.md`](../../docs/eigen-small-autonomy-analysis.md).
+
 ## State CLI (thin, permissive)
 
 A thin CLI over `eigen-core`'s atomic raw I/O. **Permissive** — `next` reports the
