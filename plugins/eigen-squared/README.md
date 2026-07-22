@@ -169,7 +169,7 @@ eigen-squared commit-state --message "pipeline: bootstrap_converge phase 1" --ad
 eigen-squared status
 ```
 
-The CLI eliminates the class of bugs where an LLM misinterprets JSON schema or forgets to update a cross-flag. Every state transition is deterministic Python code with 98 tests.
+The CLI eliminates the class of bugs where an LLM misinterprets JSON schema or forgets to update a cross-flag. Every state transition is deterministic Python code with 153 tests.
 
 ### How commands use the CLI
 
