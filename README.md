@@ -128,7 +128,14 @@ eigen-squared status               # human-readable pipeline overview
 ```
 
 ### Autonomy via claude-tasks
-In autonomous mode, a cron **watchdog** (`eigen-watchdog`) polls every N minutes, asks the CLI what's next, and schedules it through [**claude-tasks**](https://github.com/kylemclaren/claude-tasks) — an external server that runs Claude Code sessions on a schedule or in response to events. Commands *never* schedule their own successors; the watchdog owns all scheduling, so there's no "forgot to schedule / scheduled twice" failure mode. The pipeline drives itself phase after phase, pausing only at the human checkpoint (`eigen_continue`). In **manual mode**, drop claude-tasks entirely and run each stage yourself.
+In autonomous mode, a cron **watchdog** (`eigen-watchdog`) polls every N minutes, asks the CLI what's next, and schedules it through [**claude-tasks**](https://github.com/gpolov-personal/claude-tasks) — a scheduling server that runs Claude Code sessions on a timer (a personal fork of [kylemclaren/claude-tasks](https://github.com/kylemclaren/claude-tasks)). Commands *never* schedule their own successors; the watchdog owns all scheduling, so there's no "forgot to schedule / scheduled twice" failure mode. The pipeline drives itself phase after phase, pausing only at the human checkpoint (`eigen_continue`). In **manual mode**, drop claude-tasks entirely and run each stage yourself.
+
+### See it run — the web UI
+The [personal claude-tasks fork](https://github.com/gpolov-personal/claude-tasks) ships a **web dashboard** ([`tools/frontend`](https://github.com/gpolov-personal/claude-tasks/tree/main/tools/frontend), React + Vite) that turns the pipeline into something you can watch: every scheduled `eigen: <stage>` run grouped into pipeline flows, live pass/fail per stage, and a **conversation viewer** that replays each session's messages, tool calls, and swarm **subagents**.
+
+![The claude-tasks web UI visualizing an eigen-squared pipeline run](assets/pipeline-web-ui.jpeg)
+
+<sub>An autonomous run in the claude-tasks web dashboard — each row is one scheduled pipeline stage. (Stage names shown are from an earlier plugin version.)</sub>
 
 ---
 
@@ -136,7 +143,7 @@ In autonomous mode, a cron **watchdog** (`eigen-watchdog`) polls every N minutes
 
 ```bash
 # In any Claude Code session:
-/plugin marketplace add ggpolovera/tetration
+/plugin marketplace add gpolov-personal/tetration
 /plugin install eigen-squared@tetration      # or: eigen-lite@tetration
 
 # Then, in your project:
@@ -154,7 +161,7 @@ claude
 - **Claude Code** with agent teams enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, `teammateMode=tmux`) — `eigen_start` writes these for you.
 - **Python 3.10+** for the CLI.
 - **tmux** for the live swarm panes.
-- *(autonomous only)* **[claude-tasks](https://github.com/kylemclaren/claude-tasks)** running locally.
+- *(autonomous only)* **[claude-tasks](https://github.com/gpolov-personal/claude-tasks)** running locally (the fork with the web UI).
 - *(optional)* **[CodeGraph](https://github.com/colbymchenry/codegraph)** — a local code-intelligence graph agents query instead of grep when a project is indexed. Never required; degrades silently to grep/Read.
 
 ---
@@ -200,7 +207,7 @@ tetration/
 
 <div align="center">
 
-**Built by [G.Polo.V](https://github.com/ggpolovera)** · eigen-lite by Diego San Cristobal
+**Built by [G.Polo.V](https://github.com/gpolov-personal)** · eigen-lite by Diego San Cristobal
 Requires [Claude Code](https://claude.com/claude-code) · Made for the agentic era.
 
 </div>
