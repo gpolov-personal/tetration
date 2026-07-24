@@ -17,7 +17,7 @@
         "name": "G.Polo.V",
         "email": "ggpolovera@gmail.com"
       },
-      "homepage": "https://github.com/ggpolovera/tetration",
+      "homepage": "https://github.com/gpolov-personal/tetration",
       "tags": ["autonomous", "swarm", "parallel-execution", "auto-chaining", "claude-tasks", "convergence", "self-improving"],
       "source": "./plugins/eigen-squared"
     },
@@ -29,7 +29,7 @@
         "name": "Diego San Cristobal",
         "email": "diego.scristobal@gmail.com"
       },
-      "homepage": "https://github.com/ggpolovera/tetration",
+      "homepage": "https://github.com/gpolov-personal/tetration",
       "tags": ["autonomous", "swarm", "lite", "single-phase", "existing-codebase", "small-initiatives"],
       "source": "./plugins/eigen-lite"
     }
