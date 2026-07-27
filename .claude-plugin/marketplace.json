@@ -36,7 +36,7 @@
     {
       "name": "eigen-small",
       "description": "Router-driven, artifact-robust, goal-gated pipeline for a feature or single-phase product. small_route triages the work into a shape + two dials (structure × rigor); small_plan does collapsed planning (reuse/synthesize/skip per stage) emitting squared-shaped epics + frozen goal specs + a wave plan; small_build builds each epic directly from its epic.md, gated by an executable real-boundary goal as the stop-condition, with lightweight per-wave review. Distinct from eigen-lite: goal-gate direct build, not the swarm TDD-A/B workers. Thin permissive state CLI over vendored eigen-core.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "Diego San Cristobal",
         "email": "diego.scristobal@gmail.com"

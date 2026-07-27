@@ -29,7 +29,7 @@ small_start   ONE-TIME setup: install the eigen-small CLI wrapper on PATH (manua
 small_route   triage → shape + two dials → drives planning in-session → stops at the plan→build boundary
 small_plan    collapsed planning: manifest → bootstrap-delta → space_split + goals (reuse / synthesize / skip)
 small_plan_horizon  long-horizon planner: cut up to 3 phases (warn >2), reuse small_plan per phase, freeze cross-phase seams upfront, cumulative E2E
-small_review  interactive comprehension + validation gate: synthesize specs+goals per phase, mechanical AC→goal coverage, record per-phase approval
+small_review  interactive comprehension + validation gate: Gherkin review aid FIRST (human-gated), then synthesize specs+goals per phase, mechanical AC→goal coverage, record per-phase approval
 small_build   wave executor: per-epic implementers (worktrees) → goal-gate stop-condition → per-wave review
 ```
 
@@ -50,7 +50,7 @@ small_build   wave executor: per-epic implementers (worktrees) → goal-gate sto
 |---|---|---|
 | 1 | `/small_route` | shape + dials in `pipeline_state_small.json` + a rationale paragraph; **stops at plan→build** (or `--auto` continues) |
 | 2 | `/small_plan` | epics (`epic_manifest.json`, `epic_<M>/epic.md` with **frozen interfaces**), goal specs under `test/waves/<id>/`, `phase_e2e_config.json`, `model_plan.yaml`, `freeze_ledger.json`, the wave plan; **stops at plan→build** |
-| 3 *(optional)* | `/small_review` | synthesized walkthrough + **mechanical AC→goal coverage**; approval in `review_ledger.json` |
+| 3 *(optional)* | `/small_review` | Gherkin review aid (`review_specs.gherkin.md`, human-gated) → synthesized walkthrough + **mechanical AC→goal coverage**; approval in `review_ledger.json` |
 | 4 | `/small_build` | per wave: implement each epic in a git worktree → orchestrator runs the **frozen goal as the oracle** → `/code-review` → commit; bounded retry (`--max-attempts N`); last wave = the E2E gate |
 
 ```mermaid
@@ -80,7 +80,7 @@ unattended, halting on the first goal that can't be met.
 |---|---|---|
 | 1 | `/small_route` | recognizes 2–3 obvious phases (shape stays `single_phase`) |
 | 2 | `/small_plan_horizon` | cuts ≤3 phases (**warns if 3**), plans each (reusing `small_plan`), freezes cross-phase seams **upfront** (`freeze_ledger.json`), cumulative E2E per phase, a `wave_plan.json` per phase |
-| 3 | `/small_review` | walks **every** phase; per-phase approval in `review_ledger.json` — **required** to unlock step 4 |
+| 3 | `/small_review` | walks **every** phase (Gherkin aid + human gate per phase); per-phase approval in `review_ledger.json` — **required** to unlock step 4 |
 | 4 | `/small_build --unsupervised` | gated on all phases approved → builds phase 1→2→3 sequentially (isolated `--state-file` per phase); **halts and surfaces** if any goal stays red after `--max-attempts N` |
 
 ```mermaid
