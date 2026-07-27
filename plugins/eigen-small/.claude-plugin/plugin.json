@@ -1,0 +1,16 @@
+{
+  "name": "eigen-small",
+  "version": "0.6.1",
+  "description": "Router-driven, artifact-robust, goal-gated pipeline for a feature or single-phase product. Triage (small_route) picks a shape + two dials; collapsed planning (small_plan) reuses/synthesizes/skips stages; wave execution (small_build) builds each epic directly from its epic.md, gated by an executable real-boundary goal as its stop-condition, with lightweight per-wave review. Self-contained: bundles its own review agents and reference skills (no cross-plugin dependency).",
+  "keywords": [
+    "eigen",
+    "small",
+    "router",
+    "triage",
+    "single-phase",
+    "goal-gated",
+    "artifact-robust",
+    "lightweight"
+  ],
+  "homepage": "https://github.com/ggpolovera/tetration"
+}
